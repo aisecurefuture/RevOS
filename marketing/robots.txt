@@ -1,0 +1,4 @@
+# revos360 marketing site — indexing welcome.
+User-agent: *
+Allow: /
+Sitemap: https://revos360.com/sitemap.xml

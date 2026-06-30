@@ -1,0 +1,45 @@
+# RevOS — Caddy reverse proxy with automatic HTTPS.
+#
+# Caddy obtains AND auto-renews TLS certificates from Let's Encrypt on its own
+# (ACME) — there is no certbot to install or cron to manage. Just point DNS at
+# this server, open 80/443, and the certs provision on first request.
+
+{
+	# Email used for the ACME account / expiry notices. Set a real address.
+	email hello@revos360.com
+}
+
+# --- Marketing site (apex + www) -------------------------------------------
+revos360.com, www.revos360.com {
+	encode gzip zstd
+	root * /srv/marketing
+	file_server
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+# --- Admin console (Next.js; it proxies its own /api/* to the backend) ------
+app.revos360.com {
+	encode gzip zstd
+	reverse_proxy frontend:3000
+	header -Server
+}
+
+# --- Public API: webhooks, public forms, landing pages, opt-in links --------
+api.revos360.com {
+	encode gzip zstd
+	request_body {
+		max_size 256MB
+	}
+	reverse_proxy api:8000
+	header -Server
+}
+
+# --- Brand-protection redirects -> revos360.com -----------------------------
+revos365.com, www.revos365.com, officialrevos.com, www.officialrevos.com {
+	redir https://revos360.com{uri} permanent
+}

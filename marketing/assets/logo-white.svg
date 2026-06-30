@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 206 48" width="206" height="48" role="img" aria-label="revos360">
+  <rect width="48" height="48" rx="11" fill="#ffffff" fill-opacity="0.12"/>
+  <circle cx="24" cy="24" r="13" fill="none" stroke="#ffffff" stroke-opacity="0.30" stroke-width="2.4"/>
+  <path d="M13 31 L20 25 L26 28 L34 16.5" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M28.6 16 L34 16.5 L33.6 21.8" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="60" y="33" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="27" font-weight="800" letter-spacing="-0.6">
+    <tspan fill="#ffffff">revos</tspan><tspan fill="#c7d2fe">360</tspan>
+  </text>
+</svg>

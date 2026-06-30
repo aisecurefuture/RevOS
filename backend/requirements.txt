@@ -1,0 +1,49 @@
+# --- Web framework / server ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# --- Data / ORM ---
+sqlmodel==0.0.22
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10        # sync driver for Alembic
+alembic==1.14.0
+
+# --- Settings / validation ---
+pydantic==2.10.4
+pydantic-settings==2.7.0
+email-validator==2.2.0
+
+# --- Auth / security ---
+# bcrypt used directly (with a SHA-256 pre-hash) — passlib's bcrypt backend is
+# incompatible with bcrypt >= 5.x, so it is intentionally not used.
+bcrypt==4.2.1
+pyjwt==2.10.1
+itsdangerous==2.2.0            # signed tokens (CSRF, opt-in links)
+limits==5.8.0                  # rate limiting (per-IP fixed window)
+bleach==6.2.0                  # HTML sanitization (XSS defense)
+
+# --- Background jobs ---
+celery==5.4.0
+redis==5.2.1
+
+# --- Templating ---
+jinja2==3.1.5
+
+# --- Integrations (optional at runtime; importable, used only if keys set) ---
+resend==2.5.1
+stripe==11.4.1
+anthropic==0.43.0              # optional AI provider (lazy-imported)
+openai==1.59.6                 # optional AI provider / local OpenAI-compatible
+boto3==1.35.92                 # S3-compatible storage
+pillow==11.1.0                 # image rendition processing (media pipeline)
+httpx==0.28.1                  # outbound API/webhook calls (SSRF-guarded)
+
+# --- Tooling / tests ---
+pytest==8.3.4
+pytest-asyncio==0.25.0
+aiosqlite==0.20.0              # async in-memory DB for router tests
+respx==0.22.0                  # mock httpx (Resend integration tests)
+ruff==0.8.6
+mypy==1.14.1

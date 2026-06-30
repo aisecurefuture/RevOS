@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Environment / secrets — NEVER commit real secrets
+.env
+.env.*
+!.env.example
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+npm-debug.log*
+yarn-error.log*
+
+# Local storage / media
+backend/storage/
+backend/media/
+*.sqlite3
+*.db
+
+# Docker / OS
+.DS_Store
+*.log
+docker-data/
+postgres-data/
+redis-data/
+
+# Editor
+.idea/
+.vscode/
+*.swp

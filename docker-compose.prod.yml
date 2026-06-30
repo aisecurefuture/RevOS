@@ -1,0 +1,111 @@
+# RevOS production stack (revos360.com).
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# vs dev: no source bind-mounts, restart=always, a one-shot migrate job, the
+# Next.js frontend, a nightly Postgres backup, and Caddy for automatic HTTPS
+# (Let's Encrypt certs are obtained AND auto-renewed by Caddy — no certbot).
+name: revos
+
+services:
+  db:
+    restart: always
+    ports: []          # not exposed publicly in prod
+
+  redis:
+    restart: always
+    ports: []
+
+  # One-shot: apply Alembic migrations, then exit. Other services wait for it.
+  migrate:
+    build:
+      context: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    restart: always
+    volumes:
+      - storage-data:/app/storage
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports: []          # reached via Caddy only
+
+  worker:
+    restart: always
+    volumes:
+      - storage-data:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  beat:
+    restart: always
+
+  frontend:
+    restart: always
+    environment:
+      BACKEND_INTERNAL_URL: http://api:8000
+    ports: []          # reached via Caddy only
+    depends_on:
+      - api
+
+  # Automatic HTTPS reverse proxy + static marketing site.
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    depends_on:
+      - api
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./marketing:/srv/marketing:ro
+      - caddy-data:/data       # persists certificates across restarts
+      - caddy-config:/config
+
+  # Nightly Postgres backup (gzipped pg_dump), 7-day retention.
+  backup:
+    image: postgres:16-alpine
+    restart: always
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Backup service started; dumping nightly to /backups";
+        while true; do
+          TS=$$(date +%F_%H%M%S);
+          if PGPASSWORD=$$POSTGRES_PASSWORD pg_dump -h db -U $$POSTGRES_USER $$POSTGRES_DB \
+               | gzip > /backups/revos_$$TS.sql.gz; then
+            echo "backup ok: revos_$$TS.sql.gz";
+          else
+            echo "backup FAILED at $$TS";
+          fi;
+          find /backups -name 'revos_*.sql.gz' -mtime +7 -delete;
+          sleep 86400;
+        done
+
+volumes:
+  storage-data:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,3 @@
+# RevOS admin console — not for indexing.
+User-agent: *
+Disallow: /
