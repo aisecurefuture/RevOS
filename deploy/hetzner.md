@@ -52,6 +52,20 @@ What it does:
 > ⚠️ Before closing the root session, open a **new** terminal and confirm
 > `ssh deploy@<ip>` works and `sudo -v` succeeds — root login is now disabled.
 
+**Prefer to keep root SSH login?** Use the alternative
+[`harden-keeproot.sh`](harden-keeproot.sh) instead — same baseline, but it keeps
+root reachable over SSH (key-only by default) and does **not** create a separate
+user:
+
+```bash
+./harden-keeproot.sh "ssh-ed25519 AAAA... you@laptop"   # ensures a root key, then hardens
+```
+
+It verifies the **effective** SSH config with `sshd -T` after reload — catching
+the cloud-init drop-in that otherwise silently keeps password auth on — and
+refuses to disable password auth unless a usable root key is present, so it
+can't quietly fail or lock you out.
+
 **Also add a Hetzner Cloud Firewall** (in the Cloud console) allowing only
 inbound 22/80/443. This sits *in front of* the VM and is the authoritative
 network filter — see the Docker note below for why that matters.

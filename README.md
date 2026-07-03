@@ -167,9 +167,11 @@ ready-to-run hardening script is at [deploy/harden.sh](deploy/harden.sh).
   limiting — only enable behind a trusted proxy).
 - Never publish Postgres/Redis ports (the prod compose keeps them internal);
   set `DATABASE_URL`, `REDIS_URL`, and integration keys via env/secrets.
-- Run [deploy/harden.sh](deploy/harden.sh) and add a Hetzner Cloud Firewall
-  (allow only 22/80/443) — Docker bypasses host `ufw` for published ports, so a
-  network-edge firewall is the authoritative layer.
+- Harden the host: [deploy/harden.sh](deploy/harden.sh) (creates a sudo user,
+  disables root SSH) or [deploy/harden-keeproot.sh](deploy/harden-keeproot.sh)
+  (same baseline but keeps root SSH login, key-only). Add a Hetzner Cloud
+  Firewall (allow only 22/80/443) — Docker bypasses host `ufw` for published
+  ports, so a network-edge firewall is the authoritative layer.
 
 **Other targets** — the single backend image + Postgres + Redis run on
 **Render, Railway, Fly.io, DigitalOcean App Platform, AWS Lightsail, or any
