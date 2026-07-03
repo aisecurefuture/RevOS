@@ -79,6 +79,21 @@ services:
       - caddy-data:/data       # persists certificates across restarts
       - caddy-config:/config
 
+  # Local AI models (Ollama, OpenAI-compatible at http://ollama:11434/v1).
+  # Used when .env sets AI_PROVIDER=local. Defaults sized for a 16 GB box —
+  # on 32 GB (CCX33) raise OLLAMA_MEM_LIMIT to 26g+ and, if you want two
+  # models resident for LOCAL_AI_MODEL_MAP routing, OLLAMA_MAX_LOADED=2.
+  ollama:
+    image: ollama/ollama:latest
+    restart: always
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED:-1}
+      OLLAMA_KEEP_ALIVE: "10m"      # unload after idle to free RAM
+      OLLAMA_NUM_PARALLEL: "1"
+    mem_limit: ${OLLAMA_MEM_LIMIT:-10g}   # hard ceiling: Ollama dies before Postgres does
+    volumes:
+      - ollama-models:/root/.ollama
+
   # Nightly Postgres backup (gzipped pg_dump), 7-day retention.
   backup:
     image: postgres:16-alpine
@@ -109,3 +124,4 @@ volumes:
   storage-data:
   caddy-data:
   caddy-config:
+  ollama-models:
