@@ -5,8 +5,9 @@
 # this server, open 80/443, and the certs provision on first request.
 
 {
-	# Email used for the ACME account / expiry notices. Set a real address.
-	email hello@revos360.com
+	# ACME account / cert-expiry-notice email. Set ACME_EMAIL in .env (not here)
+	# so a server-side value survives git pulls. Falls back to the default.
+	email {$ACME_EMAIL:hello@revos360.com}
 }
 
 # --- Marketing site (apex + www) -------------------------------------------

@@ -82,6 +82,10 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: always
+    # Only ACME_EMAIL is passed in (not the whole .env) so app secrets never
+    # reach the proxy container. Referenced as {$ACME_EMAIL} in the Caddyfile.
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-hello@revos360.com}
     depends_on:
       - api
       - frontend
