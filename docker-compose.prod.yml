@@ -30,7 +30,9 @@ services:
 
   api:
     restart: always
-    volumes:
+    # !override drops the base file's ./backend:/app dev bind-mount (compose
+    # merges volume lists by target, so simply listing volumes keeps it).
+    volumes: !override
       - storage-data:/app/storage
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
@@ -45,14 +47,28 @@ services:
 
   worker:
     restart: always
-    volumes:
+    volumes: !override
       - storage-data:/app/storage
     depends_on:
       migrate:
         condition: service_completed_successfully
+    # The image's HEALTHCHECK curls the API port — wrong for a Celery process.
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app.celery_app inspect ping --timeout 5 | grep -q pong"]
+      interval: 60s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
 
   beat:
     restart: always
+    volumes: !override []
+    # Write the schedule DB somewhere the non-root user can always write.
+    command: >
+      celery -A app.workers.celery_app.celery_app beat --loglevel=info
+      -s /tmp/celerybeat-schedule
+    healthcheck:
+      disable: true
 
   frontend:
     restart: always

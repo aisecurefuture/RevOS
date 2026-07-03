@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from fastapi.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.core.rate_limit import rate_limit
@@ -46,7 +47,10 @@ async def draft_email(
     _rl: None = Depends(_ai_limit), _c: None = Depends(verify_csrf),
 ) -> DraftResult:
     brand = await get_brand_or_404(db, body.brand_id)
-    result = ai_service.draft_email(
+    # Provider calls block (local models can take minutes on CPU) — run in a
+    # thread so the event loop keeps serving health checks + other requests.
+    result = await run_in_threadpool(
+        ai_service.draft_email,
         brand_name=brand.name, voice=await _voice(db, brand.id),
         goal=body.goal, audience=body.audience)
     return DraftResult(text=result.text, source=result.source)
@@ -58,9 +62,11 @@ async def draft_social(
     _rl: None = Depends(_ai_limit), _c: None = Depends(verify_csrf),
 ) -> DraftResult:
     brand = await get_brand_or_404(db, body.brand_id)
-    result = ai_service.draft_social(
+    voice = await _voice(db, brand.id)
+    result = await run_in_threadpool(
+        ai_service.draft_social,
         brand_name=brand.name, platform=body.platform, topic=body.topic,
-        voice=await _voice(db, brand.id))
+        voice=voice)
     return DraftResult(text=result.text, source=result.source)
 
 
@@ -70,7 +76,8 @@ async def landing_copy(
     _rl: None = Depends(_ai_limit), _c: None = Depends(verify_csrf),
 ) -> DraftResult:
     brand = await get_brand_or_404(db, body.brand_id)
-    result = ai_service.landing_copy(
+    result = await run_in_threadpool(
+        ai_service.landing_copy,
         brand_name=brand.name, offer=body.offer, audience=body.audience)
     return DraftResult(text=result.text, source=result.source)
 
@@ -81,7 +88,8 @@ async def lead_magnet_ideas(
     _rl: None = Depends(_ai_limit), _c: None = Depends(verify_csrf),
 ) -> DraftResult:
     brand = await get_brand_or_404(db, body.brand_id)
-    result = ai_service.lead_magnet_ideas(
+    result = await run_in_threadpool(
+        ai_service.lead_magnet_ideas,
         brand_name=brand.name, audience=body.audience, count=body.count)
     return DraftResult(text=result.text, source=result.source)
 
@@ -98,5 +106,6 @@ async def summarize_campaign(
             f"Pipeline value (cents): {overview['pipeline_value_cents']}\n"
             f"Email sent: {overview['email']['sent']}, "
             f"open rate: {overview['email']['open_rate']}")
-    result = ai_service.summarize(title="Campaign performance", data=data)
+    result = await run_in_threadpool(
+        ai_service.summarize, title="Campaign performance", data=data)
     return DraftResult(text=result.text, source=result.source)

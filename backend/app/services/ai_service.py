@@ -59,7 +59,8 @@ UC_SUMMARY = "summary"
 class _Provider:
     name = "none"
 
-    def generate(self, *, system: str, user: str, max_tokens: int, model: str) -> str:  # pragma: no cover
+    def generate(self, *, system: str, user: str,
+                 max_tokens: int, model: str) -> str:  # pragma: no cover
         raise NotImplementedError
 
 
@@ -86,8 +87,12 @@ class OpenAIProvider(_Provider):
     def generate(self, *, system: str, user: str, max_tokens: int, model: str) -> str:
         import openai
 
+        # Cap the wait: CPU-local models are slow but bounded; the SDK default
+        # (600s × 2 retries) would pin a threadpool thread for ~30 min if the
+        # model server hangs. Template fallback kicks in on timeout.
         client = openai.OpenAI(api_key=settings.openai_api_key or "local",
-                               base_url=self.base_url or None)
+                               base_url=self.base_url or None,
+                               timeout=300, max_retries=1)
         resp = client.chat.completions.create(
             model=model, max_tokens=max_tokens,
             messages=[{"role": "system", "content": system},
