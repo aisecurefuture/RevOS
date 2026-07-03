@@ -101,13 +101,48 @@ class OpenAIProvider(_Provider):
         return resp.choices[0].message.content or ""
 
 
+class OllamaProvider(_Provider):
+    """Ollama's native /api/chat. Unlike its OpenAI-compatible /v1 endpoint,
+    the native API supports ``think: false`` — required for reasoning models
+    (Gemma 4, Qwen 3.5+), which otherwise put ALL output in the ``reasoning``
+    field and return an empty ``content`` (ollama/ollama#15288)."""
+
+    name = "ollama"
+
+    def __init__(self, base_url: str):
+        self.base_url = base_url.rstrip("/")
+
+    def generate(self, *, system: str, user: str, max_tokens: int, model: str) -> str:
+        import httpx
+
+        resp = httpx.post(
+            f"{self.base_url}/api/chat",
+            json={
+                "model": model,
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": user}],
+                "think": False,
+                "stream": False,
+                "options": {"num_predict": max_tokens},
+            },
+            timeout=300,
+        )
+        resp.raise_for_status()
+        return (resp.json().get("message") or {}).get("content") or ""
+
+
 def get_provider() -> _Provider | None:
     if settings.ai_provider == "anthropic" and settings.anthropic_api_key:
         return AnthropicProvider()
     if settings.ai_provider == "openai" and settings.openai_api_key:
         return OpenAIProvider()
     if settings.ai_provider == "local" and settings.local_ai_base_url:
-        return OpenAIProvider(base_url=settings.local_ai_base_url)
+        # A `/v1` URL means a generic OpenAI-compatible server (vLLM, etc.).
+        # A bare URL (e.g. http://ollama:11434) uses Ollama's native API,
+        # which can disable reasoning-model "thinking".
+        if settings.local_ai_base_url.rstrip("/").endswith("/v1"):
+            return OpenAIProvider(base_url=settings.local_ai_base_url)
+        return OllamaProvider(base_url=settings.local_ai_base_url)
     return None
 
 

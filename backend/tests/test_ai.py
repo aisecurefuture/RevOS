@@ -146,6 +146,54 @@ def test_model_for_cloud_provider_ignores_use_case(monkeypatch):
     assert ai_service.model_for("social") == "gpt-4o"      # map is local-only
 
 
+def test_local_provider_selection_by_url(monkeypatch):
+    """/v1 URLs -> OpenAI-compatible; bare URLs -> native Ollama (think:false)."""
+    _use_local(monkeypatch)
+    monkeypatch.setattr(ai_service.settings, "local_ai_base_url", "http://ollama:11434/v1")
+    assert isinstance(ai_service.get_provider(), ai_service.OpenAIProvider)
+    monkeypatch.setattr(ai_service.settings, "local_ai_base_url", "http://ollama:11434")
+    assert isinstance(ai_service.get_provider(), ai_service.OllamaProvider)
+
+
+def test_ollama_native_disables_thinking(monkeypatch):
+    """Native provider must send think:false and read message.content."""
+    import httpx
+
+    captured = {}
+
+    def fake_post(url, json=None, timeout=None):
+        captured["url"] = url
+        captured["json"] = json
+        return httpx.Response(
+            200, json={"message": {"content": "drafted text", "thinking": "..."}},
+            request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    p = ai_service.OllamaProvider(base_url="http://ollama:11434")
+    out = p.generate(system="s", user="u", max_tokens=300, model="gemma4:26b")
+    assert out == "drafted text"
+    assert captured["url"] == "http://ollama:11434/api/chat"
+    assert captured["json"]["think"] is False
+    assert captured["json"]["model"] == "gemma4:26b"
+    assert captured["json"]["options"]["num_predict"] == 300
+
+
+def test_ollama_empty_content_falls_back_to_template(monkeypatch):
+    """If a reasoning model still returns empty content, drafts degrade to template."""
+    import httpx
+
+    def fake_post(url, json=None, timeout=None):
+        return httpx.Response(
+            200, json={"message": {"content": "", "thinking": "all budget spent here"}},
+            request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    _use_local(monkeypatch)
+    monkeypatch.setattr(ai_service.settings, "local_ai_base_url", "http://ollama:11434")
+    r = ai_service.draft_social(brand_name="B", platform="linkedin", topic="t", voice=None)
+    assert r.source == "template"  # empty AI output never reaches the user as a blank draft
+
+
 def test_routed_model_reaches_provider(monkeypatch):
     """The resolved per-use-case model is what actually gets sent to the provider."""
     captured = {}

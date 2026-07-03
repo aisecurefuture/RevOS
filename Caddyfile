@@ -22,10 +22,22 @@ revos360.com, www.revos360.com {
 	}
 }
 
-# --- Admin console (Next.js; it proxies its own /api/* to the backend) ------
+# --- Admin console ----------------------------------------------------------
+# /api/* goes STRAIGHT to the backend (same-origin, so cookies/CSRF work
+# exactly as before) — bypassing Next.js's rewrite proxy, whose hard 30s
+# timeout kills long requests like local-AI drafts and large media uploads.
+# Everything else is the Next.js UI.
 app.revos360.com {
 	encode gzip zstd
-	reverse_proxy frontend:3000
+	handle /api/* {
+		request_body {
+			max_size 256MB
+		}
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
 	header -Server
 }
 
