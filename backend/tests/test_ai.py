@@ -12,8 +12,8 @@ class FakeProvider:
     name = "fake"
     captured: dict = {}
 
-    def generate(self, *, system, user, max_tokens):
-        FakeProvider.captured = {"system": system, "user": user}
+    def generate(self, *, system, user, max_tokens, model=None):
+        FakeProvider.captured = {"system": system, "user": user, "model": model}
         return "AI DRAFT: <script>alert(1)</script> Buy now!"
 
 
@@ -114,3 +114,54 @@ async def test_summarize_campaign_returns_draft(api, make_user):
     resp = await api.post("/api/ai/summarize-campaign", headers=h, json={"brand_id": bid})
     assert resp.status_code == 200
     assert resp.json()["text"]
+
+
+# --- Per-use-case local model routing (Gemma + Qwen) ------------------------
+def _use_local(monkeypatch, *, default="qwen2.5:7b", mapping=None):
+    monkeypatch.setattr(ai_service.settings, "ai_provider", "local")
+    monkeypatch.setattr(ai_service.settings, "local_ai_base_url", "http://ollama:11434/v1")
+    monkeypatch.setattr(ai_service.settings, "local_ai_model", default)
+    monkeypatch.setattr(ai_service.settings, "local_ai_model_map", mapping or {})
+
+
+def test_model_for_routes_by_use_case(monkeypatch):
+    _use_local(monkeypatch, default="qwen2.5:7b",
+               mapping={"social": "gemma2:9b", "landing": "gemma2:9b"})
+    assert ai_service.model_for("social") == "gemma2:9b"   # override -> Gemma
+    assert ai_service.model_for("landing") == "gemma2:9b"
+    assert ai_service.model_for("email") == "qwen2.5:7b"   # no override -> default Qwen
+    assert ai_service.model_for(None) == "qwen2.5:7b"
+
+
+def test_model_for_falls_back_to_openai_model(monkeypatch):
+    _use_local(monkeypatch, default="")
+    monkeypatch.setattr(ai_service.settings, "openai_model", "fallback:latest")
+    assert ai_service.model_for("email") == "fallback:latest"
+
+
+def test_model_for_cloud_provider_ignores_use_case(monkeypatch):
+    monkeypatch.setattr(ai_service.settings, "ai_provider", "openai")
+    monkeypatch.setattr(ai_service.settings, "openai_model", "gpt-4o")
+    monkeypatch.setattr(ai_service.settings, "local_ai_model_map", {"social": "gemma2:9b"})
+    assert ai_service.model_for("social") == "gpt-4o"      # map is local-only
+
+
+def test_routed_model_reaches_provider(monkeypatch):
+    """The resolved per-use-case model is what actually gets sent to the provider."""
+    captured = {}
+
+    class CapProvider:
+        name = "cap"
+
+        def generate(self, *, system, user, max_tokens, model):
+            captured["model"] = model
+            return "draft"
+
+    monkeypatch.setattr(ai_service, "get_provider", lambda: CapProvider())
+    _use_local(monkeypatch, default="qwen2.5:7b", mapping={"social": "gemma2:9b"})
+
+    ai_service.draft_social(brand_name="B", platform="linkedin", topic="t", voice=None)
+    assert captured["model"] == "gemma2:9b"   # social -> Gemma
+
+    ai_service.draft_email(brand_name="B", voice=None, goal="g", audience=None)
+    assert captured["model"] == "qwen2.5:7b"  # email -> default Qwen

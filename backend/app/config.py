@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
     local_ai_base_url: str = ""
+    # Default model for the `local` provider (e.g. an Ollama tag like
+    # "qwen2.5:7b"). Falls back to `openai_model` if unset.
+    local_ai_model: str = ""
+    # Optional per-use-case model overrides for the `local` provider, as a JSON
+    # object env var, e.g. LOCAL_AI_MODEL_MAP='{"email":"qwen2.5:7b","social":"gemma2:9b"}'.
+    # Keys are ai_service use-cases: email, social, landing, ideas, summary.
+    local_ai_model_map: dict[str, str] = Field(default_factory=dict)
     ai_rate_limit: str = "20/minute"
 
     # --- Payments -----------------------------------------------------------

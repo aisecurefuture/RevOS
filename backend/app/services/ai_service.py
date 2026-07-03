@@ -47,23 +47,31 @@ def _wrap(context: str) -> str:
     return f"<<<CONTEXT>>>\n{safe}\n<<<END CONTEXT>>>"
 
 
+# --- Use-case keys for per-model routing (see model_for / LOCAL_AI_MODEL_MAP) -
+UC_EMAIL = "email"
+UC_SOCIAL = "social"
+UC_LANDING = "landing"
+UC_IDEAS = "ideas"
+UC_SUMMARY = "summary"
+
+
 # --- Providers (lazy-imported; only used when configured) -------------------
 class _Provider:
     name = "none"
 
-    def generate(self, *, system: str, user: str, max_tokens: int) -> str:  # pragma: no cover
+    def generate(self, *, system: str, user: str, max_tokens: int, model: str) -> str:  # pragma: no cover
         raise NotImplementedError
 
 
 class AnthropicProvider(_Provider):
     name = "anthropic"
 
-    def generate(self, *, system: str, user: str, max_tokens: int) -> str:
+    def generate(self, *, system: str, user: str, max_tokens: int, model: str) -> str:
         import anthropic
 
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         resp = client.messages.create(
-            model=settings.anthropic_model, max_tokens=max_tokens, system=system,
+            model=model, max_tokens=max_tokens, system=system,
             messages=[{"role": "user", "content": user}],
         )
         return "".join(block.text for block in resp.content if getattr(block, "type", "") == "text")
@@ -75,13 +83,13 @@ class OpenAIProvider(_Provider):
     def __init__(self, base_url: str | None = None):
         self.base_url = base_url
 
-    def generate(self, *, system: str, user: str, max_tokens: int) -> str:
+    def generate(self, *, system: str, user: str, max_tokens: int, model: str) -> str:
         import openai
 
         client = openai.OpenAI(api_key=settings.openai_api_key or "local",
                                base_url=self.base_url or None)
         resp = client.chat.completions.create(
-            model=settings.openai_model, max_tokens=max_tokens,
+            model=model, max_tokens=max_tokens,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user}],
         )
@@ -98,14 +106,46 @@ def get_provider() -> _Provider | None:
     return None
 
 
-def generate(*, system: str, context: str, max_tokens: int = 700) -> str | None:
-    """Run a guarded generation. Returns None when AI is unavailable."""
+def model_for(use_case: str | None = None) -> str:
+    """Resolve the model name for a use-case.
+
+    For the ``local`` provider an optional per-use-case override
+    (``LOCAL_AI_MODEL_MAP``) lets you route e.g. long-form email to Qwen and
+    short social copy to Gemma; it falls back to ``LOCAL_AI_MODEL`` then
+    ``OPENAI_MODEL``. Anthropic/OpenAI keep their single configured model.
+
+    Each generation is a single call, so with Ollama's
+    ``OLLAMA_MAX_LOADED_MODELS=1`` only one model is ever resident — routing is
+    sequential, never concurrent (no two models forced into RAM at once).
+    """
+    provider = settings.ai_provider
+    if provider == "anthropic":
+        return settings.anthropic_model
+    if provider == "openai":
+        return settings.openai_model
+    if provider == "local":
+        if use_case:
+            override = settings.local_ai_model_map.get(use_case)
+            if override:
+                return override
+        return settings.local_ai_model or settings.openai_model
+    return settings.openai_model
+
+
+def generate(*, system: str, context: str, max_tokens: int = 700,
+             use_case: str | None = None) -> str | None:
+    """Run a guarded generation. Returns None when AI is unavailable.
+
+    ``use_case`` selects the model via model_for() (per-use-case routing for the
+    local provider); it does not change the guardrails, which always apply.
+    """
     provider = get_provider()
     if provider is None:
         return None
     try:
         full_system = f"{_GUARD_SYSTEM}\n\n{system}"
-        return provider.generate(system=full_system, user=_wrap(context), max_tokens=max_tokens)
+        return provider.generate(system=full_system, user=_wrap(context),
+                                 max_tokens=max_tokens, model=model_for(use_case))
     except Exception:  # noqa: BLE001 — any provider failure falls back to template
         logger.exception("AI generation failed; falling back to template")
         return None
@@ -118,6 +158,7 @@ def draft_email(*, brand_name: str, voice: str | None, goal: str, audience: str 
                "an HTML body). Match the brand voice. Keep it skimmable.",
         context=f"Brand: {brand_name}\nVoice: {voice or 'professional, clear'}\n"
                 f"Goal: {goal}\nAudience: {audience or 'subscribers'}",
+        use_case=UC_EMAIL,
     )
     if out:
         return AIResult(text=sanitize_html(out), source="ai")
@@ -132,7 +173,7 @@ def draft_social(*, brand_name: str, platform: str, topic: str, voice: str | Non
         system=f"Write one engaging {platform} post. Start with a hook, give one "
                "concrete takeaway, end with a soft CTA. No hashtags block.",
         context=f"Brand: {brand_name}\nVoice: {voice or 'energetic, helpful'}\nTopic: {topic}",
-        max_tokens=300,
+        max_tokens=300, use_case=UC_SOCIAL,
     )
     if out:
         return AIResult(text=out.strip(), source="ai")
@@ -148,6 +189,7 @@ def landing_copy(*, brand_name: str, offer: str, audience: str | None) -> AIResu
         system="Write landing-page copy: a headline, a one-line subheadline, and "
                "3 short benefit bullets. Return clean HTML.",
         context=f"Brand: {brand_name}\nOffer: {offer}\nAudience: {audience or 'visitors'}",
+        use_case=UC_LANDING,
     )
     if out:
         return AIResult(text=sanitize_html(out), source="ai")
@@ -161,7 +203,7 @@ def lead_magnet_ideas(*, brand_name: str, audience: str | None, count: int = 5) 
         system=f"List {count} lead-magnet ideas (checklists, guides, templates) as a "
                "simple bullet list.",
         context=f"Brand: {brand_name}\nAudience: {audience or 'prospects'}",
-        max_tokens=300,
+        max_tokens=300, use_case=UC_IDEAS,
     )
     if out:
         return AIResult(text=out.strip(), source="ai")
@@ -179,7 +221,7 @@ def summarize(*, title: str, data: str) -> AIResult:
     out = generate(
         system="Summarize the metrics below in 3-4 plain-English sentences and suggest "
                "one next action.",
-        context=f"{title}\n{data}", max_tokens=300)
+        context=f"{title}\n{data}", max_tokens=300, use_case=UC_SUMMARY)
     if out:
         return AIResult(text=out.strip(), source="ai")
     return AIResult(text=f"{title}: review the numbers below and prioritize the channel "
