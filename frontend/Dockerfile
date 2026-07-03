@@ -9,6 +9,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# With `output: standalone`, next.config.js rewrites() are evaluated at BUILD
+# time and baked into the routes manifest — a runtime env var cannot change
+# them. The /api proxy destination must therefore be set here. Default matches
+# the compose service name.
+ARG BACKEND_INTERNAL_URL=http://api:8000
+ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 RUN npm run build
 
 FROM node:20-alpine AS runner
