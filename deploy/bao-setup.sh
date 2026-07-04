@@ -5,8 +5,8 @@
 #
 # Run this script ONCE after the very first `docker compose up`.
 # OpenBao starts in an uninitialized, sealed state — this script:
-#   1. Detects whether Bao is already initialized.
-#   2. Initializes it (1-of-1 unseal key; dev simplicity, see prod note).
+#   1. Waits for OpenBao HTTP to be reachable.
+#   2. Initializes it (1-of-1 unseal key).
 #   3. Unseals the instance.
 #   4. Enables a KV v2 secrets engine at the "secret" mount.
 #   5. Prints the root token so you can add it to .env.
@@ -25,83 +25,111 @@
 
 set -euo pipefail
 
-BAO_ADDR="${BAO_ADDR:-http://localhost:8200}"
 COMPOSE_SERVICE="openbao"
+# Address as seen from inside the container
+INTERNAL_ADDR="http://localhost:8200"
 
-# Helper: run a bao command inside the container.
-bao() {
-    docker compose exec -e "VAULT_ADDR=${BAO_ADDR}" "${COMPOSE_SERVICE}" bao "$@"
+# Helper: run a bao CLI command inside the container.
+# OpenBao v2 uses BAO_ADDR / BAO_TOKEN env vars (not VAULT_*).
+bao_exec() {
+    docker compose exec \
+        -e "BAO_ADDR=${INTERNAL_ADDR}" \
+        -e "VAULT_ADDR=${INTERNAL_ADDR}" \
+        "${COMPOSE_SERVICE}" bao "$@"
 }
 
-echo "==> Checking OpenBao status at ${BAO_ADDR} ..."
+echo "==> Waiting for OpenBao HTTP to be reachable ..."
 
-# Wait briefly for the service to be up (it may still be starting).
-for i in $(seq 1 10); do
-    if bao status > /dev/null 2>&1; then
+# Use the health endpoint for liveness — it always returns HTTP even when
+# uninitialized or sealed (just with different status codes).
+for i in $(seq 1 20); do
+    HTTP_CODE=$(docker compose exec "${COMPOSE_SERVICE}" \
+        sh -c "wget -qO- -S http://localhost:8200/v1/sys/health 2>&1 | grep 'HTTP/' | awk '{print \$2}' | head -1" \
+        2>/dev/null || true)
+    if [ -n "${HTTP_CODE}" ]; then
+        echo "    OpenBao responding (HTTP ${HTTP_CODE})."
         break
     fi
-    echo "    Waiting for OpenBao to respond (attempt ${i}/10) ..."
-    sleep 2
+    echo "    Attempt ${i}/20 — waiting 3 s ..."
+    sleep 3
+    if [ "${i}" -eq 20 ]; then
+        echo "ERROR: OpenBao did not respond after 60 s. Check logs:"
+        echo "    docker compose logs openbao"
+        exit 1
+    fi
 done
 
-# Check initialization status (exit code 2 = not initialized, 0 = initialized+unsealed, 1 = error).
+echo "==> Checking initialisation state ..."
+
+# init-status exits: 0=initialized+unsealed, 1=error, 2=not-initialized, 3=sealed
 INIT_STATUS=0
-bao operator init-status > /dev/null 2>&1 || INIT_STATUS=$?
+bao_exec operator init -status -format=json > /dev/null 2>&1 || INIT_STATUS=$?
 
 if [ "${INIT_STATUS}" -eq 0 ]; then
     echo "==> OpenBao is already initialized and unsealed — nothing to do."
-    echo "    If you need to retrieve the root token, check your secure backup."
     exit 0
 fi
 
+if [ "${INIT_STATUS}" -eq 3 ]; then
+    echo "==> OpenBao is initialized but sealed."
+    echo "    Run: docker compose exec openbao bao operator unseal <key>"
+    exit 1
+fi
+
 if [ "${INIT_STATUS}" -ne 2 ]; then
-    echo "==> OpenBao returned unexpected status (exit ${INIT_STATUS}). Check logs:"
+    echo "ERROR: Unexpected init-status exit code ${INIT_STATUS}. Check logs:"
     echo "    docker compose logs openbao"
     exit 1
 fi
 
 echo "==> Initializing OpenBao (1 key share, threshold 1) ..."
-INIT_OUTPUT=$(bao operator init \
+INIT_OUTPUT=$(bao_exec operator init \
     -key-shares=1 \
     -key-threshold=1 \
     -format=json)
 
-UNSEAL_KEY=$(echo "${INIT_OUTPUT}" | grep -o '"unseal_keys_b64":\["[^"]*"' | cut -d'"' -f4)
-ROOT_TOKEN=$(echo "${INIT_OUTPUT}" | grep -o '"root_token":"[^"]*"' | cut -d'"' -f4)
+UNSEAL_KEY=$(printf '%s' "${INIT_OUTPUT}" | grep -o '"unseal_keys_b64":\["[^"]*"' | cut -d'"' -f4)
+ROOT_TOKEN=$(printf '%s' "${INIT_OUTPUT}" | grep -o '"root_token":"[^"]*"' | cut -d'"' -f4)
 
 if [ -z "${UNSEAL_KEY}" ] || [ -z "${ROOT_TOKEN}" ]; then
     echo "ERROR: Failed to parse init output. Raw output:"
-    echo "${INIT_OUTPUT}"
+    printf '%s\n' "${INIT_OUTPUT}"
     exit 1
 fi
 
 echo "==> Unsealing OpenBao ..."
-bao operator unseal "${UNSEAL_KEY}"
+bao_exec operator unseal "${UNSEAL_KEY}"
 
 echo "==> Enabling KV v2 secrets engine at 'secret/' ..."
-VAULT_TOKEN="${ROOT_TOKEN}" bao secrets enable \
-    -version=2 \
-    -path=secret \
-    kv || echo "    (KV engine may already be enabled — continuing)"
+docker compose exec \
+    -e "BAO_ADDR=${INTERNAL_ADDR}" \
+    -e "VAULT_ADDR=${INTERNAL_ADDR}" \
+    -e "BAO_TOKEN=${ROOT_TOKEN}" \
+    -e "VAULT_TOKEN=${ROOT_TOKEN}" \
+    "${COMPOSE_SERVICE}" bao secrets enable \
+        -version=2 \
+        -path=secret \
+        kv || echo "    (KV engine may already be enabled — continuing)"
 
 echo ""
 echo "============================================================"
 echo "  OpenBao initialization complete!"
 echo "============================================================"
 echo ""
-echo "  Unseal key (store this securely!):"
+echo "  Unseal key (SAVE THIS SECURELY — needed after every restart):"
 echo "    ${UNSEAL_KEY}"
 echo ""
 echo "  Root token:"
 echo "    ${ROOT_TOKEN}"
 echo ""
-echo "  Add the following to your .env file:"
+echo "  Add to your .env file on this server:"
 echo "    BAO_TOKEN=${ROOT_TOKEN}"
 echo ""
+echo "  Then restart the api service to pick it up:"
+echo "    docker compose up -d api worker beat"
+echo ""
 echo "  PRODUCTION WARNING:"
-echo "    - Do NOT use the root token in production."
+echo "    - Do NOT use the root token long-term."
 echo "    - Create a scoped AppRole policy for revos/* paths."
-echo "    - Store the unseal key in a KMS (AWS KMS, GCP KMS, etc.)"
-echo "      or use Vault's auto-unseal feature."
-echo "    - See: https://developer.hashicorp.com/vault/docs/auth/approle"
+echo "    - Store the unseal key in a KMS or Vault auto-unseal."
 echo "============================================================"
