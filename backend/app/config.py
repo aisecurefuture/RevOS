@@ -131,6 +131,7 @@ class Settings(BaseSettings):
     linkedin_client_secret: str = ""
     meta_app_id: str = ""
     meta_app_secret: str = ""
+    meta_redirect_uri: str = ""   # e.g. https://api.revos360.com/api/social/facebook/callback
     meta_page_access_token: str = ""
     instagram_business_account_id: str = ""
     twitter_bearer_token: str = ""

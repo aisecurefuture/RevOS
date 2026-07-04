@@ -75,6 +75,9 @@ class SocialPost(TenantModel, table=True):
         default=None, foreign_key="social_campaigns.id", index=True
     )
     social_account_id: uuid.UUID | None = Field(default=None, foreign_key="social_accounts.id")
+    social_connection_id: uuid.UUID | None = Field(
+        default=None, foreign_key="social_connections.id", index=True
+    )
     content_item_id: uuid.UUID | None = Field(default=None, foreign_key="content_items.id")
     approval_request_id: uuid.UUID | None = Field(
         default=None, foreign_key="approval_requests.id"
