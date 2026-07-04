@@ -120,9 +120,10 @@ services:
     volumes:
       - ./openbao/config.hcl:/vault/config/config.hcl:ro
       - openbao-data:/vault/data
-    # Only reachable inside the Docker network — not exposed on host
-    expose:
-      - "8200"
+    # Bound to 127.0.0.1 on the host so the deploy script can reach it
+    # but it is not accessible from the internet (no 0.0.0.0 binding).
+    ports:
+      - "127.0.0.1:8200:8200"
     healthcheck:
       test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8200/v1/sys/health || true"]
       interval: 10s
