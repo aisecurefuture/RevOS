@@ -108,10 +108,14 @@ export default function PrivacyPage() {
             </p>
             <ul className="list-disc space-y-2 pl-6">
               <li>
-                <strong>Permissions requested:</strong> We request the minimum permissions
-                necessary: <code>pages_manage_posts</code>, <code>pages_read_engagement</code>,
-                <code>instagram_content_publish</code>, <code>instagram_basic</code>, and
-                <code>business_management</code>.
+                <strong>Access requested:</strong> Meta's developer platform uses a use-case-based
+                permission system — developers select functional use cases and Meta grants the
+                underlying permissions automatically. We have requested all use cases available
+                to our app type that are necessary to provide social publishing features. These
+                cover managing Facebook Pages, reading page engagement, and publishing content
+                to Instagram Business Accounts. Certain use cases are restricted by Meta
+                and were not available for us to request. We do not request or receive access
+                to personal profiles, private messages, or ad accounts.
               </li>
               <li>
                 <strong>What we access:</strong> We access your Facebook Pages and linked
