@@ -30,8 +30,25 @@ class AdminUser(BaseModel, table=True):
     last_login_at: datetime | None = Field(default=None)
     # Bumped on password change / forced logout to invalidate all prior JWTs.
     token_version: int = Field(default=0)
-    # MFA / future auth metadata (no secrets stored in plaintext).
+    # Optional TOTP 2FA (Phase 2 M2). The secret is Fernet-encrypted at rest and
+    # kept in Postgres (NOT OpenBao) so login never depends on Bao being unsealed.
+    totp_enabled: bool = Field(default=False)
+    totp_secret_enc: str | None = Field(default=None, max_length=255)
+    totp_confirmed_at: datetime | None = Field(default=None)
+    # Email verification (Phase 2 M2). Null = unverified.
+    email_verified_at: datetime | None = Field(default=None)
+    # Free-form auth/profile metadata (no secrets stored in plaintext).
     settings: dict = Field(default_factory=dict, sa_type=JSON)
+
+
+class RecoveryCode(BaseModel, table=True):
+    """One-time 2FA recovery codes (stored hashed; shown to the user once)."""
+
+    __tablename__ = "recovery_codes"
+
+    user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
+    code_hash: str = Field(max_length=128, index=True)
+    used_at: datetime | None = Field(default=None)
 
 
 class AuditLog(BaseModel, table=True):

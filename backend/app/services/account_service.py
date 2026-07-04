@@ -12,7 +12,11 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.core.exceptions import ConflictError, NotFoundError, PermissionError_
+from app.core.rbac import role_at_least
+
 from app.models.account import Account, AccountType, Membership
+from app.models.base import utcnow
 from app.models.user import AdminUser, Role
 
 
@@ -39,6 +43,48 @@ async def create_personal_account(db: AsyncSession, user: AdminUser) -> Account:
     return account
 
 
+async def create_team_account(db: AsyncSession, user: AdminUser, name: str) -> Account:
+    """Create a team workspace owned by the user (owner membership)."""
+    account = Account(
+        type=AccountType.team,
+        name=name.strip(),
+        slug=f"{_slugify(name)}-{uuid.uuid4().hex[:6]}",
+        owner_user_id=user.id,
+    )
+    db.add(account)
+    await db.flush()
+    db.add(Membership(user_id=user.id, account_id=account.id, role=Role.owner))
+    await db.flush()
+    return account
+
+
+async def accounts_for_user(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[tuple[Account, Role]]:
+    """The (account, role) pairs the user belongs to, oldest first."""
+    res = await db.execute(
+        select(Account, Membership.role)
+        .join(Membership, Membership.account_id == Account.id)
+        .where(
+            Membership.user_id == user_id,
+            Membership.deleted_at.is_(None),
+            Account.deleted_at.is_(None),
+        )
+        .order_by(Membership.created_at.asc())
+    )
+    return [(a, r) for a, r in res.all()]
+
+
+async def list_members(db: AsyncSession, account_id: uuid.UUID) -> list[tuple[AdminUser, Role]]:
+    res = await db.execute(
+        select(AdminUser, Membership.role)
+        .join(Membership, Membership.user_id == AdminUser.id)
+        .where(Membership.account_id == account_id, Membership.deleted_at.is_(None))
+        .order_by(Membership.created_at.asc())
+    )
+    return [(u, r) for u, r in res.all()]
+
+
 async def get_membership(
     db: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID
 ) -> Membership | None:
@@ -59,6 +105,62 @@ async def list_memberships(db: AsyncSession, user_id: uuid.UUID) -> list[Members
         .order_by(Membership.created_at.asc())
     )
     return list(res.scalars().all())
+
+
+async def remove_member(
+    db: AsyncSession,
+    account_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    requester: Membership,
+) -> None:
+    """Remove a member from an account. Requires owner role. Cannot remove the owner."""
+    if not role_at_least(requester.role, Role.owner):
+        raise PermissionError_("Only account owners can remove members.")
+    if target_user_id == requester.user_id:
+        raise ConflictError("You cannot remove yourself. Transfer ownership first.")
+    res = await db.execute(
+        select(Membership).where(
+            Membership.user_id == target_user_id,
+            Membership.account_id == account_id,
+            Membership.deleted_at.is_(None),
+        )
+    )
+    target = res.scalar_one_or_none()
+    if target is None:
+        raise NotFoundError("Member not found in this account.")
+    if target.role == Role.owner:
+        raise PermissionError_("Cannot remove the account owner.")
+    target.deleted_at = utcnow()
+    db.add(target)
+    await db.flush()
+
+
+async def change_member_role(
+    db: AsyncSession,
+    account_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    new_role: Role,
+    requester: Membership,
+) -> Membership:
+    """Change a member's role. Requires owner role. Cannot demote the owner."""
+    if not role_at_least(requester.role, Role.owner):
+        raise PermissionError_("Only account owners can change member roles.")
+    res = await db.execute(
+        select(Membership).where(
+            Membership.user_id == target_user_id,
+            Membership.account_id == account_id,
+            Membership.deleted_at.is_(None),
+        )
+    )
+    target = res.scalar_one_or_none()
+    if target is None:
+        raise NotFoundError("Member not found in this account.")
+    if target.role == Role.owner:
+        raise PermissionError_("Cannot change the account owner's role.")
+    target.role = new_role
+    db.add(target)
+    await db.flush()
+    return target
 
 
 async def resolve_active_membership(

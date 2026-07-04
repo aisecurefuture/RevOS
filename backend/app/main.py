@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
 def register_routers(app: FastAPI) -> None:
     """Mount feature routers. Populated incrementally by later modules."""
     from app.routers import (
+        accounts,
         ai,
         analytics,
         approvals,
@@ -68,6 +69,7 @@ def register_routers(app: FastAPI) -> None:
     )
 
     app.include_router(auth.router, prefix="/api")
+    app.include_router(accounts.router, prefix="/api")
     app.include_router(brands.router, prefix="/api")
     app.include_router(offers.router, prefix="/api")
     app.include_router(campaigns.router, prefix="/api")

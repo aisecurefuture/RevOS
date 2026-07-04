@@ -47,3 +47,5 @@ aiosqlite==0.20.0              # async in-memory DB for router tests
 respx==0.22.0                  # mock httpx (Resend integration tests)
 ruff==0.8.6
 mypy==1.14.1
+pyotp==2.9.0                   # TOTP 2FA (Phase 2 M2)
+cryptography==44.0.0           # Fernet at-rest encryption for TOTP secrets (M2)

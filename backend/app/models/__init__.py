@@ -5,7 +5,7 @@ is what Alembic autogenerate and ``create_all`` rely on. Import order respects
 Python-level symbol dependencies (FK strings are resolved later by SQLAlchemy).
 """
 
-from app.models.account import Account, AccountType, Membership
+from app.models.account import Account, AccountType, Invitation, Membership
 from app.models.analytics import (
     ConversionGoal,
     Event,
@@ -85,15 +85,15 @@ from app.models.social import (
     SocialPlatform,
     SocialPost,
 )
-from app.models.user import AdminUser, ApiKey, AuditLog, Role
+from app.models.user import AdminUser, ApiKey, AuditLog, RecoveryCode, Role
 
 __all__ = [
     # base
     "BaseModel", "IDModel", "TimestampModel", "utcnow",
     # user
-    "AdminUser", "ApiKey", "AuditLog", "Role",
+    "AdminUser", "ApiKey", "AuditLog", "RecoveryCode", "Role",
     # account / tenancy
-    "Account", "AccountType", "Membership",
+    "Account", "AccountType", "Invitation", "Membership",
     # brand
     "Brand", "BrandType", "BrandVoice", "Audience", "BuyerPersona",
     # offer

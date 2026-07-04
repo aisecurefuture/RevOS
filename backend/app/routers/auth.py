@@ -25,21 +25,35 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     generate_csrf_token,
+    make_signed_token,
+    read_signed_token,
 )
 from app.deps import CurrentUser, DbSession, verify_csrf
-from app.models.user import AdminUser
+from app.models.user import AdminUser, Role
+from app.schemas.account import AcceptInvitationRequest, RegisterRequest
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     PasswordChangeRequest,
+    RecoveryCodesResponse,
+    TwoFACodeRequest,
+    TwoFADisableRequest,
+    TwoFALoginRequest,
+    TwoFASetupResponse,
+    UpdateProfileRequest,
     UserOut,
 )
+from app.services import invitation_service, twofa_service, verification_service
 from app.services.account_service import resolve_active_membership
 from app.services.auth_service import (
     authenticate_user,
     change_password,
+    create_user,
     update_last_login,
 )
+
+_2FA_SALT = "2fa-pending"
+_2FA_MAX_AGE = 300  # a 2FA challenge is valid for 5 minutes
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -85,15 +99,23 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(CSRF_COOKIE, path="/")
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login")
 async def login(
     request: Request,
     response: Response,
     body: LoginRequest,
     db: DbSession,
     _rl: None = Depends(rate_limit_login),
-) -> LoginResponse:
+):
     user = await authenticate_user(db, body.email, body.password)
+    # 2FA gate: password is correct, but issue only a short-lived challenge token
+    # (no session) until the second factor is provided.
+    if user.totp_enabled:
+        pending = make_signed_token(
+            {"uid": str(user.id), "tv": user.token_version}, salt=_2FA_SALT
+        )
+        await write_audit(db, action="auth.login.2fa_challenge", user_id=user.id, request=request)
+        return {"twofa_required": True, "pending_token": pending}
     await update_last_login(db, user)
     membership = await resolve_active_membership(db, user, None)
     active_account = str(membership.account_id) if membership else None
@@ -101,6 +123,34 @@ async def login(
     csrf = generate_csrf_token()
     _set_auth_cookies(response, user, csrf, active_account=active_account, role=role)
     await write_audit(db, action="auth.login", user_id=user.id, request=request)
+    return LoginResponse(user=UserOut.model_validate(user), csrf_token=csrf)
+
+
+@router.post("/register", response_model=LoginResponse, status_code=201)
+async def register(
+    request: Request,
+    response: Response,
+    body: RegisterRequest,
+    db: DbSession,
+    _rl: None = Depends(rate_limit_login),
+) -> LoginResponse:
+    """Self-signup: creates the user + their personal workspace, then logs them
+    in. New signups own their personal account."""
+    user = await create_user(
+        db, email=body.email, password=body.password,
+        full_name=body.full_name, role=Role.owner,
+    )
+    membership = await resolve_active_membership(db, user, None)
+    active_account = str(membership.account_id) if membership else None
+    role = membership.role if membership else user.role
+    csrf = generate_csrf_token()
+    _set_auth_cookies(response, user, csrf, active_account=active_account, role=role)
+    await write_audit(db, action="auth.register", user_id=user.id, request=request)
+    # Send email verification in background (best-effort; non-fatal if it fails).
+    try:
+        verification_service.send_verification_email(user)
+    except Exception:
+        pass
     return LoginResponse(user=UserOut.model_validate(user), csrf_token=csrf)
 
 
@@ -142,6 +192,65 @@ async def me(user: CurrentUser) -> UserOut:
     return UserOut.model_validate(user)
 
 
+@router.patch("/me", response_model=UserOut)
+async def update_me(
+    body: UpdateProfileRequest,
+    user: CurrentUser,
+    db: DbSession,
+    _: None = Depends(verify_csrf),
+) -> UserOut:
+    """Update the current user's profile (name, timezone, avatar, notifications)."""
+    if body.full_name is not None:
+        user.full_name = body.full_name.strip()
+    settings_patch: dict = {}
+    if body.timezone is not None:
+        settings_patch["timezone"] = body.timezone
+    if body.avatar_url is not None:
+        settings_patch["avatar_url"] = body.avatar_url
+    if body.notifications is not None:
+        settings_patch["notifications"] = body.notifications
+    if settings_patch:
+        user.settings = {**(user.settings or {}), **settings_patch}
+    db.add(user)
+    await db.flush()
+    await db.refresh(user)
+    return UserOut.model_validate(user)
+
+
+@router.get("/verify-email")
+async def verify_email(token: str, db: DbSession) -> dict:
+    """Consume an email verification link (GET so it works as a plain href)."""
+    user = await verification_service.verify_email_token(db, token)
+    return {"status": "verified", "email": user.email}
+
+
+@router.post("/verify-email/resend")
+async def resend_verification(
+    user: CurrentUser,
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Re-send the verification email (rate-limiting left to the login RL dep)."""
+    if user.email_verified_at is not None:
+        return {"status": "already_verified"}
+    try:
+        verification_service.send_verification_email(user)
+    except Exception:
+        pass
+    return {"status": "sent"}
+
+
+@router.post("/invitation/accept")
+async def accept_invitation(
+    body: AcceptInvitationRequest,
+    user: CurrentUser,
+    db: DbSession,
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Exchange an invitation token for a membership in the invited account."""
+    membership = await invitation_service.accept_invitation(db, body.token, user)
+    return {"account_id": str(membership.account_id), "role": membership.role}
+
+
 @router.post("/password")
 async def change_pw(
     request: Request,
@@ -153,3 +262,61 @@ async def change_pw(
     await change_password(db, user, body.current_password, body.new_password)
     await write_audit(db, action="auth.password_change", user_id=user.id, request=request)
     return {"status": "password_changed"}
+
+
+# --- 2FA (TOTP) -------------------------------------------------------------
+@router.post("/2fa/setup", response_model=TwoFASetupResponse)
+async def twofa_setup(
+    user: CurrentUser, db: DbSession, _: None = Depends(verify_csrf)
+) -> TwoFASetupResponse:
+    secret, uri = await twofa_service.start_setup(db, user)
+    return TwoFASetupResponse(secret=secret, otpauth_uri=uri)
+
+
+@router.post("/2fa/verify", response_model=RecoveryCodesResponse)
+async def twofa_verify(
+    request: Request, body: TwoFACodeRequest, user: CurrentUser, db: DbSession,
+    _: None = Depends(verify_csrf),
+) -> RecoveryCodesResponse:
+    codes = await twofa_service.confirm_setup(db, user, body.code)
+    await write_audit(db, action="auth.2fa.enabled", user_id=user.id, request=request)
+    return RecoveryCodesResponse(recovery_codes=codes)
+
+
+@router.post("/2fa/disable")
+async def twofa_disable(
+    request: Request, body: TwoFADisableRequest, user: CurrentUser, db: DbSession,
+    _: None = Depends(verify_csrf),
+) -> dict:
+    await twofa_service.disable(db, user, body.password, body.code)
+    await write_audit(db, action="auth.2fa.disabled", user_id=user.id, request=request)
+    return {"status": "disabled"}
+
+
+@router.post("/2fa/login", response_model=LoginResponse)
+async def twofa_login(
+    request: Request, response: Response, body: TwoFALoginRequest, db: DbSession,
+    _rl: None = Depends(rate_limit_login),
+) -> LoginResponse:
+    """Second step of a 2FA login: exchange the challenge token + a TOTP/recovery
+    code for a full session."""
+    try:
+        data = read_signed_token(body.pending_token, salt=_2FA_SALT, max_age_seconds=_2FA_MAX_AGE)
+    except AuthError as exc:
+        raise AuthError("Your 2FA session expired. Please sign in again.") from exc
+    user = await db.get(AdminUser, uuid.UUID(str(data["uid"])))
+    if (
+        user is None or not user.is_active or user.deleted_at is not None
+        or int(data.get("tv", 0)) != user.token_version
+    ):
+        raise AuthError("Your 2FA session is no longer valid. Please sign in again.")
+    if not await twofa_service.verify_second_factor(db, user, body.code):
+        raise AuthError("Invalid authentication code.")
+    await update_last_login(db, user)
+    membership = await resolve_active_membership(db, user, None)
+    active_account = str(membership.account_id) if membership else None
+    role = membership.role if membership else user.role
+    csrf = generate_csrf_token()
+    _set_auth_cookies(response, user, csrf, active_account=active_account, role=role)
+    await write_audit(db, action="auth.login.2fa_success", user_id=user.id, request=request)
+    return LoginResponse(user=UserOut.model_validate(user), csrf_token=csrf)

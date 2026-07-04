@@ -87,6 +87,39 @@ async def api(app, async_session_factory):
 
 
 @pytest_asyncio.fixture
+async def make_client(app, async_session_factory):
+    """Factory that mints fresh AsyncClient instances sharing the same DB.
+
+    Each client has its own cookie jar, so multi-user tests avoid the CSRF
+    double-submit collision that occurs when two users share one client.
+    """
+
+    async def _override_session():
+        async with async_session_factory() as session:
+            yield session
+            await session.commit()
+
+    app.dependency_overrides[get_session] = _override_session
+    transport = ASGITransport(app=app)
+    clients: list[AsyncClient] = []
+
+    async def _make() -> AsyncClient:
+        client = AsyncClient(transport=transport, base_url="http://testserver")
+        await client.__aenter__()
+        clients.append(client)
+        return client
+
+    yield _make
+
+    for c in clients:
+        try:
+            await c.__aexit__(None, None, None)
+        except Exception:
+            pass
+    app.dependency_overrides.pop(get_session, None)
+
+
+@pytest_asyncio.fixture
 async def owner_credentials(async_session_factory):
     """Seed an owner user and return its login credentials."""
     from app.models.user import Role

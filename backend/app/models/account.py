@@ -8,6 +8,7 @@ user a role within an account; authorization is per-account, not global.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from enum import StrEnum
 
 import sqlalchemy as sa
@@ -42,3 +43,18 @@ class Membership(BaseModel, table=True):
     user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
     account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
     role: Role = Field(default=Role.viewer, sa_type=sa.String, max_length=20)
+
+
+class Invitation(BaseModel, table=True):
+    """Pending invitation for a non-member to join an account (7-day signed link)."""
+
+    __tablename__ = "invitations"
+    __table_args__ = (
+        sa.UniqueConstraint("account_id", "email", name="uq_invitation_account_email"),
+    )
+
+    account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
+    email: str = Field(max_length=320, index=True)
+    role: Role = Field(default=Role.viewer, sa_type=sa.String, max_length=20)
+    invited_by_user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
+    accepted_at: datetime | None = Field(default=None)
