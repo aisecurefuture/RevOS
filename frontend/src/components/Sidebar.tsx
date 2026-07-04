@@ -51,7 +51,11 @@ export function Sidebar() {
         })}
       </nav>
       <div className="border-t border-slate-200 p-4 text-xs text-slate-400">
-        Approval-first automation
+        <p className="mb-1">Approval-first automation</p>
+        <div className="flex gap-3">
+          <Link href="/privacy" className="hover:text-slate-600 hover:underline">Privacy</Link>
+          <Link href="/terms" className="hover:text-slate-600 hover:underline">Terms</Link>
+        </div>
       </div>
     </aside>
   );

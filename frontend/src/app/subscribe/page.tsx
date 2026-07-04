@@ -284,7 +284,10 @@ export default function SubscribePage() {
         </div>
 
         <p className="mt-4 text-center text-xs text-slate-400">
-          Payments secured by Stripe. Cancel any time.
+          Payments secured by Stripe. Cancel any time.{" "}
+          <Link href="/privacy" className="hover:underline">Privacy</Link>
+          {" · "}
+          <Link href="/terms" className="hover:underline">Terms</Link>
         </p>
       </div>
     </div>
