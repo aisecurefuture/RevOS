@@ -154,7 +154,7 @@ export default function SubscribePage() {
       <div className="mx-auto max-w-2xl">
         {/* Header */}
         <div className="mb-10 text-center">
-          <p className="text-4xl mb-3">🛡️</p>
+          <img src="/logo.svg" alt="RevOS360" width={160} height={36} className="mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-slate-900">
             {trialExpired ? "Your trial has ended" : "Choose your plan"}
           </h1>

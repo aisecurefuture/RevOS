@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="revos360 mark">
+  <defs>
+    <linearGradient id="rgmark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="11" fill="url(#rgmark)"/>
+  <circle cx="24" cy="24" r="13" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="2.4"/>
+  <path d="M13 31 L20 25 L26 28 L34 16.5" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M28.6 16 L34 16.5 L33.6 21.8" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

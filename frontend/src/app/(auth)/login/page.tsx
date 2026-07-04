@@ -38,9 +38,8 @@ function LoginForm() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-6 text-center">
-          <div className="text-3xl">🛡️</div>
-          <h1 className="mt-2 text-xl font-bold text-slate-900">RevOS</h1>
-          <p className="text-sm text-slate-500">Sign in to your admin console</p>
+          <img src="/logo.svg" alt="RevOS360" width={160} height={36} className="mx-auto" />
+          <p className="mt-3 text-sm text-slate-500">Sign in to your admin console</p>
         </div>
         {justReset ? (
           <p className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
