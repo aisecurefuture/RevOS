@@ -96,10 +96,13 @@ async def test_enhance_and_approve_variant(api, make_user):
     approved = await api.post(f"/api/media/variants/{vid}/approve", headers=h)
     assert approved.json()["state"] == "approved"
 
-    # Variant file is downloadable.
+    # Variant file is downloadable — as an attachment, so a browser navigation
+    # saves the file instead of rendering it inline under the strict API CSP.
     file_resp = await api.get(f"/api/media/variants/{vid}/file")
     assert file_resp.status_code == 200
     assert file_resp.headers["content-type"] == "image/jpeg"
+    assert file_resp.headers["content-disposition"].startswith("attachment")
+    assert "linkedin" in file_resp.headers["content-disposition"]
 
 
 @pytest.mark.asyncio

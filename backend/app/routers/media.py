@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import Response
@@ -109,6 +110,15 @@ async def approve_variant(
     return MediaVariantOut.model_validate(variant)
 
 
+def _attachment_headers(filename: str) -> dict[str, str]:
+    """Content-Disposition for a download. Forces the browser to save the file
+    rather than render it inline — inline rendering navigates to this API URL,
+    whose strict CSP (default-src 'none') blocks the built-in media viewer.
+    Both the plain and RFC 5987 (UTF-8) filename forms are provided."""
+    safe = filename.replace("\r", "").replace("\n", "").replace('"', "").strip() or "download"
+    return {"Content-Disposition": f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(safe)}"}
+
+
 @router.get("/{asset_id}/original")
 async def download_original(
     asset_id: uuid.UUID,
@@ -117,7 +127,11 @@ async def download_original(
 ) -> Response:
     asset = await media_service.get_asset_or_404(db, asset_id)
     data = get_storage().read(asset.original_path)
-    return Response(content=data, media_type=asset.mime_type or "application/octet-stream")
+    return Response(
+        content=data,
+        media_type=asset.mime_type or "application/octet-stream",
+        headers=_attachment_headers(asset.original_filename or f"asset_{asset_id}"),
+    )
 
 
 @router.get("/variants/{variant_id}/file")
@@ -129,4 +143,11 @@ async def download_variant(
     variant = await media_service.get_variant_or_404(db, variant_id)
     data = get_storage().read(variant.path)
     media_type = "video/mp4" if variant.format == "mp4" else "image/jpeg"
-    return Response(content=data, media_type=media_type)
+    ext = variant.format or ("mp4" if media_type == "video/mp4" else "jpg")
+    base = "_".join(p for p in (variant.platform, variant.purpose) if p) or f"variant_{variant_id}"
+    dims = f"_{variant.width}x{variant.height}" if variant.width and variant.height else ""
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers=_attachment_headers(f"{base}{dims}.{ext}"),
+    )
