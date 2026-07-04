@@ -17,10 +17,19 @@ from app.core.security import (
     csrf_tokens_match,
     decode_token,
 )
+from app.core.tenancy import set_active_account
 from app.database import get_session
 from app.models.user import AdminUser, Role
+from app.services.account_service import resolve_active_membership
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+def _parse_uuid(value) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value)) if value else None
+    except (ValueError, TypeError):
+        return None
 
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
@@ -48,6 +57,16 @@ async def get_current_user(request: Request, db: DbSession) -> AdminUser:
     # Reject tokens minted before the latest password change / forced logout.
     if int(payload.get("tv", 0)) != user.token_version:
         raise AuthError("Session has been invalidated. Please sign in again.")
+    # Phase 2: resolve the active account (tenant) + the user's role *within it*,
+    # set the request-scoped tenant context, and stash the role for require_role.
+    membership = await resolve_active_membership(db, user, _parse_uuid(payload.get("act")))
+    if membership is not None:
+        set_active_account(membership.account_id)
+        request.state.account_id = membership.account_id
+        request.state.account_role = membership.role
+    else:  # legacy/pre-migration token with no membership: fall back to global role
+        request.state.account_id = None
+        request.state.account_role = user.role
     return user
 
 
@@ -55,10 +74,11 @@ CurrentUser = Annotated[AdminUser, Depends(get_current_user)]
 
 
 def require_role(required: Role):
-    """Dependency factory enforcing a minimum role."""
+    """Dependency factory enforcing a minimum role *within the active account*."""
 
-    async def _dep(user: CurrentUser) -> AdminUser:
-        if not role_at_least(user.role, required):
+    async def _dep(request: Request, user: CurrentUser) -> AdminUser:
+        role = getattr(request.state, "account_role", None) or user.role
+        if not role_at_least(role, required):
             raise PermissionError_(
                 f"This action requires '{required}' privileges.", code="insufficient_role"
             )

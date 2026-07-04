@@ -15,7 +15,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class ApprovalAction(StrEnum):
@@ -37,7 +37,7 @@ class ApprovalStatus(StrEnum):
     expired = "expired"
 
 
-class ApprovalRequest(BaseModel, table=True):
+class ApprovalRequest(TenantModel, table=True):
     __tablename__ = "approval_requests"
 
     brand_id: uuid.UUID | None = Field(default=None, foreign_key="brands.id", index=True)

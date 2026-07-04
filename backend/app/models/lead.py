@@ -14,7 +14,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class ConsentStatus(StrEnum):
@@ -25,7 +25,7 @@ class ConsentStatus(StrEnum):
     unsubscribed = "unsubscribed"       # opted out — suppressed
 
 
-class Lead(BaseModel, table=True):
+class Lead(TenantModel, table=True):
     __tablename__ = "leads"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -63,7 +63,7 @@ class Lead(BaseModel, table=True):
         return self.consent_status == ConsentStatus.confirmed and self.deleted_at is None
 
 
-class ConsentRecord(BaseModel, table=True):
+class ConsentRecord(TenantModel, table=True):
     """Immutable evidence trail of every consent event (GDPR/CAN-SPAM)."""
 
     __tablename__ = "consent_records"
@@ -78,7 +78,7 @@ class ConsentRecord(BaseModel, table=True):
     evidence: dict = Field(default_factory=dict, sa_type=JSON)       # snapshot of form/consent text
 
 
-class Tag(BaseModel, table=True):
+class Tag(TenantModel, table=True):
     __tablename__ = "tags"
 
     brand_id: uuid.UUID | None = Field(default=None, foreign_key="brands.id", index=True)
@@ -88,7 +88,7 @@ class Tag(BaseModel, table=True):
     __table_args__ = (sa.UniqueConstraint("brand_id", "name", name="uq_tag_brand_name"),)
 
 
-class LeadTagLink(BaseModel, table=True):
+class LeadTagLink(TenantModel, table=True):
     """Many-to-many link between leads and tags."""
 
     __tablename__ = "lead_tags"
@@ -99,7 +99,7 @@ class LeadTagLink(BaseModel, table=True):
     __table_args__ = (sa.UniqueConstraint("lead_id", "tag_id", name="uq_lead_tag"),)
 
 
-class Segment(BaseModel, table=True):
+class Segment(TenantModel, table=True):
     """Saved audience filter; dynamic segments evaluate `rules` at send time."""
 
     __tablename__ = "segments"
@@ -111,7 +111,7 @@ class Segment(BaseModel, table=True):
     is_dynamic: bool = Field(default=True)
 
 
-class UTMCapture(BaseModel, table=True):
+class UTMCapture(TenantModel, table=True):
     """First-party UTM + referrer capture for attribution."""
 
     __tablename__ = "utm_captures"

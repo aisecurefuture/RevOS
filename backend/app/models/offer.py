@@ -14,7 +14,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class OfferType(StrEnum):
@@ -33,7 +33,7 @@ class OfferStatus(StrEnum):
     archived = "archived"
 
 
-class Offer(BaseModel, table=True):
+class Offer(TenantModel, table=True):
     __tablename__ = "offers"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)

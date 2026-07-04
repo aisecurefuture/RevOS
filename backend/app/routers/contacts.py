@@ -14,7 +14,12 @@ from app.deps import DbSession, require_authenticated, require_editor, verify_cs
 from app.models.crm import Contact
 from app.models.user import AdminUser
 from app.schemas.common import Message
-from app.schemas.crm import ContactCreate, ContactImportResult, ContactOut, ContactUpdate
+from app.schemas.crm import (
+    ContactCreate,
+    ContactImportResult,
+    ContactOut,
+    ContactUpdate,
+)
 from app.services import crm_service, linkedin_import
 from app.services.crud import get_active, soft_delete
 

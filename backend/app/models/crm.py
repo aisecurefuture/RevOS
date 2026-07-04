@@ -14,7 +14,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class LifecycleStage(StrEnum):
@@ -39,7 +39,7 @@ class TaskStatus(StrEnum):
     cancelled = "cancelled"
 
 
-class Company(BaseModel, table=True):
+class Company(TenantModel, table=True):
     __tablename__ = "companies"
 
     brand_id: uuid.UUID | None = Field(default=None, foreign_key="brands.id", index=True)
@@ -52,7 +52,7 @@ class Company(BaseModel, table=True):
     custom_fields: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class Contact(BaseModel, table=True):
+class Contact(TenantModel, table=True):
     __tablename__ = "contacts"
 
     brand_id: uuid.UUID | None = Field(default=None, foreign_key="brands.id", index=True)
@@ -74,7 +74,7 @@ class Contact(BaseModel, table=True):
     custom_fields: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class PipelineStage(BaseModel, table=True):
+class PipelineStage(TenantModel, table=True):
     """Ordered stages of a sales pipeline (seeded with the default 9)."""
 
     __tablename__ = "pipeline_stages"
@@ -92,7 +92,7 @@ class PipelineStage(BaseModel, table=True):
     )
 
 
-class Deal(BaseModel, table=True):
+class Deal(TenantModel, table=True):
     __tablename__ = "deals"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -115,7 +115,7 @@ class Deal(BaseModel, table=True):
     custom_fields: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class Note(BaseModel, table=True):
+class Note(TenantModel, table=True):
     """Free-form note attached to any entity (contact/company/deal/lead)."""
 
     __tablename__ = "notes"
@@ -128,7 +128,7 @@ class Note(BaseModel, table=True):
     pinned: bool = Field(default=False)
 
 
-class Task(BaseModel, table=True):
+class Task(TenantModel, table=True):
     """Follow-up task / reminder, optionally linked to a CRM entity."""
 
     __tablename__ = "tasks"

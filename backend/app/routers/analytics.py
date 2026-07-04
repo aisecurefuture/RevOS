@@ -11,7 +11,13 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 
 from app.core.audit import write_audit
-from app.deps import DbSession, require_admin, require_authenticated, require_editor, verify_csrf
+from app.deps import (
+    DbSession,
+    require_admin,
+    require_authenticated,
+    require_editor,
+    verify_csrf,
+)
 from app.models.user import AdminUser
 from app.schemas.analytics import (
     RevenueCreate,

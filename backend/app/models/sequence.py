@@ -9,7 +9,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class SequenceType(StrEnum):
@@ -51,7 +51,7 @@ class StepRunStatus(StrEnum):
     failed = "failed"
 
 
-class Sequence(BaseModel, table=True):
+class Sequence(TenantModel, table=True):
     __tablename__ = "sequences"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -78,7 +78,7 @@ class Sequence(BaseModel, table=True):
     __table_args__ = (sa.UniqueConstraint("brand_id", "slug", name="uq_sequence_brand_slug"),)
 
 
-class SequenceStep(BaseModel, table=True):
+class SequenceStep(TenantModel, table=True):
     __tablename__ = "sequence_steps"
 
     sequence_id: uuid.UUID = Field(foreign_key="sequences.id", index=True)
@@ -97,7 +97,7 @@ class SequenceStep(BaseModel, table=True):
     is_active: bool = Field(default=True)
 
 
-class ABTest(BaseModel, table=True):
+class ABTest(TenantModel, table=True):
     """Subject-line (or variant) A/B test attached to a step or campaign."""
 
     __tablename__ = "ab_tests"
@@ -113,7 +113,7 @@ class ABTest(BaseModel, table=True):
     winner_variant: str | None = Field(default=None, max_length=40)
 
 
-class Enrollment(BaseModel, table=True):
+class Enrollment(TenantModel, table=True):
     """A lead's (or contact's) progress through a sequence."""
 
     __tablename__ = "enrollments"
@@ -139,7 +139,7 @@ class Enrollment(BaseModel, table=True):
     )
 
 
-class StepRun(BaseModel, table=True):
+class StepRun(TenantModel, table=True):
     """A single scheduled/sent step for one enrollment."""
 
     __tablename__ = "step_runs"

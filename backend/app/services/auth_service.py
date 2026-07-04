@@ -59,6 +59,10 @@ async def create_user(
     )
     db.add(user)
     await db.flush()
+    # Phase 2: every user gets a personal workspace + owner membership.
+    from app.services.account_service import create_personal_account
+
+    await create_personal_account(db, user)
     return user
 
 

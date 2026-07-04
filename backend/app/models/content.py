@@ -13,7 +13,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class ContentState(StrEnum):
@@ -41,7 +41,7 @@ class ContentChannel(StrEnum):
     video_script = "video_script"
 
 
-class ContentCalendar(BaseModel, table=True):
+class ContentCalendar(TenantModel, table=True):
     """A planning container grouping content items over a date range."""
 
     __tablename__ = "content_calendars"
@@ -54,7 +54,7 @@ class ContentCalendar(BaseModel, table=True):
     end_date: date | None = Field(default=None)
 
 
-class Pillar(BaseModel, table=True):
+class Pillar(TenantModel, table=True):
     """Reusable content pillar / theme for a brand."""
 
     __tablename__ = "pillars"
@@ -65,7 +65,7 @@ class Pillar(BaseModel, table=True):
     color: str | None = Field(default=None, max_length=16)
 
 
-class Hook(BaseModel, table=True):
+class Hook(TenantModel, table=True):
     """Reusable opening hook line (global if brand_id is NULL)."""
 
     __tablename__ = "hooks"
@@ -77,7 +77,7 @@ class Hook(BaseModel, table=True):
     performance_score: float | None = Field(default=None)
 
 
-class CTA(BaseModel, table=True):
+class CTA(TenantModel, table=True):
     """Reusable call-to-action (global if brand_id is NULL)."""
 
     __tablename__ = "ctas"
@@ -90,7 +90,7 @@ class CTA(BaseModel, table=True):
     category: str | None = Field(default=None, max_length=80)
 
 
-class Hashtag(BaseModel, table=True):
+class Hashtag(TenantModel, table=True):
     __tablename__ = "hashtags"
 
     brand_id: uuid.UUID | None = Field(default=None, foreign_key="brands.id", index=True)
@@ -99,7 +99,7 @@ class Hashtag(BaseModel, table=True):
     channel: str | None = Field(default=None, max_length=40)
 
 
-class ContentItem(BaseModel, table=True):
+class ContentItem(TenantModel, table=True):
     __tablename__ = "content_items"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)

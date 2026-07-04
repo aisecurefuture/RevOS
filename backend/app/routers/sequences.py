@@ -9,7 +9,13 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.audit import write_audit
 from app.core.exceptions import RevOSError
-from app.deps import DbSession, require_admin, require_authenticated, require_editor, verify_csrf
+from app.deps import (
+    DbSession,
+    require_admin,
+    require_authenticated,
+    require_editor,
+    verify_csrf,
+)
 from app.models.lead import Lead
 from app.models.sequence import Enrollment, Sequence, SequenceStatus, SequenceStep
 from app.models.user import AdminUser

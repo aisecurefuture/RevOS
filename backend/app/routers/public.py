@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.core.exceptions import ComplianceError, NotFoundError
 from app.core.net import client_ip as _client_ip
 from app.core.rate_limit import rate_limit
+from app.core.tenancy import set_active_account
 from app.deps import DbSession
 from app.models.campaign import Form, FormSubmission
 from app.schemas.analytics import TrackEventRequest
@@ -81,6 +82,9 @@ async def submit_form(
     form = await form_service.get_public_form(db, slug)
     if form is None:
         raise NotFoundError("Form not found.")
+    # Public path has no auth context: bind writes to the form's account so the
+    # lead/contact/submission land in the right tenant (not as orphans).
+    set_active_account(form.account_id)
 
     data, is_json = await _parse_body(request)
     ip, ua = _client_ip(request), request.headers.get("user-agent", "")[:400]

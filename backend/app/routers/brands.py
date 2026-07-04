@@ -13,7 +13,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.audit import write_audit
-from app.deps import DbSession, require_admin, require_authenticated, require_editor, verify_csrf
+from app.deps import (
+    DbSession,
+    require_admin,
+    require_authenticated,
+    require_editor,
+    verify_csrf,
+)
 from app.models.brand import Audience, Brand, BuyerPersona
 from app.models.user import AdminUser
 from app.schemas.brand import (

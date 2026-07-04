@@ -13,6 +13,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, create_engine
 
 from app.config import settings
+from app.core import (
+    tenancy as _tenancy,  # noqa: F401 — registers the tenant write-stamp event
+)
 
 # --- Async (request path) ---------------------------------------------------
 async_engine = create_async_engine(

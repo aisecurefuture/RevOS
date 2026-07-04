@@ -33,9 +33,12 @@ def _clean(data: dict) -> dict:
 
 # --- Brand ------------------------------------------------------------------
 async def create_brand(db: AsyncSession, body: BrandCreate) -> Brand:
+    from app.core.tenancy import get_active_account
+
     base = slugify(body.slug or body.name)
     slug = await unique_slug(db, Brand, base)
     brand = Brand(
+        account_id=get_active_account(),  # tenant owner (set by the auth context)
         name=clean_text(body.name) or body.name,
         slug=slug,
         brand_type=body.brand_type,

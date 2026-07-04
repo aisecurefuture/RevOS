@@ -13,7 +13,12 @@ from sqlmodel import select
 
 from app.models.brand import Brand, BrandType, BrandVoice
 from app.models.content import ContentState, Pillar
-from app.models.social import SocialCampaign, SocialCampaignStatus, SocialPlatform, SocialPost
+from app.models.social import (
+    SocialCampaign,
+    SocialCampaignStatus,
+    SocialPlatform,
+    SocialPost,
+)
 
 HAO_LINKS = {
     "tiktok": "https://www.tiktok.com/@jhhfit",

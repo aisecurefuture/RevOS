@@ -9,7 +9,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class EmailCategory(StrEnum):
@@ -46,7 +46,7 @@ class SuppressionReason(StrEnum):
     manual = "manual"
 
 
-class SenderIdentity(BaseModel, table=True):
+class SenderIdentity(TenantModel, table=True):
     """Per-brand verified "from" identity (maps to a Resend verified domain)."""
 
     __tablename__ = "sender_identities"
@@ -61,7 +61,7 @@ class SenderIdentity(BaseModel, table=True):
     is_default: bool = Field(default=False)
 
 
-class EmailTemplate(BaseModel, table=True):
+class EmailTemplate(TenantModel, table=True):
     __tablename__ = "email_templates"
 
     brand_id: uuid.UUID | None = Field(default=None, foreign_key="brands.id", index=True)
@@ -80,7 +80,7 @@ class EmailTemplate(BaseModel, table=True):
     __table_args__ = (sa.UniqueConstraint("brand_id", "slug", name="uq_template_brand_slug"),)
 
 
-class EmailMessage(BaseModel, table=True):
+class EmailMessage(TenantModel, table=True):
     """A single rendered email — queued, approved, sent, or suppressed.
 
     Open/click columns are placeholders populated from Resend webhooks where
@@ -127,7 +127,7 @@ class EmailMessage(BaseModel, table=True):
     meta: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class Suppression(BaseModel, table=True):
+class Suppression(TenantModel, table=True):
     """Do-not-send list. A brand_id of NULL means global suppression."""
 
     __tablename__ = "suppressions"

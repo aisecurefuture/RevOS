@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import SQLModel, select
 
 from app.core.exceptions import NotFoundError
+from app.core.tenancy import get_active_account, is_tenant_scoped, scope_stmt
 from app.models.base import utcnow
 
 T = TypeVar("T", bound=SQLModel)
@@ -20,7 +21,23 @@ MAX_PAGE_SIZE = 200
 
 
 async def get_active(db: AsyncSession, model: type[T], obj_id) -> T:
-    """Fetch a non-soft-deleted row or raise NotFoundError."""
+    """Fetch a non-soft-deleted row or raise NotFoundError.
+
+    When an active account is set and the model is tenant-scoped, the fetch is
+    filtered to that account (joining through Brand) — so a cross-tenant id
+    resolves to a 404, not another tenant's row.
+    """
+    account_id = get_active_account()
+    if account_id is not None and is_tenant_scoped(model):
+        stmt = select(model).where(
+            model.id == obj_id,  # type: ignore[attr-defined]
+            model.deleted_at.is_(None),  # type: ignore[attr-defined]
+        )
+        stmt = scope_stmt(stmt, model, account_id)
+        obj = (await db.execute(stmt)).scalars().first()
+        if obj is None:
+            raise NotFoundError(f"{model.__name__} not found.")
+        return obj
     obj = await db.get(model, obj_id)
     if obj is None or getattr(obj, "deleted_at", None) is not None:
         raise NotFoundError(f"{model.__name__} not found.")
@@ -37,6 +54,9 @@ async def list_active(
     offset: int = 0,
 ) -> list[T]:
     stmt = select(model).where(model.deleted_at.is_(None))  # type: ignore[attr-defined]
+    account_id = get_active_account()
+    if account_id is not None and is_tenant_scoped(model):
+        stmt = scope_stmt(stmt, model, account_id)
     for cond in filters or []:
         stmt = stmt.where(cond)
     stmt = stmt.order_by(order_by if order_by is not None else model.created_at.desc())  # type: ignore[attr-defined]

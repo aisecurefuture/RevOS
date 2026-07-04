@@ -34,6 +34,7 @@ from app.schemas.auth import (
     PasswordChangeRequest,
     UserOut,
 )
+from app.services.account_service import resolve_active_membership
 from app.services.auth_service import (
     authenticate_user,
     change_password,
@@ -45,8 +46,17 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _CSRF_MAX_AGE = 60 * 60 * 8
 
 
-def _set_auth_cookies(response: Response, user: AdminUser, csrf_token: str) -> None:
-    access = create_access_token(str(user.id), user.role, user.token_version)
+def _set_auth_cookies(
+    response: Response,
+    user: AdminUser,
+    csrf_token: str,
+    *,
+    active_account: str | None = None,
+    role: str | None = None,
+) -> None:
+    access = create_access_token(
+        str(user.id), role or user.role, user.token_version, active_account=active_account
+    )
     refresh = create_refresh_token(str(user.id), user.token_version)
     secure = settings.cookie_secure
     samesite = settings.cookie_samesite
@@ -85,8 +95,11 @@ async def login(
 ) -> LoginResponse:
     user = await authenticate_user(db, body.email, body.password)
     await update_last_login(db, user)
+    membership = await resolve_active_membership(db, user, None)
+    active_account = str(membership.account_id) if membership else None
+    role = membership.role if membership else user.role
     csrf = generate_csrf_token()
-    _set_auth_cookies(response, user, csrf)
+    _set_auth_cookies(response, user, csrf, active_account=active_account, role=role)
     await write_audit(db, action="auth.login", user_id=user.id, request=request)
     return LoginResponse(user=UserOut.model_validate(user), csrf_token=csrf)
 
@@ -103,8 +116,11 @@ async def refresh(request: Request, response: Response, db: DbSession) -> LoginR
     # Refresh tokens minted before a password change are rejected.
     if int(payload.get("tv", 0)) != user.token_version:
         raise AuthError("Session has been invalidated. Please sign in again.")
+    membership = await resolve_active_membership(db, user, None)
+    active_account = str(membership.account_id) if membership else None
+    role = membership.role if membership else user.role
     csrf = generate_csrf_token()
-    _set_auth_cookies(response, user, csrf)
+    _set_auth_cookies(response, user, csrf, active_account=active_account, role=role)
     return LoginResponse(user=UserOut.model_validate(user), csrf_token=csrf)
 
 

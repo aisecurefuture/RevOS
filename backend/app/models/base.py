@@ -55,6 +55,21 @@ class BaseModel(IDModel, TimestampModel):
     """Common base for all RevOS tables (UUID + timestamps + soft-delete)."""
 
 
+class TenantModel(BaseModel):
+    """Base for tenant-scoped tables (Phase 2 M1): adds ``account_id`` — the key
+    that isolates one workspace's data from another. Nullable at the DB level so
+    the migration can backfill and a stray NULL stays a safe orphan (invisible to
+    every tenant query); the app stamps it on write from the active account.
+
+    Inheriting from this (vs plain BaseModel) is the *explicit* marker that a
+    table is tenant data — the isolation engine keys off the class, not off the
+    presence of an ``account_id`` column (Membership has one for another reason)."""
+
+    account_id: uuid.UUID | None = Field(
+        default=None, foreign_key="accounts.id", index=True
+    )
+
+
 # Convenience JSON column type. Generic `sa.JSON` is portable (Postgres + SQLite
 # in tests). Switch to postgresql.JSONB via an Alembic migration if/when GIN
 # indexing on these blobs is needed.

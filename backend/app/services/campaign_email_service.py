@@ -20,7 +20,13 @@ from app.models.brand import Brand
 from app.models.campaign import Campaign
 from app.models.email import EmailCategory, EmailMessage, EmailStatus, Suppression
 from app.models.lead import ConsentStatus, Lead, LeadTagLink, Tag
-from app.services import approval_service, consent_service, email_service, outbox, template_service
+from app.services import (
+    approval_service,
+    consent_service,
+    email_service,
+    outbox,
+    template_service,
+)
 
 # Hard cap to avoid accidental mega-sends; surfaced in logs/approval notes.
 _MAX_RECIPIENTS = 5000

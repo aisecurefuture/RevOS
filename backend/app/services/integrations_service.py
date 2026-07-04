@@ -93,8 +93,16 @@ async def handle_inbound_contact(db: AsyncSession, data: dict) -> dict:
     """Create a CRM contact from an inbound automation payload (NOT a mailable
     lead — opt-in must happen through the consent flow)."""
     brand_id = data.get("brand_id")
+    bid = uuid.UUID(brand_id) if brand_id else None
+    if bid is not None:  # bind the inbound (no-auth) write to the brand's account
+        from app.core.tenancy import set_active_account
+        from app.models.brand import Brand
+
+        brand = await db.get(Brand, bid)
+        if brand is not None:
+            set_active_account(brand.account_id)
     contact = await crm_service.create_contact(db, {
-        "brand_id": uuid.UUID(brand_id) if brand_id else None,
+        "brand_id": bid,
         "first_name": data.get("first_name"), "last_name": data.get("last_name"),
         "email": (data.get("email") or None) and data["email"].lower(),
         "phone": data.get("phone"), "title": data.get("title"),

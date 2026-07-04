@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.exceptions import ComplianceError
 from app.core.security import make_signed_token, read_signed_token
+from app.core.tenancy import set_active_account
 from app.models.base import utcnow
 from app.models.campaign import Form, FormSubmission
 from app.models.email import EmailCategory, Suppression, SuppressionReason
@@ -191,6 +192,7 @@ async def confirm_double_optin(db: AsyncSession, token: str) -> Lead:
     lead = await db.get(Lead, uuid.UUID(data["lead"]))
     if lead is None or lead.deleted_at is not None:
         raise ComplianceError("This confirmation link is no longer valid.")
+    set_active_account(lead.account_id)  # bind no-auth writes to the lead's account
     if lead.consent_status != ConsentStatus.confirmed:
         lead.consent_status = ConsentStatus.confirmed
         lead.consent_at = lead.consent_at or utcnow()
@@ -222,6 +224,7 @@ async def unsubscribe(db: AsyncSession, token: str) -> Lead:
     lead = await db.get(Lead, uuid.UUID(data["lead"]))
     if lead is None:
         raise ComplianceError("This unsubscribe link is no longer valid.")
+    set_active_account(lead.account_id)  # bind no-auth writes to the lead's account
     lead.consent_status = ConsentStatus.unsubscribed
     lead.unsubscribed_at = utcnow()
     await record_consent(db, lead, status=ConsentStatus.unsubscribed,

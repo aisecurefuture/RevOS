@@ -9,7 +9,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class CampaignStatus(StrEnum):
@@ -39,7 +39,7 @@ class FormType(StrEnum):
     waitlist = "waitlist"
 
 
-class Campaign(BaseModel, table=True):
+class Campaign(TenantModel, table=True):
     __tablename__ = "campaigns"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -61,7 +61,7 @@ class Campaign(BaseModel, table=True):
     __table_args__ = (sa.UniqueConstraint("brand_id", "slug", name="uq_campaign_brand_slug"),)
 
 
-class LandingPage(BaseModel, table=True):
+class LandingPage(TenantModel, table=True):
     __tablename__ = "landing_pages"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -85,7 +85,7 @@ class LandingPage(BaseModel, table=True):
     published_at: datetime | None = Field(default=None)
 
 
-class Form(BaseModel, table=True):
+class Form(TenantModel, table=True):
     __tablename__ = "forms"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -110,7 +110,7 @@ class Form(BaseModel, table=True):
     is_active: bool = Field(default=True)
 
 
-class FormSubmission(BaseModel, table=True):
+class FormSubmission(TenantModel, table=True):
     __tablename__ = "form_submissions"
 
     form_id: uuid.UUID = Field(foreign_key="forms.id", index=True)

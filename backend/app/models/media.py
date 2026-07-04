@@ -13,7 +13,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 from app.models.content import ContentState
 
 
@@ -29,7 +29,7 @@ class MediaStatus(StrEnum):
     failed = "failed"
 
 
-class MediaAsset(BaseModel, table=True):
+class MediaAsset(TenantModel, table=True):
     __tablename__ = "media_assets"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -49,7 +49,7 @@ class MediaAsset(BaseModel, table=True):
     meta: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class MediaVariant(BaseModel, table=True):
+class MediaVariant(TenantModel, table=True):
     __tablename__ = "media_variants"
 
     media_asset_id: uuid.UUID = Field(foreign_key="media_assets.id", index=True)

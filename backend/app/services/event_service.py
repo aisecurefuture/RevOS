@@ -26,6 +26,16 @@ async def track_event(
     session_id: str | None = None,
     value_cents: int | None = None,
 ) -> Event:
+    # In no-auth contexts (public track / landing page views) bind the write to
+    # the brand's account so the event isn't an orphan.
+    from app.core.tenancy import get_active_account, set_active_account
+
+    if brand_id is not None and get_active_account() is None:
+        from app.models.brand import Brand
+
+        brand = await db.get(Brand, brand_id)
+        if brand is not None:
+            set_active_account(brand.account_id)
     event = Event(
         brand_id=brand_id, name=name[:120], properties=properties or {},
         lead_id=lead_id, ip_hash=_hash_ip(ip), utm=utm or {},

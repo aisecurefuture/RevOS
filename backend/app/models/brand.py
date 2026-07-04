@@ -12,7 +12,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 
 
 class BrandType(StrEnum):
@@ -23,7 +23,7 @@ class BrandType(StrEnum):
     product = "product"
 
 
-class Brand(BaseModel, table=True):
+class Brand(TenantModel, table=True):
     __tablename__ = "brands"
 
     name: str = Field(index=True, max_length=200)
@@ -40,7 +40,7 @@ class Brand(BaseModel, table=True):
     settings: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class BrandVoice(BaseModel, table=True):
+class BrandVoice(TenantModel, table=True):
     """1:1 voice/style guide for a brand — drives AI drafts and templates."""
 
     __tablename__ = "brand_voices"
@@ -55,7 +55,7 @@ class BrandVoice(BaseModel, table=True):
     vocabulary: list = Field(default_factory=list, sa_type=JSON)     # preferred terms
 
 
-class Audience(BaseModel, table=True):
+class Audience(TenantModel, table=True):
     """A targetable audience segment definition for a brand."""
 
     __tablename__ = "audiences"
@@ -68,7 +68,7 @@ class Audience(BaseModel, table=True):
     size_estimate: int | None = Field(default=None)
 
 
-class BuyerPersona(BaseModel, table=True):
+class BuyerPersona(TenantModel, table=True):
     __tablename__ = "buyer_personas"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)

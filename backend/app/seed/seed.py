@@ -33,18 +33,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("revos.seed")
 
 
-async def ensure_owner(db: AsyncSession) -> bool:
+async def ensure_owner(db: AsyncSession) -> tuple[AdminUser, bool]:
+    """Return (owner, created). Guarantees the owner has a personal account so
+    seeded tenant data has somewhere to live."""
+    from app.services.account_service import create_personal_account, list_memberships
+
     existing = await get_user_by_email(db, settings.owner_email)
     if existing is not None:
-        return False
-    db.add(AdminUser(
+        if not await list_memberships(db, existing.id):  # pre-M1 owner: backfill
+            await create_personal_account(db, existing)
+        return existing, False
+    owner = AdminUser(
         email=settings.owner_email.lower().strip(),
         hashed_password=hash_password(settings.owner_password),
         full_name=settings.owner_name, role=Role.owner,
-    ))
+    )
+    db.add(owner)
     await db.flush()
-    logger.info("Created owner user %s", settings.owner_email)
-    return True
+    await create_personal_account(db, owner)
+    logger.info("Created owner user %s + personal account", settings.owner_email)
+    return owner, True
 
 
 async def maybe_import_linkedin(db: AsyncSession) -> int:
@@ -63,7 +71,15 @@ async def maybe_import_linkedin(db: AsyncSession) -> int:
 
 
 async def seed_all(db: AsyncSession) -> dict:
-    owner_created = await ensure_owner(db)
+    from app.core.tenancy import set_active_account
+    from app.services.account_service import list_memberships
+
+    owner, owner_created = await ensure_owner(db)
+    # Bind all seeded tenant data (pipeline, brands, campaign, contacts) to the
+    # owner's personal account so it's visible in the app, not orphaned.
+    memberships = await list_memberships(db, owner.id)
+    set_active_account(memberships[0].account_id)
+
     await crm_service.ensure_default_pipeline(db, None)
     brands_created = await seed_brands(db)
     hao = await seed_hao_campaign(db)

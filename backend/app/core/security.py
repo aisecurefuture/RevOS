@@ -87,13 +87,17 @@ def _create_token(subject: str, token_type: str, expires: timedelta, **claims) -
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(subject: str, role: str, token_version: int = 0) -> str:
+def create_access_token(
+    subject: str, role: str, token_version: int = 0, active_account: str | None = None
+) -> str:
+    claims = {"role": role, "tv": token_version}
+    if active_account is not None:
+        claims["act"] = active_account  # active account (tenant) id
     return _create_token(
         subject,
         "access",
         timedelta(minutes=settings.access_token_expire_minutes),
-        role=role,
-        tv=token_version,
+        **claims,
     )
 
 

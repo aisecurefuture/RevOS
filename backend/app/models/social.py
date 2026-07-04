@@ -14,7 +14,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel
+from app.models.base import JSON, TenantModel
 from app.models.content import ContentState
 
 
@@ -35,7 +35,7 @@ class SocialCampaignStatus(StrEnum):
     archived = "archived"
 
 
-class SocialAccount(BaseModel, table=True):
+class SocialAccount(TenantModel, table=True):
     __tablename__ = "social_accounts"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -47,7 +47,7 @@ class SocialAccount(BaseModel, table=True):
     connection_meta: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class SocialCampaign(BaseModel, table=True):
+class SocialCampaign(TenantModel, table=True):
     """A multi-platform social campaign (e.g. the Hao influencer campaign)."""
 
     __tablename__ = "social_campaigns"
@@ -67,7 +67,7 @@ class SocialCampaign(BaseModel, table=True):
     settings: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class SocialPost(BaseModel, table=True):
+class SocialPost(TenantModel, table=True):
     __tablename__ = "social_posts"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)

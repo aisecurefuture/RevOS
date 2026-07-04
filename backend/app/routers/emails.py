@@ -8,7 +8,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.audit import write_audit
-from app.deps import DbSession, require_admin, require_authenticated, require_editor, verify_csrf
+from app.deps import (
+    DbSession,
+    require_admin,
+    require_authenticated,
+    require_editor,
+    verify_csrf,
+)
 from app.models.email import EmailCategory, EmailMessage, EmailStatus
 from app.models.user import AdminUser
 from app.schemas.email import (

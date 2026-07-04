@@ -9,7 +9,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, BaseModel, utcnow
+from app.models.base import JSON, TenantModel, utcnow
 
 
 class RevenueStatus(StrEnum):
@@ -18,7 +18,7 @@ class RevenueStatus(StrEnum):
     refunded = "refunded"
 
 
-class Event(BaseModel, table=True):
+class Event(TenantModel, table=True):
     """First-party, privacy-friendly event store.
 
     IP addresses are stored hashed (`ip_hash`), never raw, to keep analytics
@@ -41,7 +41,7 @@ class Event(BaseModel, table=True):
     occurred_at: datetime = Field(default_factory=utcnow, index=True)
 
 
-class UTMLink(BaseModel, table=True):
+class UTMLink(TenantModel, table=True):
     """Tracked short link with embedded UTM parameters."""
 
     __tablename__ = "utm_links"
@@ -59,7 +59,7 @@ class UTMLink(BaseModel, table=True):
     click_count: int = Field(default=0)
 
 
-class ConversionGoal(BaseModel, table=True):
+class ConversionGoal(TenantModel, table=True):
     __tablename__ = "conversion_goals"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
@@ -71,7 +71,7 @@ class ConversionGoal(BaseModel, table=True):
     period: str | None = Field(default=None, max_length=20)     # month | quarter | year
 
 
-class RevenueRecord(BaseModel, table=True):
+class RevenueRecord(TenantModel, table=True):
     """A revenue event, attributable to an offer/deal/contact for ROI math."""
 
     __tablename__ = "revenue_records"
@@ -91,7 +91,7 @@ class RevenueRecord(BaseModel, table=True):
     meta: dict = Field(default_factory=dict, sa_type=JSON)
 
 
-class RevenueGoal(BaseModel, table=True):
+class RevenueGoal(TenantModel, table=True):
     __tablename__ = "revenue_goals"
 
     brand_id: uuid.UUID = Field(foreign_key="brands.id", index=True)
