@@ -513,18 +513,36 @@ async def _youtube_access_token(conn: SocialConnection, token_data: dict) -> str
     return fresh.access_token
 
 
-async def _fetch_media_bytes(url: str) -> bytes:
-    """Download media for upload. SSRF-validated; redirects disabled so the
-    allowlist check can't be bypassed by a redirect to an internal host."""
-    validate_outbound_url(url)
-    async with httpx.AsyncClient(timeout=120.0, follow_redirects=False) as client:
-        resp = await client.get(url)
-        if resp.status_code != 200:
-            raise RevOSError(
-                f"Could not fetch media for publishing (HTTP {resp.status_code}).",
-                code="media_fetch_failed", status_code=502,
-            )
-        return resp.content
+async def _fetch_media_bytes(ref: str) -> bytes:
+    """Load media bytes for upload.
+
+    A full http(s) URL (e.g. an external CDN) is fetched over the network with
+    SSRF validation and redirects disabled so the allowlist check can't be
+    bypassed by a redirect to an internal host. Anything else is treated as a
+    storage key and read directly from the configured backend (local disk or
+    S3) — so local-storage deployments need no public media host and no SSRF
+    allowlist entry.
+    """
+    if ref.startswith(("http://", "https://")):
+        validate_outbound_url(ref)
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False) as client:
+            resp = await client.get(ref)
+            if resp.status_code != 200:
+                raise RevOSError(
+                    f"Could not fetch media for publishing (HTTP {resp.status_code}).",
+                    code="media_fetch_failed", status_code=502,
+                )
+            return resp.content
+
+    # Storage key → read straight from the backend (no network, no SSRF).
+    from app.services.storage_service import get_storage
+    try:
+        return get_storage().read(ref)
+    except FileNotFoundError as exc:
+        raise RevOSError(
+            f"Media '{ref}' was not found in storage.",
+            code="media_fetch_failed", status_code=404,
+        ) from exc
 
 
 async def execute_publish(

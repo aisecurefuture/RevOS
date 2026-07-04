@@ -208,6 +208,32 @@ class _FakeConn:
 
 
 @pytest.mark.asyncio
+async def test_fetch_media_bytes_local_key_reads_from_storage():
+    """A storage key (not an http URL) is read straight from the backend —
+    no network fetch, no SSRF allowlist needed. This is the local-storage path."""
+    class FakeStorage:
+        def read(self, key):
+            assert key == "media/abc/original/clip.mp4"
+            return b"disk-bytes"
+
+    with patch("app.services.storage_service.get_storage", lambda: FakeStorage()):
+        data = await svc._fetch_media_bytes("media/abc/original/clip.mp4")
+    assert data == b"disk-bytes"
+
+
+@pytest.mark.asyncio
+async def test_fetch_media_bytes_missing_local_key_404():
+    class FakeStorage:
+        def read(self, key):
+            raise FileNotFoundError(key)
+
+    with patch("app.services.storage_service.get_storage", lambda: FakeStorage()):
+        with pytest.raises(RevOSError) as exc:
+            await svc._fetch_media_bytes("media/missing.mp4")
+    assert exc.value.code == "media_fetch_failed"
+
+
+@pytest.mark.asyncio
 async def test_youtube_access_token_valid_skips_refresh():
     token_data = {"access_token": "still-good", "refresh_token": "rt-1",
                   "expires_at": "2999-01-01T00:00:00"}
