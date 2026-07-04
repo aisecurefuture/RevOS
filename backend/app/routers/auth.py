@@ -32,10 +32,12 @@ from app.deps import CurrentUser, DbSession, verify_csrf
 from app.models.user import AdminUser, Role
 from app.schemas.account import AcceptInvitationRequest, RegisterRequest
 from app.schemas.auth import (
+    ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
     PasswordChangeRequest,
     RecoveryCodesResponse,
+    ResetPasswordRequest,
     TwoFACodeRequest,
     TwoFADisableRequest,
     TwoFALoginRequest,
@@ -43,7 +45,7 @@ from app.schemas.auth import (
     UpdateProfileRequest,
     UserOut,
 )
-from app.services import invitation_service, twofa_service, verification_service
+from app.services import invitation_service, password_reset_service, twofa_service, verification_service
 from app.services.account_service import resolve_active_membership
 from app.services.auth_service import (
     authenticate_user,
@@ -291,6 +293,25 @@ async def twofa_disable(
     await twofa_service.disable(db, user, body.password, body.code)
     await write_audit(db, action="auth.2fa.disabled", user_id=user.id, request=request)
     return {"status": "disabled"}
+
+
+# --- Password reset ---------------------------------------------------------
+@router.post("/forgot-password")
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    db: DbSession,
+    _rl: None = Depends(rate_limit_login),
+) -> dict:
+    """Send a password-reset link. Always returns 200 (don't reveal if email exists)."""
+    await password_reset_service.send_reset_email(db, body.email)
+    return {"status": "ok"}
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest, db: DbSession) -> dict:
+    """Apply a password reset using the signed token from the email link."""
+    await password_reset_service.apply_reset(db, body.token, body.password)
+    return {"status": "password_reset"}
 
 
 @router.post("/2fa/login", response_model=LoginResponse)

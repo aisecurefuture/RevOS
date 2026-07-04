@@ -87,3 +87,13 @@ class UpdateProfileRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=80)
     avatar_url: str | None = Field(default=None, max_length=500)
     notifications: dict | None = None
+
+
+# --- Password reset ---------------------------------------------------------
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=1, max_length=200)

@@ -26,4 +26,5 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Analytics", href: "/dashboard/analytics", icon: "📈" },
   { label: "Approvals", href: "/dashboard/approvals", icon: "✅" },
   { label: "Settings", href: "/dashboard/settings", icon: "⚙️", minRole: "owner" },
+  { label: "Profile", href: "/dashboard/profile", icon: "👤" },
 ];
