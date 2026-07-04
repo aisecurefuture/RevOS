@@ -62,6 +62,34 @@ current brands/contacts/campaigns/etc. with its `account_id`.
 - **Member management:** list/change roles/remove members; owner transfer.
 - **Account switcher** in the UI; last-active account remembered.
 
+### 2a. Optional 2FA — TOTP authenticator app (P2-M2)
+
+Per-**user** (it protects the login identity, not a workspace), **opt-in**, using
+standard TOTP (RFC 6238) — Google Authenticator / Authy / 1Password, etc. Modeled
+on the CyberArmor.ai implementation.
+
+- **User fields:** `totp_enabled`, `totp_secret_enc`, `totp_confirmed_at`; plus a
+  `RecoveryCode(user_id, code_hash, used_at)` table.
+- **Enroll:** `POST /api/auth/2fa/setup` → server generates a TOTP secret, returns
+  the `otpauth://` provisioning URI (frontend renders the QR) + the manual key →
+  user submits a current code to `POST /api/auth/2fa/verify` → 2FA activates and
+  **8–10 one-time recovery codes** are shown **once** (stored only as hashes).
+- **Login becomes two-step when 2FA is on:** password succeeds → server issues a
+  short-lived, single-purpose **`2fa_pending`** token (not a session) → user submits
+  a TOTP or recovery code → full access/refresh tokens issue. A ±1 step (30s)
+  window; failed attempts are rate-limited and lock out after N tries.
+- **Disable / regenerate recovery codes:** requires re-auth (password + a current
+  code). Recovery codes are single-use; used ones are burned.
+- **Secret storage — deliberately NOT OpenBao.** The TOTP secret must be read on
+  *every* login; putting it in Bao would couple login availability to Bao being
+  unsealed (a sealed Bao after reboot would lock everyone out). So TOTP secrets are
+  **encrypted-at-rest in Postgres** (app/KMS key), keeping auth self-contained;
+  Bao holds only posting-time secrets (§4). Recovery codes are hashed, never
+  reversible.
+- **Team-enforced 2FA** (an admin can require it for all members) is noted as an
+  Agency/Enterprise entitlement — built on the same primitives, not in the first cut.
+- **Libraries:** `pyotp` (TOTP); QR rendered client-side from the provisioning URI.
+
 ---
 
 ## 3. Subscriptions & paywall — Stripe Billing (P2-M3)
@@ -166,10 +194,10 @@ Sections, permission-aware:
 
 ```
 backend/app/
-├── models/            + account.py, membership.py, invitation.py,
+├── models/            + account.py, membership.py, invitation.py, recovery_code.py,
 │                        subscription.py, social_connection.py, user_profile.py
 ├── routers/           + accounts.py, members.py, billing.py, social.py, settings.py
-│                        (auth.py gains /register, /verify-email)
+│                        (auth.py gains /register, /verify-email, /2fa/*)
 ├── services/          + account_service.py, subscription_service.py,
 │                        secrets_service.py (OpenBao), social/*.py (adapters),
 │                        entitlements.py
@@ -186,7 +214,7 @@ frontend/app/settings/ + profile / team / billing / connections pages
 | # | Module | Delivers | Depends on |
 |---|---|---|---|
 | P2-M1 | **Multi-tenancy foundation** | Account/Membership, active-account context, query scoping, data migration, **cross-tenant isolation tests** | — |
-| P2-M2 | **Accounts, members & profiles** | signup + email verify, profiles, teams, invitations, roles, account switch | M1 |
+| P2-M2 | **Accounts, members & profiles** | signup + email verify, **optional TOTP 2FA**, profiles, teams, invitations, roles, account switch | M1 |
 | P2-M3 | **Subscriptions & paywall** | Stripe Billing, plans/prices, checkout + portal, sub webhooks, trial, entitlement gating | M1 |
 | P2-M4 | **OpenBao secret custody** | Bao service + init/unseal, AppRole, `secrets_service`, path scheme, runbook | M1 |
 | P2-M5 | **Social + OAuth (Meta)** | SocialConnection, OAuth, token→Bao, adapter base, Meta FB/IG, approval-gated publish | M1, M4 |
