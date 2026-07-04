@@ -186,10 +186,10 @@ async def create_checkout_session(
         mode="subscription",
         line_items=[{"price": pid, "quantity": 1}],
         success_url=(
-            f"{settings.frontend_base_url}/billing/success"
-            "?session_id={CHECKOUT_SESSION_ID}"
+            f"{settings.frontend_base_url}/dashboard"
+            "?subscribed=1"
         ),
-        cancel_url=f"{settings.frontend_base_url}/billing",
+        cancel_url=f"{settings.frontend_base_url}/subscribe",
         allow_promotion_codes=True,
         metadata={"account_id": str(account_id)},
     )

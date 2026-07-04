@@ -17,6 +17,10 @@ function usd(cents: number): string {
 
 export default function OverviewPage() {
   const { selectedBrandId } = useBrand();
+  const [justSubscribed, setJustSubscribed] = useState(false);
+  useEffect(() => {
+    setJustSubscribed(new URLSearchParams(window.location.search).get("subscribed") === "1");
+  }, []);
   const [data, setData] = useState<AnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +42,11 @@ export default function OverviewPage() {
 
   return (
     <>
+      {justSubscribed && (
+        <div className="mb-4 rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
+          Welcome to RevOS! Your subscription is active. You&apos;re all set.
+        </div>
+      )}
       <PageHeader
         title="Overview"
         description="Revenue, leads, and pipeline at a glance — across the selected brand."
