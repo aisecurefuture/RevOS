@@ -132,10 +132,30 @@ export default function MediaPage() {
           {assets.map((a) => (
             <Card key={a.id}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <button type="button" className="text-left" onClick={() => void openDetail(a.id)}>
-                  <span className="font-medium text-slate-800">{a.original_filename}</span>
-                  <span className="ml-2 text-xs text-slate-400">
-                    {a.kind} · {a.width}×{a.height} · {a.status}
+                <button type="button" className="flex items-center gap-3 text-left" onClick={() => void openDetail(a.id)}>
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded bg-slate-100">
+                    {a.kind === "video" ? (
+                      <video
+                        src={`/api/media/${a.id}/original`}
+                        preload="metadata"
+                        muted
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/media/${a.id}/original`}
+                        loading="lazy"
+                        alt={a.original_filename}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                  </span>
+                  <span>
+                    <span className="font-medium text-slate-800">{a.original_filename}</span>
+                    <span className="ml-2 text-xs text-slate-400">
+                      {a.kind} · {a.width}×{a.height} · {a.status}
+                    </span>
                   </span>
                 </button>
                 {canEdit ? (
@@ -157,6 +177,24 @@ export default function MediaPage() {
                 <div className="mt-3 grid grid-cols-1 gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:grid-cols-3">
                   {(open.variants ?? []).map((v) => (
                     <div key={v.id} className="rounded-lg border border-slate-200 p-2 text-xs">
+                      <div className="mb-2 flex min-h-24 items-center justify-center overflow-hidden rounded bg-slate-50">
+                        {v.format === "mp4" ? (
+                          <video
+                            src={`/api/media/variants/${v.id}/file`}
+                            controls
+                            preload="metadata"
+                            className="max-h-40 w-full object-contain"
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`/api/media/variants/${v.id}/file`}
+                            loading="lazy"
+                            alt={`${v.platform} ${v.purpose} rendition`}
+                            className="max-h-40 w-full object-contain"
+                          />
+                        )}
+                      </div>
                       <p className="font-medium text-slate-700">
                         {v.platform} · {v.purpose}
                       </p>
