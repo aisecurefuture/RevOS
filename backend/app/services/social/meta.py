@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from urllib.parse import urlencode
 
 import httpx
 
@@ -57,13 +58,13 @@ class PublishResult:
 
 def connect_url(state: str) -> str:
     """Build the Meta OAuth dialog URL."""
-    params = (
-        f"client_id={settings.meta_app_id}"
-        f"&redirect_uri={settings.meta_redirect_uri}"
-        f"&state={state}"
-        f"&scope={_META_SCOPES}"
-        f"&response_type=code"
-    )
+    params = urlencode({
+        "client_id": settings.meta_app_id,
+        "redirect_uri": settings.meta_redirect_uri,
+        "state": state,
+        "scope": _META_SCOPES,
+        "response_type": "code",
+    })
     return f"{_DIALOG}?{params}"
 
 
