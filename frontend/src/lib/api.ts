@@ -89,6 +89,11 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+  register: (email: string, password: string, full_name: string) =>
+    apiFetch<LoginResponse>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password, full_name }),
+    }),
   me: () => apiFetch<User>("/auth/me"),
   logout: () => apiFetch<{ status: string }>("/auth/logout", { method: "POST" }),
   refresh: () => apiFetch<LoginResponse>("/auth/refresh", { method: "POST" }),
