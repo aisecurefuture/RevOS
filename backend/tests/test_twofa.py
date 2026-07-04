@@ -83,6 +83,28 @@ async def test_recovery_code_works_once(api):
 
 
 @pytest.mark.asyncio
+async def test_twofa_account_guard_blocks_after_budget():
+    """The per-account 2FA guard caps failed attempts independent of source IP."""
+    from app.core import rate_limit as rl
+
+    rl.state.enabled = True
+    rl.reset_limits()
+    try:
+        key = "acct-under-attack"
+        assert rl.twofa_account_allowed(key) is True
+        # Burn the whole budget (config default: 10 per 5 minutes) with failures.
+        for _ in range(10):
+            rl.record_twofa_failure(key)
+        # This account is now locked out...
+        assert rl.twofa_account_allowed(key) is False
+        # ...but a different account is unaffected (per-account, not global).
+        assert rl.twofa_account_allowed("innocent-bystander") is True
+    finally:
+        rl.state.enabled = False
+        rl.reset_limits()
+
+
+@pytest.mark.asyncio
 async def test_disable_requires_password_and_code(api):
     h = await _register(api, "d@test.com")
     secret, _ = await _enroll(api, h)

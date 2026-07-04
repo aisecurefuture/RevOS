@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     login_rate_limit: str = "5/minute"
+    # 2FA code entry throttle. Applied per-IP on setup/disable and, more
+    # importantly, per-account on the 2FA login step (defeats IP rotation).
+    twofa_rate_limit: str = "10/5minute"
     # Rate-limit storage backend. Empty => use redis_url (prod). Tests set
     # this to "memory://" for hermetic, dependency-free runs.
     rate_limit_storage_uri: str = ""

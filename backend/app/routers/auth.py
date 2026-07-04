@@ -16,7 +16,13 @@ from fastapi import APIRouter, Depends, Request, Response
 from app.config import settings
 from app.core.audit import write_audit
 from app.core.exceptions import AuthError
-from app.core.rate_limit import rate_limit_login
+from app.core.rate_limit import (
+    RateLimitError,
+    rate_limit_2fa,
+    rate_limit_login,
+    record_twofa_failure,
+    twofa_account_allowed,
+)
 from app.core.security import (
     ACCESS_COOKIE,
     CSRF_COOKIE,
@@ -279,6 +285,7 @@ async def twofa_setup(
 async def twofa_verify(
     request: Request, body: TwoFACodeRequest, user: CurrentUser, db: DbSession,
     _: None = Depends(verify_csrf),
+    _rl: None = Depends(rate_limit_2fa),
 ) -> RecoveryCodesResponse:
     codes = await twofa_service.confirm_setup(db, user, body.code)
     await write_audit(db, action="auth.2fa.enabled", user_id=user.id, request=request)
@@ -289,6 +296,7 @@ async def twofa_verify(
 async def twofa_disable(
     request: Request, body: TwoFADisableRequest, user: CurrentUser, db: DbSession,
     _: None = Depends(verify_csrf),
+    _rl: None = Depends(rate_limit_2fa),
 ) -> dict:
     await twofa_service.disable(db, user, body.password, body.code)
     await write_audit(db, action="auth.2fa.disabled", user_id=user.id, request=request)
@@ -331,7 +339,15 @@ async def twofa_login(
         or int(data.get("tv", 0)) != user.token_version
     ):
         raise AuthError("Your 2FA session is no longer valid. Please sign in again.")
+    # Per-account brute-force guard: caps failed code attempts even when the
+    # attacker rotates source IPs. Checked before verifying so an exhausted
+    # budget short-circuits to 429.
+    if not twofa_account_allowed(str(user.id)):
+        await write_audit(db, action="auth.login.2fa_rate_limited", user_id=user.id, request=request)
+        raise RateLimitError("Too many 2FA attempts. Please wait a few minutes and try again.")
     if not await twofa_service.verify_second_factor(db, user, body.code):
+        record_twofa_failure(str(user.id))
+        await write_audit(db, action="auth.login.2fa_failed", user_id=user.id, request=request)
         raise AuthError("Invalid authentication code.")
     await update_last_login(db, user)
     membership = await resolve_active_membership(db, user, None)

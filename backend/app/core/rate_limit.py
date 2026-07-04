@@ -59,3 +59,28 @@ def rate_limit(name: str, limit: str):
 
 # Login throttle (credential-stuffing defense).
 rate_limit_login = rate_limit("login", settings.login_rate_limit)
+
+# Per-IP throttle for 2FA code entry on setup/disable flows.
+rate_limit_2fa = rate_limit("2fa_ip", settings.twofa_rate_limit)
+
+
+# --- Per-account 2FA brute-force guard --------------------------------------
+# Keyed on the *account*, not the client IP, so an attacker rotating source IPs
+# against a single victim is still capped. Only failed attempts consume the
+# budget (a successful login must never lock a user out), so we peek with
+# ``test`` on entry and ``hit`` only after a code is rejected.
+_2fa_account_item = parse(settings.twofa_rate_limit)
+
+
+def twofa_account_allowed(account_key: str) -> bool:
+    """True while this account is still under its 2FA attempt budget."""
+    if not state.enabled:
+        return True
+    return _strategy.test(_2fa_account_item, "2fa_account", account_key)
+
+
+def record_twofa_failure(account_key: str) -> None:
+    """Charge one failed 2FA attempt against the per-account budget."""
+    if not state.enabled:
+        return
+    _strategy.hit(_2fa_account_item, "2fa_account", account_key)
