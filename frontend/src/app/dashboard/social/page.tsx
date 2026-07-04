@@ -83,7 +83,11 @@ export default function SocialPage() {
       ) : null}
 
       <Card className="mb-6">
-        <CardTitle>Platform connections</CardTitle>
+        <CardTitle>Platform availability</CardTitle>
+        <p className="mb-2 text-xs text-slate-400">
+          Platforms whose OAuth is configured on the server. Connect your accounts
+          under Settings → Social Connections, then submit posts for approval.
+        </p>
         <div className="flex flex-wrap gap-2">
           {PLATFORMS.map((p) => (
             <span
@@ -92,7 +96,7 @@ export default function SocialPage() {
                 adapters[p] ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"
               }`}
             >
-              {p}: {adapters[p] ? "live" : "draft / copy-paste"}
+              {p}: {adapters[p] ? "available" : "not configured"}
             </span>
           ))}
         </div>

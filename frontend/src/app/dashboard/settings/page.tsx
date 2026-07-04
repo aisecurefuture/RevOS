@@ -77,10 +77,14 @@ export default function SettingsPage() {
 
           <Card>
             <CardTitle>Social platforms</CardTitle>
+            <p className="mb-2 text-xs text-slate-400">
+              Whether each platform&apos;s OAuth is configured on the server. Connect
+              individual accounts on the Social Connections tab.
+            </p>
             <ul className="divide-y divide-slate-100">
               {Object.entries(status.social).map(([platform, on]) => (
                 <Row key={platform} label={platform} on={on}
-                     note={on ? "live API" : "draft / copy-paste"} />
+                     note={on ? "OAuth ready" : "not configured"} />
               ))}
             </ul>
           </Card>

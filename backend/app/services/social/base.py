@@ -102,5 +102,30 @@ def get_adapter(platform: str) -> SocialAdapter:
 
 
 def adapter_status() -> dict[str, bool]:
-    """Which platforms have live credentials (for the dashboard)."""
-    return {name: adapter.is_configured() for name, adapter in _ADAPTERS.items()}
+    """Which platforms have their OAuth app configured on this server, so users
+    can connect accounts on the Social Connections page.
+
+    This reflects the M5/M6 OAuth integrations (app id/secret/redirect), NOT the
+    legacy static-credential adapters above — those predate the OAuth flow and
+    only remain for the (now unused) draft publish path. A ``True`` here means
+    "connectable", not "an account is connected" — that lives per-account in the
+    social_connections table.
+    """
+    meta = bool(settings.meta_app_id and settings.meta_app_secret and settings.meta_redirect_uri)
+    return {
+        "facebook": meta,
+        "instagram": meta,
+        "threads": bool(
+            settings.threads_app_id and settings.threads_app_secret and settings.threads_redirect_uri
+        ),
+        "youtube": bool(
+            settings.youtube_client_id and settings.youtube_client_secret and settings.youtube_redirect_uri
+        ),
+        "twitter": bool(
+            settings.twitter_client_id and settings.twitter_client_secret and settings.twitter_redirect_uri
+        ),
+        "linkedin": bool(
+            settings.linkedin_client_id and settings.linkedin_client_secret and settings.linkedin_redirect_uri
+        ),
+        "tiktok": False,  # no OAuth publishing integration yet
+    }
