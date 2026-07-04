@@ -19,4 +19,9 @@ BEAT_SCHEDULE: dict = {
         "task": "revos.expire_trials",
         "schedule": 3600.0,
     },
+    # Auto-approve autopilot: execute pending approvals for hands-off accounts.
+    "auto-approve-sweep": {
+        "task": "revos.auto_approve_sweep",
+        "schedule": 60.0,
+    },
 }

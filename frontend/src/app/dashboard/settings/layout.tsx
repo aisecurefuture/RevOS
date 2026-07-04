@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 const TABS = [
   { label: "Integrations", href: "/dashboard/settings" },
   { label: "Social Connections", href: "/dashboard/settings/connections" },
+  { label: "Automation", href: "/dashboard/settings/automation" },
 ];
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {

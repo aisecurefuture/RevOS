@@ -95,6 +95,26 @@ def process_media(asset_id: str, platforms: list | None = None, enhance: bool = 
     return asyncio.run(_run_media_process(asset_id, platforms, enhance))
 
 
+async def _run_auto_approvals() -> dict:
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            from app.services import automation_service
+
+            stats = await automation_service.run_auto_approvals(session)
+            await session.commit()
+            return stats
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="revos.auto_approve_sweep")
+def auto_approve_sweep() -> dict:
+    """Every minute: execute pending approvals for accounts in auto-approve mode."""
+    return asyncio.run(_run_auto_approvals())
+
+
 async def _run_expire_trials() -> dict:
     """Find trials that ended in the last hour and send reminder / expiry emails."""
     from datetime import timedelta

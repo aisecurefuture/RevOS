@@ -154,6 +154,22 @@ export const socialApi = {
     apiFetch<void>(`/social/connections/${id}`, { method: "DELETE" }),
 };
 
+// --- Automation (auto-approve autopilot) -------------------------------------
+export interface AutoApproveStatus {
+  enabled: boolean;
+  until: string | null;
+  indefinite: boolean;
+}
+
+export const automationApi = {
+  getAutoApprove: () => apiFetch<AutoApproveStatus>("/automation/auto-approve"),
+  setAutoApprove: (enabled: boolean, durationHours: number | null) =>
+    apiFetch<AutoApproveStatus>("/automation/auto-approve", {
+      method: "POST",
+      body: JSON.stringify({ enabled, duration_hours: durationHours }),
+    }),
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),

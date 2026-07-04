@@ -33,6 +33,15 @@ class Account(BaseModel, table=True):
     slug: str = Field(index=True, max_length=140)
     owner_user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
 
+    # --- Auto-approve autopilot (P3-M7) -------------------------------------
+    # When enabled, pending approvals for this account are executed automatically
+    # by the beat sweeper — no human review. until=None while enabled means
+    # indefinite; a future timestamp means "until then" (the sweep disables it
+    # once past). set_by records who turned it on (used as the approver actor).
+    auto_approve_enabled: bool = Field(default=False)
+    auto_approve_until: datetime | None = Field(default=None)
+    auto_approve_set_by: uuid.UUID | None = Field(default=None, foreign_key="admin_users.id")
+
 
 class Membership(BaseModel, table=True):
     __tablename__ = "memberships"

@@ -44,6 +44,7 @@ def register_routers(app: FastAPI) -> None:
         analytics,
         approvals,
         auth,
+        automation,
         bao,
         billing,
         brands,
@@ -88,6 +89,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(suppressions.router, prefix="/api")
     app.include_router(sequences.router, prefix="/api")
     app.include_router(approvals.router, prefix="/api")
+    app.include_router(automation.router, prefix="/api")
     app.include_router(webhooks.router, prefix="/api")
     app.include_router(contacts.router, prefix="/api")
     app.include_router(companies.router, prefix="/api")
