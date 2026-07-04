@@ -16,10 +16,5 @@ listener "tcp" {
   tls_disable = true
 }
 
-# disable_mlock prevents swapping sensitive data to disk.
-# Set to false in production only if the container has IPC_LOCK capability.
-# Keeping true here for Docker compatibility without privileged mode.
-disable_mlock = true
-
 api_addr = "http://openbao:8200"
 ui       = false
