@@ -235,22 +235,23 @@ async def disconnect(
 @router.post("/posts/{post_id}/submit", response_model=SubmitForApprovalOut)
 async def submit_post(
     post_id: uuid.UUID,
-    connection_id: uuid.UUID,
     request: Request,
     user: CurrentUser,
     db: DbSession,
+    connection_id: uuid.UUID | None = None,
     _csrf: None = Depends(verify_csrf),
 ) -> SubmitForApprovalOut:
     """Submit a SocialPost for publish approval.
 
-    Returns the created ApprovalRequest ID. An owner must then approve it
-    via POST /social/approvals/{id}/publish.
+    ``connection_id`` is optional — when omitted the account's active connection
+    for the post's platform is used. The request then appears in the shared
+    approval queue, where an admin/owner approves it to publish.
     """
     account_id = _account_id(request)
-    req = await svc.submit_for_approval(db, post_id, connection_id, account_id, user)
+    req = await svc.submit_for_approval(db, post_id, account_id, user, connection_id=connection_id)
     return SubmitForApprovalOut(
         approval_request_id=req.id,
-        message="Post submitted for approval. An owner must approve before publishing.",
+        message="Post submitted for approval. Approve it in the Approvals queue to publish.",
     )
 
 

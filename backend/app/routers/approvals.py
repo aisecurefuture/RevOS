@@ -54,6 +54,18 @@ async def approve(
     if approval.status != ApprovalStatus.pending:
         return ApprovalResult(status=approval.status, detail="Already decided.")
 
+    # Social publish has a dedicated executor that marks the request approved
+    # and pushes to the connected platform (Meta / YouTube / X / LinkedIn).
+    if approval.action_type == ApprovalAction.social_publish:
+        from app.services import social_connection_service
+        await social_connection_service.execute_publish(
+            db, approval.id, approval.account_id, user
+        )
+        await write_audit(db, action="approval.approve", user_id=user.id,
+                          entity_type="approval", entity_id=str(approval_id),
+                          request=request, meta={"action": approval.action_type})
+        return ApprovalResult(status="approved")
+
     await approval_service.mark_approved(db, approval, user_id=user.id)
 
     sent: int | None = None
@@ -84,6 +96,15 @@ async def reject(
     await approval_service.mark_rejected(db, approval, user_id=user.id, reason=body.reason)
     if approval.action_type == ApprovalAction.campaign_send and approval.entity_id:
         await campaign_email_service.cancel_pending(db, approval.entity_id)
+    elif approval.action_type == ApprovalAction.social_publish and approval.entity_id:
+        # Return the post to draft so it can be edited and resubmitted.
+        from app.models.content import ContentState
+        from app.models.social import SocialPost
+        post = await db.get(SocialPost, approval.entity_id)
+        if post is not None and post.state == ContentState.needs_review:
+            post.state = ContentState.draft
+            db.add(post)
+            await db.flush()
 
     await write_audit(db, action="approval.reject", user_id=user.id,
                       entity_type="approval", entity_id=str(approval_id), request=request)

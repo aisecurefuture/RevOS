@@ -18,7 +18,6 @@ export default function SocialPage() {
   const { user } = useAuth();
   const { selectedBrandId } = useBrand();
   const canEdit = user ? user.role !== "viewer" : false;
-  const isAdmin = user?.role === "admin" || user?.role === "owner";
 
   const [adapters, setAdapters] = useState<Record<string, boolean>>({});
   const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -57,14 +56,15 @@ export default function SocialPage() {
     }
   }
 
-  async function publish(id: string) {
+  async function submitForApproval(id: string) {
     setNotice(null);
+    setError(null);
     try {
-      const r = await socialApi.publish(id);
+      const r = await socialApi.submitForApproval(id);
       setNotice(r.message);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Publish failed");
+      setError(e instanceof ApiError ? e.message : "Submit failed");
     }
   }
 
@@ -146,10 +146,18 @@ export default function SocialPage() {
                     <span className="ml-2 text-xs capitalize text-slate-400">{p.state}</span>
                     <p className="mt-1 text-sm text-slate-700">{p.caption}</p>
                   </div>
-                  {isAdmin ? (
-                    <Button variant="secondary" onClick={() => void publish(p.id)}>
-                      Publish
+                  {p.state === "draft" && canEdit ? (
+                    <Button variant="secondary" onClick={() => void submitForApproval(p.id)}>
+                      Send for approval
                     </Button>
+                  ) : p.state === "needs_review" ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      Pending approval
+                    </span>
+                  ) : p.state === "published" ? (
+                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                      Published
+                    </span>
                   ) : null}
                 </div>
               </Card>

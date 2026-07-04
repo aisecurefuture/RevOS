@@ -515,11 +515,18 @@ async def disconnect(
 async def submit_for_approval(
     db: AsyncSession,
     post_id: uuid.UUID,
-    connection_id: uuid.UUID,
     account_id: uuid.UUID,
     user: AdminUser,
+    connection_id: uuid.UUID | None = None,
 ) -> ApprovalRequest:
-    """Create an ApprovalRequest for publishing a SocialPost."""
+    """Create an ApprovalRequest for publishing a SocialPost.
+
+    If ``connection_id`` is omitted, the connection is auto-resolved from the
+    post's platform (the account's active connection for that platform). The
+    post moves to ``needs_review`` and the request lands in the approval queue.
+    """
+    from app.models.content import ContentState
+
     # Verify the post belongs to this account
     post_result = await db.execute(
         select(SocialPost).where(
@@ -532,11 +539,30 @@ async def submit_for_approval(
     if post is None:
         raise NotFoundError("Social post not found.")
 
-    # Verify the connection belongs to this account
-    await get_connection(db, connection_id, account_id)
+    if connection_id is not None:
+        conn = await get_connection(db, connection_id, account_id)
+    else:
+        # Auto-resolve: the account's active connection for this platform.
+        conn_result = await db.execute(
+            select(SocialConnection).where(
+                SocialConnection.account_id == account_id,
+                SocialConnection.platform == post.platform,
+                SocialConnection.status == SocialConnectionStatus.active,
+                SocialConnection.deleted_at.is_(None),
+            ).order_by(SocialConnection.created_at.desc())
+        )
+        conn = conn_result.scalars().first()
+        if conn is None:
+            raise RevOSError(
+                f"No connected {post.platform} account. Connect one in "
+                f"Settings → Social Connections before submitting for approval.",
+                code="no_connection", status_code=400,
+            )
+        connection_id = conn.id
 
     req = ApprovalRequest(
         account_id=account_id,
+        brand_id=post.brand_id,
         action_type=ApprovalAction.social_publish,
         entity_type="social_post",
         entity_id=post_id,
@@ -546,6 +572,10 @@ async def submit_for_approval(
         requested_by_user_id=user.id,
     )
     db.add(req)
+    # Reflect the pending review on the post so the UI can hide "submit" again.
+    post.state = ContentState.needs_review
+    post.social_connection_id = connection_id
+    db.add(post)
     await db.flush()
     await db.refresh(req)
     return req
