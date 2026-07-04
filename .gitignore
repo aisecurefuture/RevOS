@@ -37,6 +37,7 @@ backend/media/
 docker-data/
 postgres-data/
 redis-data/
+data/
 
 # Editor
 .idea/

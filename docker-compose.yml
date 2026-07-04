@@ -114,13 +114,12 @@ services:
   openbao:
     image: openbao/openbao:2.2.0
     restart: unless-stopped
-    user: root
     command: ["server", "-config=/vault/config/config.hcl"]
     cap_add:
       - IPC_LOCK
     volumes:
       - ./openbao/config.hcl:/vault/config/config.hcl:ro
-      - openbao-data:/vault/data
+      - ./data/openbao:/vault/data
     # Bound to 127.0.0.1 on the host so the deploy script can reach it
     # but it is not accessible from the internet (no 0.0.0.0 binding).
     ports:
@@ -136,4 +135,3 @@ volumes:
   postgres-data:
   redis-data:
   storage-data:
-  openbao-data:
