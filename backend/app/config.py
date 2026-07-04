@@ -88,6 +88,23 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_publishable_key: str = ""
 
+    # Stripe Price IDs — create these in the Stripe dashboard, then set env vars.
+    # Monthly prices
+    stripe_pro_monthly_price_id: str = ""
+    stripe_agency_monthly_price_id: str = ""
+    # Annual prices (billed yearly, ~20% discount)
+    stripe_pro_annual_price_id: str = ""
+    stripe_agency_annual_price_id: str = ""
+
+    # Display prices in cents (Stripe is authoritative for actual charges).
+    plan_pro_monthly_cents: int = 14900      # $149.00
+    plan_pro_annual_cents: int = 142800      # $1,428.00 ($119/mo)
+    plan_agency_monthly_cents: int = 44900   # $449.00
+    plan_agency_annual_cents: int = 430800   # $4,308.00 ($359/mo)
+
+    # Trial length in days for new accounts.
+    trial_days: int = 14
+
     # --- Storage ------------------------------------------------------------
     storage_backend: Literal["local", "s3"] = "local"
     storage_local_dir: str = "./storage"

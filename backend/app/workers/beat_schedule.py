@@ -14,4 +14,9 @@ BEAT_SCHEDULE: dict = {
         "task": "revos.tick_sequences",
         "schedule": 300.0,
     },
+    # Detect expired trials and notify owners (hourly).
+    "expire-trials": {
+        "task": "revos.expire_trials",
+        "schedule": 3600.0,
+    },
 }

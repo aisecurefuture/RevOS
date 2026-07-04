@@ -58,6 +58,13 @@ class ComplianceError(RevOSError):
     code = "compliance_blocked"
 
 
+class PaymentRequiredError(RevOSError):
+    """Raised when an action requires a paid plan the account does not have."""
+
+    status_code = status.HTTP_402_PAYMENT_REQUIRED
+    code = "payment_required"
+
+
 def _envelope(code: str, message: str) -> dict:
     return {"error": {"code": code, "message": message}}
 

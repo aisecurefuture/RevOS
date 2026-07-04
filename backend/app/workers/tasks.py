@@ -93,3 +93,68 @@ async def _run_media_process(asset_id: str, platforms, enhance: bool) -> int:
 def process_media(asset_id: str, platforms: list | None = None, enhance: bool = False) -> int:
     """Render media renditions off-request (used for large files / video)."""
     return asyncio.run(_run_media_process(asset_id, platforms, enhance))
+
+
+async def _run_expire_trials() -> dict:
+    """Find trials that ended in the last hour and send reminder / expiry emails."""
+    from datetime import timedelta
+
+    from sqlmodel import select
+
+    from app.models.billing import Subscription, SubscriptionStatus
+    from app.models.base import utcnow as _utcnow
+    from app.services.transactional_email import send_transactional
+
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    expired_count = 0
+    reminded_count = 0
+    try:
+        async with factory() as session:
+            now = _utcnow()
+            # Find subscriptions trialing with trial_ends_at in the past.
+            res = await session.execute(
+                select(Subscription).where(
+                    Subscription.status == SubscriptionStatus.trialing,
+                    Subscription.trial_ends_at <= now,
+                )
+            )
+            for sub in res.scalars().all():
+                # Already handled — skip.
+                if sub.canceled_at is not None:
+                    continue
+                # Send expiry notification email via the account owner.
+                from app.models.account import Account
+                from app.models.user import AdminUser
+
+                acct = await session.get(Account, sub.account_id)
+                if acct:
+                    owner = await session.get(AdminUser, acct.owner_user_id)
+                    if owner:
+                        try:
+                            send_transactional(
+                                to_email=owner.email,
+                                subject="Your RevOS trial has ended — upgrade to keep access",
+                                html=(
+                                    f"<p>Hi {owner.full_name or 'there'},</p>"
+                                    f"<p>Your 14-day RevOS trial for <strong>{acct.name}</strong> "
+                                    f"has ended.</p>"
+                                    f"<p>Upgrade to Pro ($149/mo) or Agency ($449/mo) to keep "
+                                    f"all your data and continue automating.</p>"
+                                    f'<p><a href="{settings.frontend_base_url}/billing">'
+                                    f"Upgrade now</a></p>"
+                                ),
+                            )
+                        except Exception:
+                            logger.exception("Failed to send trial expiry email to %s", owner.email)
+                expired_count += 1
+            await session.commit()
+    finally:
+        await engine.dispose()
+    return {"expired": expired_count, "reminded": reminded_count}
+
+
+@celery_app.task(name="revos.expire_trials")
+def expire_trials() -> dict:
+    """Hourly: detect expired trials and notify account owners."""
+    return asyncio.run(_run_expire_trials())

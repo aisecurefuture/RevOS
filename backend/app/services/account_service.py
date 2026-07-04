@@ -40,6 +40,9 @@ async def create_personal_account(db: AsyncSession, user: AdminUser) -> Account:
     # owners; an admin-provisioned lower-role user stays that role in their space.
     db.add(Membership(user_id=user.id, account_id=account.id, role=user.role or Role.owner))
     await db.flush()
+    # Every new account starts with a trial subscription.
+    from app.services.billing_service import provision_trial
+    await provision_trial(db, account.id)
     return account
 
 
@@ -55,6 +58,9 @@ async def create_team_account(db: AsyncSession, user: AdminUser, name: str) -> A
     await db.flush()
     db.add(Membership(user_id=user.id, account_id=account.id, role=Role.owner))
     await db.flush()
+    # Every new account starts with a trial subscription.
+    from app.services.billing_service import provision_trial
+    await provision_trial(db, account.id)
     return account
 
 

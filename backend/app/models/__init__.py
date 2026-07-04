@@ -6,6 +6,7 @@ Python-level symbol dependencies (FK strings are resolved later by SQLAlchemy).
 """
 
 from app.models.account import Account, AccountType, Invitation, Membership
+from app.models.billing import PlanName, Subscription, SubscriptionStatus
 from app.models.analytics import (
     ConversionGoal,
     Event,
@@ -94,6 +95,8 @@ __all__ = [
     "AdminUser", "ApiKey", "AuditLog", "RecoveryCode", "Role",
     # account / tenancy
     "Account", "AccountType", "Invitation", "Membership",
+    # billing
+    "PlanName", "Subscription", "SubscriptionStatus",
     # brand
     "Brand", "BrandType", "BrandVoice", "Audience", "BuyerPersona",
     # offer
