@@ -41,7 +41,6 @@ async def send_reset_email(db: AsyncSession, email: str) -> None:
     res = await db.execute(
         select(AdminUser).where(
             AdminUser.email == email.lower().strip(),
-            AdminUser.deleted_at.is_(None),
         )
     )
     user = res.scalar_one_or_none()
@@ -89,7 +88,6 @@ async def apply_reset(db: AsyncSession, token: str, new_password: str) -> AdminU
     res = await db.execute(
         select(AdminUser).where(
             AdminUser.email == email,
-            AdminUser.deleted_at.is_(None),
         )
     )
     user = res.scalar_one_or_none()
@@ -103,7 +101,7 @@ async def apply_reset(db: AsyncSession, token: str, new_password: str) -> AdminU
     # Validate password strength (same rules as registration).
     validate_password_strength(new_password)
 
-    user.password_hash = hash_password(new_password)
+    user.hashed_password = hash_password(new_password)
     user.token_version += 1  # invalidates this token + all existing sessions
     user.updated_at = utcnow()
     db.add(user)
