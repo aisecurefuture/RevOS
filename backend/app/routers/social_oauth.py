@@ -11,10 +11,14 @@ Endpoints:
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import RedirectResponse
 
 from app.core.exceptions import RevOSError
@@ -39,6 +43,64 @@ def _account_id(request: Request) -> uuid.UUID:
     if acc is None:
         raise RevOSError("No active account.", code="no_account", status_code=400)
     return acc
+
+
+# ---------------------------------------------------------------------------
+# Meta data-deletion callback
+# ---------------------------------------------------------------------------
+
+def _parse_meta_signed_request(signed_request: str, app_secret: str) -> dict:
+    """Validate and decode a Meta signed_request parameter."""
+    try:
+        encoded_sig, payload = signed_request.split(".", 1)
+        sig = base64.urlsafe_b64decode(encoded_sig + "==")
+        data = json.loads(base64.urlsafe_b64decode(payload + "==").decode("utf-8"))
+        expected = hmac.new(
+            app_secret.encode("utf-8"),
+            msg=payload.encode("utf-8"),
+            digestmod=hashlib.sha256,
+        ).digest()
+        if not hmac.compare_digest(sig, expected):
+            raise ValueError("Signature mismatch")
+        return data
+    except Exception as exc:
+        raise ValueError(f"Invalid signed_request: {exc}") from exc
+
+
+@router.post("/data-deletion", include_in_schema=False)
+async def meta_data_deletion(
+    signed_request: str = Form(...),
+    db: DbSession = None,
+) -> dict:
+    """Meta calls this endpoint when a user removes the RevOS app from their
+    Facebook settings. We delete all associated social connections and tokens.
+
+    https://developers.facebook.com/docs/development/create-an-app/app-dashboard/data-deletion-callback
+    """
+    if not settings.meta_app_secret:
+        logger.error("META_APP_SECRET not configured — cannot process data-deletion callback")
+        return Response(status_code=400)
+
+    try:
+        data = _parse_meta_signed_request(signed_request, settings.meta_app_secret)
+    except ValueError as exc:
+        logger.warning("Data-deletion: invalid signed_request — %s", exc)
+        return Response(status_code=400)
+
+    facebook_user_id = data.get("user_id", "")
+    confirmation_code = str(uuid.uuid4())
+
+    if facebook_user_id and db is not None:
+        count = await svc.delete_connections_by_facebook_user_id(db, facebook_user_id)
+        logger.info(
+            "Meta data-deletion: deleted %d connection(s) for fb_user_id=%s code=%s",
+            count, facebook_user_id, confirmation_code,
+        )
+
+    return {
+        "url": f"{settings.frontend_base_url}/data-deletion?code={confirmation_code}",
+        "confirmation_code": confirmation_code,
+    }
 
 
 # ---------------------------------------------------------------------------

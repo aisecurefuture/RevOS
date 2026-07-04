@@ -258,6 +258,41 @@ async def get_connection(
     return conn
 
 
+async def delete_connections_by_facebook_user_id(
+    db: AsyncSession, facebook_user_id: str
+) -> int:
+    """Delete all social connections whose platform_meta contains the given
+    Facebook user ID. Called by the Meta data-deletion callback.
+
+    Returns the number of connections deleted.
+    """
+    from sqlalchemy import or_
+    from app.models.social_connection import SocialPlatform as _SP
+
+    result = await db.execute(
+        select(SocialConnection).where(
+            SocialConnection.deleted_at.is_(None),
+            or_(
+                SocialConnection.external_id == facebook_user_id,
+                SocialConnection.platform_meta["page_id"].as_string() == facebook_user_id,
+            ),
+        )
+    )
+    conns = list(result.scalars().all())
+    for conn in conns:
+        try:
+            if conn.token_ref:
+                await secrets_service.delete_secret(conn.token_ref)
+        except RevOSError:
+            pass
+        conn.deleted_at = utcnow()
+        conn.status = SocialConnectionStatus.revoked
+        db.add(conn)
+    if conns:
+        await db.flush()
+    return len(conns)
+
+
 async def disconnect(
     db: AsyncSession, connection_id: uuid.UUID, account_id: uuid.UUID
 ) -> None:
