@@ -25,6 +25,7 @@ class SocialPlatform(StrEnum):
     twitter = "twitter"
     youtube = "youtube"
     tiktok = "tiktok"
+    threads = "threads"
 
 
 class SocialCampaignStatus(StrEnum):

@@ -27,6 +27,7 @@ from app.models.social_connection import SocialConnection, SocialConnectionStatu
 from app.models.user import AdminUser
 from app.services import secrets_service
 from app.services.social import meta as meta_client
+from app.services.social import threads as threads_client
 
 _STATE_SALT = "social-oauth-state"
 _STATE_MAX_AGE = 600  # 10 minutes
@@ -66,12 +67,16 @@ def _token_path(account_id: uuid.UUID, platform: str, connection_id: uuid.UUID) 
 # ---------------------------------------------------------------------------
 
 def get_connect_url(platform: str, account_id: uuid.UUID) -> str:
-    if platform not in ("facebook", "instagram"):
-        raise RevOSError(f"Platform '{platform}' is not supported in this release.", code="unsupported_platform", status_code=400)
-    if not settings.meta_app_id or not settings.meta_app_secret or not settings.meta_redirect_uri:
-        raise RevOSError("Meta OAuth is not configured on this server.", code="meta_unconfigured", status_code=503)
     state = make_oauth_state(account_id, platform)
-    return meta_client.connect_url(state)
+    if platform in ("facebook", "instagram"):
+        if not settings.meta_app_id or not settings.meta_app_secret or not settings.meta_redirect_uri:
+            raise RevOSError("Meta OAuth is not configured on this server.", code="meta_unconfigured", status_code=503)
+        return meta_client.connect_url(state)
+    if platform == "threads":
+        if not settings.threads_app_id or not settings.threads_app_secret or not settings.threads_redirect_uri:
+            raise RevOSError("Threads OAuth is not configured on this server.", code="threads_unconfigured", status_code=503)
+        return threads_client.connect_url(state)
+    raise RevOSError(f"Platform '{platform}' is not supported.", code="unsupported_platform", status_code=400)
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +178,60 @@ async def handle_meta_callback(
     for conn in connections:
         await db.refresh(conn)
     return connections
+
+
+# ---------------------------------------------------------------------------
+# Threads OAuth callback
+# ---------------------------------------------------------------------------
+
+async def handle_threads_callback(
+    *,
+    code: str,
+    state: str,
+    user: AdminUser,
+    db: AsyncSession,
+) -> list[SocialConnection]:
+    """Exchange the Threads authorization code and create a SocialConnection row.
+
+    Unlike Meta (one connection per Page), Threads creates one connection per user.
+    Returns a list containing the single created/updated connection.
+    """
+    state_data = verify_oauth_state(state)
+    account_id = uuid.UUID(state_data["account_id"])
+
+    short = await threads_client.exchange_code(code)
+    long_lived = await threads_client.get_long_lived_token(short.access_token)
+    profile = await threads_client.get_profile(short.user_id, long_lived.access_token)
+
+    expires_at = utcnow() + timedelta(seconds=long_lived.expires_in) if long_lived.expires_in else None
+
+    conn = await _upsert_connection(
+        db=db,
+        account_id=account_id,
+        platform=SocialPlatform.threads,
+        external_id=profile.user_id,
+        handle=profile.username,
+        display_name=profile.name or profile.username,
+        scopes=threads_client._THREADS_SCOPES.split(","),
+        connected_by=user.id,
+        expires_at=expires_at,
+        platform_meta={"threads_user_id": profile.user_id},
+    )
+
+    token_path = _token_path(account_id, "threads", conn.id)
+    await secrets_service.put_secret(
+        token_path,
+        {
+            "access_token": long_lived.access_token,
+            "token_type": "threads_user",
+            "threads_user_id": profile.user_id,
+        },
+    )
+    conn.token_ref = token_path
+    db.add(conn)
+    await db.flush()
+    await db.refresh(conn)
+    return [conn]
 
 
 async def _upsert_connection(

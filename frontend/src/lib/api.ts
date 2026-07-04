@@ -134,6 +134,26 @@ export interface BillingStatus {
   };
 }
 
+// --- Social connections ------------------------------------------------------
+export interface SocialConnection {
+  id: string;
+  platform: "facebook" | "instagram" | "threads";
+  external_id: string;
+  handle: string | null;
+  display_name: string | null;
+  status: "active" | "error" | "expired" | "revoked";
+  expires_at: string | null;
+  created_at: string;
+}
+
+export const socialApi = {
+  list: () => apiFetch<SocialConnection[]>("/social/connections"),
+  connectUrl: (platform: string) =>
+    apiFetch<{ url: string }>(`/social/connections/connect-url?platform=${platform}`),
+  disconnect: (id: string) =>
+    apiFetch<void>(`/social/connections/${id}`, { method: "DELETE" }),
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),

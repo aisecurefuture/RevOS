@@ -134,6 +134,9 @@ class Settings(BaseSettings):
     meta_redirect_uri: str = ""   # e.g. https://api.revos360.com/api/social/facebook/callback
     meta_page_access_token: str = ""
     instagram_business_account_id: str = ""
+    threads_app_id: str = ""
+    threads_app_secret: str = ""
+    threads_redirect_uri: str = ""  # e.g. https://api.revos360.com/api/social/threads/callback
     twitter_bearer_token: str = ""
     twitter_api_key: str = ""
     twitter_api_secret: str = ""

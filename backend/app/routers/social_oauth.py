@@ -35,7 +35,7 @@ from app.config import settings
 logger = logging.getLogger("revos.social_oauth")
 router = APIRouter(prefix="/social", tags=["social-oauth"])
 
-_SUPPORTED_PLATFORMS = {"facebook", "instagram"}
+_SUPPORTED_PLATFORMS = {"facebook", "instagram", "threads"}
 
 
 def _account_id(request: Request) -> uuid.UUID:
@@ -151,13 +151,16 @@ async def oauth_callback(
         return RedirectResponse(f"{dest_err}&detail=unsupported_platform")
 
     try:
-        connections = await svc.handle_meta_callback(
-            code=code,
-            state=state,
-            user=user,
-            db=db,
-        )
-        logger.info("Meta OAuth: created %d connection(s) for user %s", len(connections), user.id)
+        if platform == "threads":
+            connections = await svc.handle_threads_callback(
+                code=code, state=state, user=user, db=db,
+            )
+            logger.info("Threads OAuth: created %d connection(s) for user %s", len(connections), user.id)
+        else:
+            connections = await svc.handle_meta_callback(
+                code=code, state=state, user=user, db=db,
+            )
+            logger.info("Meta OAuth: created %d connection(s) for user %s", len(connections), user.id)
         return RedirectResponse(f"{dest_ok}&count={len(connections)}")
     except RevOSError as exc:
         logger.warning("Meta OAuth callback error: %s", exc.message)
