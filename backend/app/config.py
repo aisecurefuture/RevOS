@@ -132,6 +132,7 @@ class Settings(BaseSettings):
     # --- Social adapters ----------------------------------------------------
     linkedin_client_id: str = ""
     linkedin_client_secret: str = ""
+    linkedin_redirect_uri: str = ""  # e.g. https://api.revos360.com/api/social/linkedin/callback
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_redirect_uri: str = ""   # e.g. https://api.revos360.com/api/social/facebook/callback

@@ -35,7 +35,7 @@ from app.config import settings
 logger = logging.getLogger("revos.social_oauth")
 router = APIRouter(prefix="/social", tags=["social-oauth"])
 
-_SUPPORTED_PLATFORMS = {"facebook", "instagram", "threads", "youtube", "twitter"}
+_SUPPORTED_PLATFORMS = {"facebook", "instagram", "threads", "youtube", "twitter", "linkedin"}
 
 
 def _account_id(request: Request) -> uuid.UUID:
@@ -166,6 +166,11 @@ async def oauth_callback(
                 code=code, state=state, user=user, db=db,
             )
             logger.info("X OAuth: created %d connection(s) for user %s", len(connections), user.id)
+        elif platform == "linkedin":
+            connections = await svc.handle_linkedin_callback(
+                code=code, state=state, user=user, db=db,
+            )
+            logger.info("LinkedIn OAuth: created %d connection(s) for user %s", len(connections), user.id)
         else:
             connections = await svc.handle_meta_callback(
                 code=code, state=state, user=user, db=db,
