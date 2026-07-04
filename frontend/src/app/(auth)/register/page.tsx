@@ -22,7 +22,7 @@ function RegisterForm() {
     setSubmitting(true);
     try {
       await authApi.register(email, password, fullName);
-      router.replace("/dashboard");
+      router.replace("/subscribe");
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Unable to create account. Try again.",

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
-import { ApiError, apiFetch, authApi } from "@/lib/api";
+import { ApiError, apiFetch, authApi, billingApi, type BillingStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 // ---------------------------------------------------------------------------
@@ -349,6 +349,221 @@ function TwoFASection() {
 }
 
 // ---------------------------------------------------------------------------
+// Billing section
+// ---------------------------------------------------------------------------
+const PLAN_LABELS: Record<string, string> = {
+  trial: "Trial",
+  pro: "Pro",
+  agency: "Agency",
+  enterprise: "Enterprise",
+};
+
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  trialing:   { label: "Trial",    color: "bg-blue-100 text-blue-800"  },
+  active:     { label: "Active",   color: "bg-green-100 text-green-800" },
+  past_due:   { label: "Past due", color: "bg-amber-100 text-amber-800" },
+  canceled:   { label: "Canceled", color: "bg-slate-100 text-slate-600" },
+  incomplete: { label: "Pending",  color: "bg-slate-100 text-slate-600" },
+};
+
+function fmt(cents: number) {
+  return `$${(cents / 100).toFixed(0)}`;
+}
+
+function daysLeft(iso: string | null) {
+  if (!iso) return null;
+  const diff = new Date(iso).getTime() - Date.now();
+  return Math.max(0, Math.ceil(diff / 86400000));
+}
+
+function BillingSection() {
+  const [bs, setBs] = useState<BillingStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<"pro" | "agency">("pro");
+  const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    billingApi.status()
+      .then(setBs)
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load billing info."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function goCheckout() {
+    setWorking(true);
+    try {
+      const { checkout_url } = await billingApi.checkout(plan, billingInterval);
+      window.location.href = checkout_url;
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not start checkout.");
+      setWorking(false);
+    }
+  }
+
+  async function goPortal() {
+    setWorking(true);
+    try {
+      const { portal_url } = await billingApi.portal();
+      window.location.href = portal_url;
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not open billing portal.");
+      setWorking(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardTitle>Subscription</CardTitle>
+        <p className="mt-2 text-sm text-slate-400">Loading…</p>
+      </Card>
+    );
+  }
+
+  const statusMeta = bs?.status ? (STATUS_LABELS[bs.status] ?? { label: bs.status, color: "bg-slate-100 text-slate-600" }) : null;
+  const days = daysLeft(bs?.trial_ends_at ?? null);
+  const isPaid = bs?.status === "active" || bs?.status === "past_due";
+  const isExpired = bs?.is_trial_expired;
+
+  // Compute display price based on selected plan/interval
+  const displayPrice = bs ? {
+    pro_monthly:    bs.prices.pro_monthly_cents,
+    pro_annual:     bs.prices.pro_annual_cents,
+    agency_monthly: bs.prices.agency_monthly_cents,
+    agency_annual:  bs.prices.agency_annual_cents,
+  } : null;
+
+  const selectedCents = displayPrice
+    ? displayPrice[`${plan}_${billingInterval}` as keyof typeof displayPrice]
+    : null;
+
+  return (
+    <Card className="lg:col-span-2">
+      <div className="flex items-start justify-between">
+        <CardTitle>Subscription</CardTitle>
+        {statusMeta && (
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusMeta.color}`}>
+            {statusMeta.label}
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+      )}
+
+      {bs && (
+        <div className="mt-3 space-y-1 text-sm text-slate-600">
+          <p>
+            <span className="font-medium">Current plan:</span>{" "}
+            {PLAN_LABELS[bs.plan] ?? bs.plan}
+            {bs.billing_interval ? ` · billed ${bs.billing_interval}` : ""}
+          </p>
+          {bs.status === "trialing" && days !== null && (
+            <p className={days <= 3 ? "font-medium text-amber-700" : ""}>
+              {isExpired
+                ? "Your trial has expired — upgrade to restore access."
+                : `Trial ends in ${days} day${days === 1 ? "" : "s"}.`}
+            </p>
+          )}
+          {bs.current_period_end && isPaid && (
+            <p className="text-slate-500 text-xs">
+              Next renewal: {new Date(bs.current_period_end).toLocaleDateString()}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Manage billing for paid subscribers */}
+      {isPaid && (
+        <div className="mt-4">
+          <Button variant="secondary" onClick={goPortal} disabled={working}>
+            {working ? "Opening…" : "Manage billing & invoices"}
+          </Button>
+          <p className="mt-1 text-xs text-slate-400">
+            Change plan, update payment method, or cancel via Stripe.
+          </p>
+        </div>
+      )}
+
+      {/* Upgrade UI for trial / expired users */}
+      {!isPaid && (
+        <div className="mt-4 space-y-3">
+          <p className="text-sm font-medium text-slate-700">Upgrade your plan</p>
+
+          <div className="flex gap-3">
+            {(["pro", "agency"] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPlan(p)}
+                className={`flex-1 rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+                  plan === p
+                    ? "border-brand bg-brand/5 text-brand"
+                    : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <p className="font-semibold">{PLAN_LABELS[p]}</p>
+                {displayPrice && (
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {fmt(displayPrice[`${p}_monthly`])}/mo or {fmt(displayPrice[`${p}_annual`])}/yr
+                  </p>
+                )}
+                {p === "pro" && (
+                  <p className="mt-1 text-xs text-slate-500">3 seats · 10k contacts · 5 social connections</p>
+                )}
+                {p === "agency" && (
+                  <p className="mt-1 text-xs text-slate-500">15 seats · 100k contacts · unlimited brands</p>
+                )}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-600">Billing:</span>
+            {(["monthly", "annual"] as const).map((iv) => (
+              <button
+                key={iv}
+                type="button"
+                onClick={() => setBillingInterval(iv)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  billingInterval === iv
+                    ? "bg-brand text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {iv === "annual" ? "Annual (save 20%)" : "Monthly"}
+              </button>
+            ))}
+          </div>
+
+          {selectedCents && (
+            <p className="text-sm text-slate-700">
+              <span className="text-xl font-bold text-slate-900">
+                {billingInterval === "annual"
+                  ? `${fmt(selectedCents)}/yr`
+                  : `${fmt(selectedCents)}/mo`}
+              </span>
+              {billingInterval === "annual" && (
+                <span className="ml-2 text-xs text-slate-500">
+                  (~{fmt(Math.round(selectedCents / 12))}/mo)
+                </span>
+              )}
+            </p>
+          )}
+
+          <Button onClick={goCheckout} disabled={working}>
+            {working ? "Opening checkout…" : `Upgrade to ${PLAN_LABELS[plan]}`}
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 export default function ProfilePage() {
@@ -356,9 +571,10 @@ export default function ProfilePage() {
     <>
       <PageHeader
         title="Profile & Security"
-        description="Update your name, password, and two-factor authentication."
+        description="Update your name, password, two-factor authentication, and subscription."
       />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <BillingSection />
         <ProfileSection />
         <PasswordSection />
         <TwoFASection />

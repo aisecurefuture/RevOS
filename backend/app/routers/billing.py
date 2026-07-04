@@ -89,6 +89,64 @@ async def billing_status(request: Request, user: CurrentUser, db: DbSession) -> 
 
 
 # ---------------------------------------------------------------------------
+# Trial provisioning
+# ---------------------------------------------------------------------------
+
+@router.post("/start-trial", response_model=BillingStatusOut)
+async def start_trial(
+    request: Request,
+    user: CurrentUser,
+    db: DbSession,
+    _c: None = Depends(verify_csrf),
+) -> BillingStatusOut:
+    """Provision a 14-day trial for the current account.
+
+    Idempotent — calling it when a subscription already exists is a no-op.
+    This is the gate users hit after registration before entering the dashboard.
+    """
+    account_id = getattr(request.state, "account_id", None)
+    if account_id is None:
+        raise PermissionError_("No active account context.")
+
+    sub = await billing_service.get_subscription(db, account_id)
+    if sub is None:
+        sub = await billing_service.provision_trial(db, account_id)
+
+    from app.config import settings as cfg
+    effective = get_effective_plan(sub)
+    limits = get_plan_limits(sub)
+    expired = is_trial_expired(sub)
+    prices = {
+        "pro_monthly_cents": cfg.plan_pro_monthly_cents,
+        "pro_annual_cents": cfg.plan_pro_annual_cents,
+        "agency_monthly_cents": cfg.plan_agency_monthly_cents,
+        "agency_annual_cents": cfg.plan_agency_annual_cents,
+    }
+    return BillingStatusOut(
+        plan=sub.plan,
+        effective_plan=effective,
+        status=sub.status,
+        trial_ends_at=sub.trial_ends_at,
+        current_period_end=sub.current_period_end,
+        is_trial_expired=expired,
+        billing_interval=sub.billing_interval,
+        limits=PlanLimitsOut(
+            seats=limits.seats,
+            brands=limits.brands,
+            contacts=limits.contacts,
+            emails_per_month=limits.emails_per_month,
+            social_connections=limits.social_connections,
+            ai_drafts_per_month=limits.ai_drafts_per_month,
+            landing_pages=limits.landing_pages,
+            api_access=limits.api_access,
+            client_workspaces=limits.client_workspaces,
+            white_label=limits.white_label,
+        ),
+        prices=prices,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Checkout + portal
 # ---------------------------------------------------------------------------
 

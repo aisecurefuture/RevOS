@@ -103,3 +103,46 @@ export const authApi = {
       body: JSON.stringify({ current_password, new_password }),
     }),
 };
+
+// --- Billing endpoints ------------------------------------------------------
+export interface BillingStatus {
+  plan: string;
+  effective_plan: string | null;
+  status: string | null;
+  trial_ends_at: string | null;
+  current_period_end: string | null;
+  is_trial_expired: boolean;
+  billing_interval: string | null;
+  limits: {
+    seats: number | null;
+    brands: number | null;
+    contacts: number | null;
+    emails_per_month: number | null;
+    social_connections: number | null;
+    ai_drafts_per_month: number | null;
+    landing_pages: number | null;
+    api_access: boolean;
+    client_workspaces: boolean;
+    white_label: boolean;
+  };
+  prices: {
+    pro_monthly_cents: number;
+    pro_annual_cents: number;
+    agency_monthly_cents: number;
+    agency_annual_cents: number;
+  };
+}
+
+export const billingApi = {
+  status: () => apiFetch<BillingStatus>("/billing/status"),
+  startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),
+  checkout: (plan: "pro" | "agency", interval: "monthly" | "annual") =>
+    apiFetch<{ checkout_url: string }>("/billing/checkout", {
+      method: "POST",
+      body: JSON.stringify({ plan, interval }),
+    }),
+  portal: () =>
+    apiFetch<{ portal_url: string }>("/billing/portal", {
+      method: "POST",
+    }),
+};
