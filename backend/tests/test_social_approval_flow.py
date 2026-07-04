@@ -10,6 +10,7 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import select
 
 
 async def _register_owner(api):
@@ -102,6 +103,49 @@ async def test_submit_without_connection_is_rejected(api, async_session_factory)
     # No approval was created.
     approvals = (await api.get("/api/approvals", headers=h)).json()
     assert not [a for a in approvals if a["action_type"] == "social_publish"]
+
+
+@pytest.mark.asyncio
+async def test_submit_with_explicit_connection_is_honored(api, async_session_factory):
+    """When several accounts are connected for a platform, the picker's chosen
+    connection_id is what the approval records (not just the first one)."""
+    from app.models.approval import ApprovalRequest
+    from app.models.social import SocialPost
+    from app.models.social_connection import SocialConnection, SocialConnectionStatus
+
+    h = await _register_owner(api)
+    me = (await api.get("/api/auth/me", headers=h)).json()
+    user_id = uuid.UUID(me["id"])
+    bid = (await api.post("/api/brands", headers=h, json={"name": "Brand"})).json()["id"]
+    post = (await api.post("/api/social/posts", headers=h, json={
+        "brand_id": bid, "platform": "facebook", "caption": "Hi",
+    })).json()
+
+    async with async_session_factory() as s:
+        sp = await s.get(SocialPost, uuid.UUID(post["id"]))
+        account_id = sp.account_id
+        made = []
+        for name in ("Page A", "Page B"):
+            c = SocialConnection(
+                account_id=account_id, platform="facebook", external_id=f"ext-{name}",
+                display_name=name, status=SocialConnectionStatus.active,
+                token_ref=f"revos/{name}", connected_by=user_id,
+            )
+            s.add(c)
+            made.append(c)
+        await s.commit()
+        for c in made:
+            await s.refresh(c)
+        chosen_id = str(made[1].id)
+
+    r = await api.post(f"/api/social/posts/{post['id']}/submit?connection_id={chosen_id}", headers=h)
+    assert r.status_code == 200, r.text
+
+    async with async_session_factory() as s:
+        appr = (await s.execute(
+            select(ApprovalRequest).where(ApprovalRequest.entity_id == uuid.UUID(post["id"]))
+        )).scalar_one()
+        assert appr.payload["connection_id"] == chosen_id
 
 
 @pytest.mark.asyncio

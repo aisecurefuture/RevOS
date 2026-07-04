@@ -204,9 +204,9 @@ export const socialApi = {
     apiFetch<SocialPost>("/social/posts", { method: "POST", body: JSON.stringify(data) }),
   publish: (id: string) =>
     apiFetch<PublishResult>(`/social/posts/${id}/publish`, { method: "POST" }),
-  submitForApproval: (id: string) =>
+  submitForApproval: (id: string, connectionId?: string) =>
     apiFetch<{ approval_request_id: string; message: string }>(
-      `/social/posts/${id}/submit`,
+      `/social/posts/${id}/submit${connectionId ? `?connection_id=${connectionId}` : ""}`,
       { method: "POST" },
     ),
 };

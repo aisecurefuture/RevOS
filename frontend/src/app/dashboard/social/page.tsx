@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
-import { ApiError } from "@/lib/api";
+import { ApiError, socialApi as connectionsApi, type SocialConnection } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
 import { socialApi } from "@/lib/resources";
@@ -21,6 +21,8 @@ export default function SocialPage() {
 
   const [adapters, setAdapters] = useState<Record<string, boolean>>({});
   const [posts, setPosts] = useState<SocialPost[]>([]);
+  const [connections, setConnections] = useState<SocialConnection[]>([]);
+  const [chosenConn, setChosenConn] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -30,15 +32,26 @@ export default function SocialPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [status, p] = await Promise.all([socialApi.status(), socialApi.posts(selectedBrandId)]);
+      const [status, p, conns] = await Promise.all([
+        socialApi.status(),
+        socialApi.posts(selectedBrandId),
+        connectionsApi.list().catch(() => [] as SocialConnection[]),
+      ]);
       setAdapters(status.adapters);
       setPosts(p);
+      setConnections(conns);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to load social");
     } finally {
       setLoading(false);
     }
   }, [selectedBrandId]);
+
+  // Active connections for a platform, used to pick which account to post to.
+  const activeFor = useCallback(
+    (p: string) => connections.filter((c) => c.platform === p && c.status === "active"),
+    [connections],
+  );
 
   useEffect(() => {
     void load();
@@ -56,16 +69,66 @@ export default function SocialPage() {
     }
   }
 
-  async function submitForApproval(id: string) {
+  async function submitForApproval(id: string, connectionId?: string) {
     setNotice(null);
     setError(null);
     try {
-      const r = await socialApi.submitForApproval(id);
+      const r = await socialApi.submitForApproval(id, connectionId);
       setNotice(r.message);
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Submit failed");
     }
+  }
+
+  // Right-hand action for a post row: account picker + submit, or a status chip.
+  function renderActions(p: SocialPost) {
+    if (p.state === "needs_review") {
+      return (
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+          Pending approval
+        </span>
+      );
+    }
+    if (p.state === "published") {
+      return (
+        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+          Published
+        </span>
+      );
+    }
+    if (p.state !== "draft" || !canEdit) return null;
+
+    const conns = activeFor(p.platform);
+    if (conns.length === 0) {
+      return (
+        <span className="text-xs text-slate-400">
+          Connect {p.platform} in Settings → Social Connections
+        </span>
+      );
+    }
+    const chosen = chosenConn[p.id] ?? conns[0].id;
+    return (
+      <div className="flex items-center gap-2">
+        {conns.length > 1 ? (
+          <select
+            value={chosen}
+            onChange={(e) => setChosenConn((m) => ({ ...m, [p.id]: e.target.value }))}
+            className="max-w-[11rem] rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+            title="Choose which connected account to post to"
+          >
+            {conns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.display_name ?? c.handle ?? c.external_id}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        <Button variant="secondary" onClick={() => void submitForApproval(p.id, chosen)}>
+          Send for approval
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -150,19 +213,7 @@ export default function SocialPage() {
                     <span className="ml-2 text-xs capitalize text-slate-400">{p.state}</span>
                     <p className="mt-1 text-sm text-slate-700">{p.caption}</p>
                   </div>
-                  {p.state === "draft" && canEdit ? (
-                    <Button variant="secondary" onClick={() => void submitForApproval(p.id)}>
-                      Send for approval
-                    </Button>
-                  ) : p.state === "needs_review" ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      Pending approval
-                    </span>
-                  ) : p.state === "published" ? (
-                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                      Published
-                    </span>
-                  ) : null}
+                  {renderActions(p)}
                 </div>
               </Card>
             ))
