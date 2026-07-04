@@ -30,6 +30,7 @@ from app.models.user import AdminUser
 from app.services import secrets_service
 from app.services.social import meta as meta_client
 from app.services.social import threads as threads_client
+from app.services.social import x as x_client
 from app.services.social import youtube as youtube_client
 
 _STATE_SALT = "social-oauth-state"
@@ -44,8 +45,11 @@ def _signer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.secret_key, salt=_STATE_SALT)
 
 
-def make_oauth_state(account_id: uuid.UUID, platform: str) -> str:
-    return _signer().dumps({"account_id": str(account_id), "platform": platform})
+def make_oauth_state(account_id: uuid.UUID, platform: str, extra: dict | None = None) -> str:
+    data = {"account_id": str(account_id), "platform": platform}
+    if extra:
+        data.update(extra)
+    return _signer().dumps(data)
 
 
 def verify_oauth_state(state: str) -> dict:
@@ -83,6 +87,14 @@ def get_connect_url(platform: str, account_id: uuid.UUID) -> str:
         if not settings.youtube_client_id or not settings.youtube_client_secret or not settings.youtube_redirect_uri:
             raise RevOSError("YouTube OAuth is not configured on this server.", code="youtube_unconfigured", status_code=503)
         return youtube_client.connect_url(state)
+    if platform == "twitter":
+        if not settings.twitter_client_id or not settings.twitter_client_secret or not settings.twitter_redirect_uri:
+            raise RevOSError("X OAuth is not configured on this server.", code="twitter_unconfigured", status_code=503)
+        # PKCE: stash the verifier in the signed state so the callback can
+        # complete the exchange without server-side session storage.
+        verifier = x_client.generate_code_verifier()
+        pkce_state = make_oauth_state(account_id, platform, extra={"cv": verifier})
+        return x_client.connect_url(pkce_state, x_client.code_challenge(verifier))
     raise RevOSError(f"Platform '{platform}' is not supported.", code="unsupported_platform", status_code=400)
 
 
@@ -306,6 +318,61 @@ async def handle_youtube_callback(
     return [conn]
 
 
+# ---------------------------------------------------------------------------
+# X (Twitter) OAuth callback
+# ---------------------------------------------------------------------------
+
+async def handle_x_callback(
+    *,
+    code: str,
+    state: str,
+    user: AdminUser,
+    db: AsyncSession,
+) -> list[SocialConnection]:
+    """Complete the X PKCE flow: recover the verifier from state, exchange the
+    code, and create the account connection with tokens stored in OpenBao."""
+    state_data = verify_oauth_state(state)
+    account_id = uuid.UUID(state_data["account_id"])
+    code_verifier = state_data.get("cv")
+    if not code_verifier:
+        raise RevOSError("Missing PKCE verifier in OAuth state.", code="state_invalid", status_code=400)
+
+    tokens = await x_client.exchange_code(code, code_verifier)
+    account = await x_client.get_me(tokens.access_token)
+
+    expires_at = utcnow() + timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
+
+    conn = await _upsert_connection(
+        db=db,
+        account_id=account_id,
+        platform=SocialPlatform.twitter,
+        external_id=account.user_id,
+        handle=account.username,
+        display_name=account.name or account.username,
+        scopes=x_client._SCOPES.split(" "),
+        connected_by=user.id,
+        expires_at=expires_at,
+        platform_meta={"x_user_id": account.user_id},
+    )
+
+    token_path = _token_path(account_id, "twitter", conn.id)
+    await secrets_service.put_secret(
+        token_path,
+        {
+            "access_token": tokens.access_token,
+            "refresh_token": tokens.refresh_token or "",
+            "token_type": "x_oauth",
+            "x_user_id": account.user_id,
+            "expires_at": expires_at.isoformat() if expires_at else "",
+        },
+    )
+    conn.token_ref = token_path
+    db.add(conn)
+    await db.flush()
+    await db.refresh(conn)
+    return [conn]
+
+
 async def _upsert_connection(
     *,
     db: AsyncSession,
@@ -513,6 +580,39 @@ async def _youtube_access_token(conn: SocialConnection, token_data: dict) -> str
     return fresh.access_token
 
 
+async def _x_access_token(conn: SocialConnection, token_data: dict) -> str:
+    """Return a usable X access token, refreshing if expired.
+
+    X rotates refresh tokens on every refresh, so we persist the new
+    refresh_token that comes back, not the one we sent.
+    """
+    expires_at_raw = token_data.get("expires_at") or ""
+    still_valid = False
+    if expires_at_raw:
+        try:
+            still_valid = datetime.fromisoformat(expires_at_raw) > utcnow() + timedelta(seconds=60)
+        except ValueError:
+            still_valid = False
+    if still_valid and token_data.get("access_token"):
+        return token_data["access_token"]
+
+    refresh_token = token_data.get("refresh_token")
+    if not refresh_token:
+        raise RevOSError(
+            "No refresh token stored for this X connection. Reconnect the account.",
+            code="token_missing", status_code=503,
+        )
+    fresh = await x_client.refresh_access_token(refresh_token)
+    new_expires = utcnow() + timedelta(seconds=fresh.expires_in) if fresh.expires_in else None
+    await secrets_service.put_secret(conn.token_ref, {
+        **token_data,
+        "access_token": fresh.access_token,
+        "refresh_token": fresh.refresh_token or refresh_token,
+        "expires_at": new_expires.isoformat() if new_expires else "",
+    })
+    return fresh.access_token
+
+
 async def _fetch_media_bytes(ref: str) -> bytes:
     """Load media bytes for upload.
 
@@ -614,6 +714,11 @@ async def execute_publish(
             title=title,
             description=post.caption,
         )
+    elif conn.platform == SocialPlatform.twitter:
+        if not post.caption:
+            raise RevOSError("A tweet requires text in the post caption.", code="missing_text", status_code=400)
+        access_token = await _x_access_token(conn, token_data)
+        result = await x_client.publish_tweet(access_token, post.caption)
     else:
         raise RevOSError(f"Platform '{conn.platform}' publishing not yet implemented.", code="unsupported_platform", status_code=400)
 

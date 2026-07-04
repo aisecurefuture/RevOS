@@ -143,6 +143,11 @@ class Settings(BaseSettings):
     twitter_bearer_token: str = ""
     twitter_api_key: str = ""
     twitter_api_secret: str = ""
+    # X (Twitter) OAuth 2.0 user-context client (Authorization Code + PKCE).
+    # Distinct from the OAuth 1.0a api_key/secret above.
+    twitter_client_id: str = ""
+    twitter_client_secret: str = ""
+    twitter_redirect_uri: str = ""  # e.g. https://api.revos360.com/api/social/twitter/callback
     youtube_api_key: str = ""
     # YouTube uses a Google Cloud OAuth 2.0 client (distinct from the read-only
     # youtube_api_key above). Needed for channel connect + video upload.
