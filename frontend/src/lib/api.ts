@@ -137,7 +137,7 @@ export interface BillingStatus {
 // --- Social connections ------------------------------------------------------
 export interface SocialConnection {
   id: string;
-  platform: "facebook" | "instagram" | "threads";
+  platform: "facebook" | "instagram" | "threads" | "youtube";
   external_id: string;
   handle: string | null;
   display_name: string | null;

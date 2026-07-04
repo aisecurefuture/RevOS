@@ -35,7 +35,7 @@ from app.config import settings
 logger = logging.getLogger("revos.social_oauth")
 router = APIRouter(prefix="/social", tags=["social-oauth"])
 
-_SUPPORTED_PLATFORMS = {"facebook", "instagram", "threads"}
+_SUPPORTED_PLATFORMS = {"facebook", "instagram", "threads", "youtube"}
 
 
 def _account_id(request: Request) -> uuid.UUID:
@@ -156,6 +156,11 @@ async def oauth_callback(
                 code=code, state=state, user=user, db=db,
             )
             logger.info("Threads OAuth: created %d connection(s) for user %s", len(connections), user.id)
+        elif platform == "youtube":
+            connections = await svc.handle_youtube_callback(
+                code=code, state=state, user=user, db=db,
+            )
+            logger.info("YouTube OAuth: created %d connection(s) for user %s", len(connections), user.id)
         else:
             connections = await svc.handle_meta_callback(
                 code=code, state=state, user=user, db=db,

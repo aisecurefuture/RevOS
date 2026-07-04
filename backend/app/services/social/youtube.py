@@ -1,0 +1,214 @@
+"""YouTube (Google OAuth 2.0) client — Phase 2 M6.
+
+Handles the Google OAuth code exchange, refresh-token custody, channel
+discovery, and resumable video upload.
+
+Unlike Meta page tokens, Google access tokens are short-lived (~1h) and paired
+with a long-lived refresh token (granted only with access_type=offline +
+prompt=consent). Callers must refresh before publishing when the access token
+has expired.
+
+Official docs:
+  https://developers.google.com/identity/protocols/oauth2/web-server
+  https://developers.google.com/youtube/v3/guides/uploading_a_video
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+from urllib.parse import urlencode
+
+import httpx
+
+from app.config import settings
+from app.core.exceptions import RevOSError
+
+logger = logging.getLogger("revos.social.youtube")
+
+_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
+_TOKEN = "https://oauth2.googleapis.com/token"
+_API = "https://www.googleapis.com/youtube/v3"
+_UPLOAD = "https://www.googleapis.com/upload/youtube/v3/videos"
+_TIMEOUT = 30.0
+
+_SCOPES = " ".join([
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+])
+
+
+@dataclass
+class YouTubeTokens:
+    access_token: str
+    refresh_token: str | None
+    expires_in: int | None  # seconds until the access token expires
+
+
+@dataclass
+class YouTubeChannel:
+    channel_id: str
+    title: str | None
+    custom_url: str | None
+
+
+@dataclass
+class PublishResult:
+    external_id: str
+
+
+def connect_url(state: str) -> str:
+    """Build the Google OAuth consent URL.
+
+    access_type=offline + prompt=consent forces Google to return a refresh
+    token (it only does so on the first consent unless prompt=consent).
+    """
+    params = urlencode({
+        "client_id": settings.youtube_client_id,
+        "redirect_uri": settings.youtube_redirect_uri,
+        "response_type": "code",
+        "scope": _SCOPES,
+        "access_type": "offline",
+        "prompt": "consent",
+        "include_granted_scopes": "true",
+        "state": state,
+    })
+    return f"{_AUTH}?{params}"
+
+
+def _raise_api_error(resp: httpx.Response, context: str) -> None:
+    if resp.is_success:
+        return
+    try:
+        detail = resp.json().get("error", {})
+        if isinstance(detail, dict):
+            detail = detail.get("message") or detail.get("error_description") or resp.text
+    except Exception:
+        detail = resp.text
+    logger.warning("YouTube API error (%s): HTTP %s — %s", context, resp.status_code, detail)
+    raise RevOSError(
+        f"YouTube API error during {context}: {detail}",
+        code="youtube_api_error",
+        status_code=502,
+    )
+
+
+async def exchange_code(code: str) -> YouTubeTokens:
+    """Exchange an authorization code for access + refresh tokens."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.post(_TOKEN, data={
+            "code": code,
+            "client_id": settings.youtube_client_id,
+            "client_secret": settings.youtube_client_secret,
+            "redirect_uri": settings.youtube_redirect_uri,
+            "grant_type": "authorization_code",
+        })
+        _raise_api_error(resp, "code_exchange")
+        data = resp.json()
+        return YouTubeTokens(
+            access_token=data["access_token"],
+            refresh_token=data.get("refresh_token"),
+            expires_in=data.get("expires_in"),
+        )
+
+
+async def refresh_access_token(refresh_token: str) -> YouTubeTokens:
+    """Exchange a refresh token for a fresh access token.
+
+    Google does not return a new refresh token here, so the caller keeps the
+    existing one.
+    """
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.post(_TOKEN, data={
+            "refresh_token": refresh_token,
+            "client_id": settings.youtube_client_id,
+            "client_secret": settings.youtube_client_secret,
+            "grant_type": "refresh_token",
+        })
+        _raise_api_error(resp, "token_refresh")
+        data = resp.json()
+        return YouTubeTokens(
+            access_token=data["access_token"],
+            refresh_token=refresh_token,
+            expires_in=data.get("expires_in"),
+        )
+
+
+async def get_channel(access_token: str) -> YouTubeChannel:
+    """Fetch the authenticated user's primary channel."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            f"{_API}/channels",
+            params={"part": "id,snippet", "mine": "true"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        _raise_api_error(resp, "get_channel")
+        items = resp.json().get("items", [])
+        if not items:
+            raise RevOSError(
+                "No YouTube channel found for this Google account.",
+                code="no_channel",
+                status_code=400,
+            )
+        ch = items[0]
+        snippet = ch.get("snippet", {})
+        return YouTubeChannel(
+            channel_id=ch["id"],
+            title=snippet.get("title"),
+            custom_url=snippet.get("customUrl"),
+        )
+
+
+async def upload_video(
+    access_token: str,
+    video_bytes: bytes,
+    title: str,
+    description: str | None = None,
+    privacy: str = "private",
+) -> PublishResult:
+    """Upload a video via Google's resumable upload protocol.
+
+    Two steps: (1) POST the metadata to open a resumable session (Google
+    returns an upload URL in the Location header); (2) PUT the bytes to it.
+    Defaults to privacy="private" — approval-first: the operator flips it to
+    public on the platform, or we expose a privacy choice later.
+    """
+    metadata = {
+        "snippet": {"title": title[:100], "description": (description or "")[:5000]},
+        "status": {"privacyStatus": privacy},
+    }
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        # Step 1: open the resumable session.
+        init = await client.post(
+            _UPLOAD,
+            params={"uploadType": "resumable", "part": "snippet,status"},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-Upload-Content-Type": "video/*",
+                "X-Upload-Content-Length": str(len(video_bytes)),
+            },
+            content=json.dumps(metadata),
+        )
+        _raise_api_error(init, "upload_init")
+        upload_url = init.headers.get("location") or init.headers.get("Location")
+        if not upload_url:
+            raise RevOSError(
+                "YouTube did not return a resumable upload URL.",
+                code="youtube_api_error",
+                status_code=502,
+            )
+
+        # Step 2: upload the bytes.
+        put = await client.put(
+            upload_url,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "video/*",
+                "Content-Length": str(len(video_bytes)),
+            },
+            content=video_bytes,
+        )
+        _raise_api_error(put, "upload_bytes")
+        return PublishResult(external_id=put.json()["id"])

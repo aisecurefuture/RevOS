@@ -144,6 +144,11 @@ class Settings(BaseSettings):
     twitter_api_key: str = ""
     twitter_api_secret: str = ""
     youtube_api_key: str = ""
+    # YouTube uses a Google Cloud OAuth 2.0 client (distinct from the read-only
+    # youtube_api_key above). Needed for channel connect + video upload.
+    youtube_client_id: str = ""
+    youtube_client_secret: str = ""
+    youtube_redirect_uri: str = ""  # e.g. https://api.revos360.com/api/social/youtube/callback
 
     # --- Low-cost integrations ----------------------------------------------
     calendly_api_key: str = ""

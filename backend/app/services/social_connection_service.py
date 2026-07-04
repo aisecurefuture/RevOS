@@ -12,14 +12,16 @@ Responsibilities:
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
+import httpx
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import NotFoundError, PermissionError_, RevOSError
+from app.core.ssrf import validate_outbound_url
 from app.models.approval import ApprovalAction, ApprovalRequest, ApprovalStatus
 from app.models.base import utcnow
 from app.models.social import SocialPlatform, SocialPost
@@ -28,6 +30,7 @@ from app.models.user import AdminUser
 from app.services import secrets_service
 from app.services.social import meta as meta_client
 from app.services.social import threads as threads_client
+from app.services.social import youtube as youtube_client
 
 _STATE_SALT = "social-oauth-state"
 _STATE_MAX_AGE = 600  # 10 minutes
@@ -76,6 +79,10 @@ def get_connect_url(platform: str, account_id: uuid.UUID) -> str:
         if not settings.threads_app_id or not settings.threads_app_secret or not settings.threads_redirect_uri:
             raise RevOSError("Threads OAuth is not configured on this server.", code="threads_unconfigured", status_code=503)
         return threads_client.connect_url(state)
+    if platform == "youtube":
+        if not settings.youtube_client_id or not settings.youtube_client_secret or not settings.youtube_redirect_uri:
+            raise RevOSError("YouTube OAuth is not configured on this server.", code="youtube_unconfigured", status_code=503)
+        return youtube_client.connect_url(state)
     raise RevOSError(f"Platform '{platform}' is not supported.", code="unsupported_platform", status_code=400)
 
 
@@ -225,6 +232,71 @@ async def handle_threads_callback(
             "access_token": long_lived.access_token,
             "token_type": "threads_user",
             "threads_user_id": profile.user_id,
+        },
+    )
+    conn.token_ref = token_path
+    db.add(conn)
+    await db.flush()
+    await db.refresh(conn)
+    return [conn]
+
+
+# ---------------------------------------------------------------------------
+# YouTube (Google) OAuth callback
+# ---------------------------------------------------------------------------
+
+async def handle_youtube_callback(
+    *,
+    code: str,
+    state: str,
+    user: AdminUser,
+    db: AsyncSession,
+) -> list[SocialConnection]:
+    """Exchange the Google authorization code and create a channel connection.
+
+    Stores the access token, refresh token, and expiry in OpenBao so publishing
+    can refresh the short-lived access token later.
+    """
+    state_data = verify_oauth_state(state)
+    account_id = uuid.UUID(state_data["account_id"])
+
+    tokens = await youtube_client.exchange_code(code)
+    if not tokens.refresh_token:
+        # Without a refresh token we can't publish once the access token expires
+        # (~1h). This happens if the user previously granted consent; prompt=consent
+        # in connect_url should prevent it.
+        raise RevOSError(
+            "Google did not return a refresh token. Remove RevOS from your Google "
+            "account permissions and reconnect.",
+            code="no_refresh_token",
+            status_code=400,
+        )
+    channel = await youtube_client.get_channel(tokens.access_token)
+
+    expires_at = utcnow() + timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
+
+    conn = await _upsert_connection(
+        db=db,
+        account_id=account_id,
+        platform=SocialPlatform.youtube,
+        external_id=channel.channel_id,
+        handle=channel.custom_url,
+        display_name=channel.title,
+        scopes=youtube_client._SCOPES.split(" "),
+        connected_by=user.id,
+        expires_at=expires_at,
+        platform_meta={"channel_id": channel.channel_id},
+    )
+
+    token_path = _token_path(account_id, "youtube", conn.id)
+    await secrets_service.put_secret(
+        token_path,
+        {
+            "access_token": tokens.access_token,
+            "refresh_token": tokens.refresh_token,
+            "token_type": "youtube_oauth",
+            "channel_id": channel.channel_id,
+            "expires_at": expires_at.isoformat() if expires_at else "",
         },
     )
     conn.token_ref = token_path
@@ -412,6 +484,49 @@ async def submit_for_approval(
     return req
 
 
+async def _youtube_access_token(conn: SocialConnection, token_data: dict) -> str:
+    """Return a usable YouTube access token, refreshing + re-storing if expired."""
+    expires_at_raw = token_data.get("expires_at") or ""
+    still_valid = False
+    if expires_at_raw:
+        try:
+            # Refresh a minute early to avoid racing the edge of expiry.
+            still_valid = datetime.fromisoformat(expires_at_raw) > utcnow() + timedelta(seconds=60)
+        except ValueError:
+            still_valid = False
+    if still_valid and token_data.get("access_token"):
+        return token_data["access_token"]
+
+    refresh_token = token_data.get("refresh_token")
+    if not refresh_token:
+        raise RevOSError(
+            "No refresh token stored for this YouTube connection.",
+            code="token_missing", status_code=503,
+        )
+    fresh = await youtube_client.refresh_access_token(refresh_token)
+    new_expires = utcnow() + timedelta(seconds=fresh.expires_in) if fresh.expires_in else None
+    await secrets_service.put_secret(conn.token_ref, {
+        **token_data,
+        "access_token": fresh.access_token,
+        "expires_at": new_expires.isoformat() if new_expires else "",
+    })
+    return fresh.access_token
+
+
+async def _fetch_media_bytes(url: str) -> bytes:
+    """Download media for upload. SSRF-validated; redirects disabled so the
+    allowlist check can't be bypassed by a redirect to an internal host."""
+    validate_outbound_url(url)
+    async with httpx.AsyncClient(timeout=120.0, follow_redirects=False) as client:
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            raise RevOSError(
+                f"Could not fetch media for publishing (HTTP {resp.status_code}).",
+                code="media_fetch_failed", status_code=502,
+            )
+        return resp.content
+
+
 async def execute_publish(
     db: AsyncSession,
     approval_id: uuid.UUID,
@@ -467,6 +582,19 @@ async def execute_publish(
             user_token=token_data["access_token"],
             image_url=image_url,
             caption=post.caption,
+        )
+    elif conn.platform == SocialPlatform.youtube:
+        video_url = post.media_urls[0] if post.media_urls else None
+        if not video_url:
+            raise RevOSError("YouTube posts require a video URL in media_urls.", code="missing_media", status_code=400)
+        access_token = await _youtube_access_token(conn, token_data)
+        video_bytes = await _fetch_media_bytes(video_url)
+        title = (post.caption or "Untitled").strip().splitlines()[0][:100] if post.caption else "Untitled"
+        result = await youtube_client.upload_video(
+            access_token=access_token,
+            video_bytes=video_bytes,
+            title=title,
+            description=post.caption,
         )
     else:
         raise RevOSError(f"Platform '{conn.platform}' publishing not yet implemented.", code="unsupported_platform", status_code=400)

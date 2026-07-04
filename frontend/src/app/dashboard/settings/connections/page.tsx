@@ -16,6 +16,7 @@ const PLATFORM_META = {
   facebook: { label: "Facebook Pages", icon: "📘", color: "text-blue-600" },
   instagram: { label: "Instagram Business", icon: "📷", color: "text-pink-600" },
   threads: { label: "Threads", icon: "🧵", color: "text-slate-700" },
+  youtube: { label: "YouTube", icon: "📺", color: "text-red-600" },
 } as const;
 
 const STATUS_BADGE: Record<string, string> = {
@@ -192,7 +193,7 @@ function ConnectionsInner() {
   }
 
   const groups = groupConnections(connections);
-  const platforms: SocialConnection["platform"][] = ["facebook", "instagram", "threads"];
+  const platforms: SocialConnection["platform"][] = ["facebook", "instagram", "threads", "youtube"];
 
   return (
     <>
