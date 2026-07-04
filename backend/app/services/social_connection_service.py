@@ -31,6 +31,7 @@ from app.services import secrets_service
 from app.services.social import linkedin as linkedin_client
 from app.services.social import meta as meta_client
 from app.services.social import threads as threads_client
+from app.services.social import tiktok as tiktok_client
 from app.services.social import x as x_client
 from app.services.social import youtube as youtube_client
 
@@ -100,6 +101,10 @@ def get_connect_url(platform: str, account_id: uuid.UUID) -> str:
         if not settings.linkedin_client_id or not settings.linkedin_client_secret or not settings.linkedin_redirect_uri:
             raise RevOSError("LinkedIn OAuth is not configured on this server.", code="linkedin_unconfigured", status_code=503)
         return linkedin_client.connect_url(state)
+    if platform == "tiktok":
+        if not settings.tiktok_client_key or not settings.tiktok_client_secret or not settings.tiktok_redirect_uri:
+            raise RevOSError("TikTok OAuth is not configured on this server.", code="tiktok_unconfigured", status_code=503)
+        return tiktok_client.connect_url(state)
     raise RevOSError(f"Platform '{platform}' is not supported.", code="unsupported_platform", status_code=400)
 
 
@@ -429,6 +434,57 @@ async def handle_linkedin_callback(
     return [conn]
 
 
+# ---------------------------------------------------------------------------
+# TikTok OAuth callback
+# ---------------------------------------------------------------------------
+
+async def handle_tiktok_callback(
+    *,
+    code: str,
+    state: str,
+    user: AdminUser,
+    db: AsyncSession,
+) -> list[SocialConnection]:
+    """Exchange the TikTok authorization code and create the user connection."""
+    state_data = verify_oauth_state(state)
+    account_id = uuid.UUID(state_data["account_id"])
+
+    tokens = await tiktok_client.exchange_code(code)
+    info = await tiktok_client.get_user_info(tokens.access_token)
+
+    expires_at = utcnow() + timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
+
+    conn = await _upsert_connection(
+        db=db,
+        account_id=account_id,
+        platform=SocialPlatform.tiktok,
+        external_id=info.open_id,
+        handle=None,
+        display_name=info.display_name,
+        scopes=tiktok_client._SCOPES.split(","),
+        connected_by=user.id,
+        expires_at=expires_at,
+        platform_meta={"open_id": info.open_id},
+    )
+
+    token_path = _token_path(account_id, "tiktok", conn.id)
+    await secrets_service.put_secret(
+        token_path,
+        {
+            "access_token": tokens.access_token,
+            "refresh_token": tokens.refresh_token or "",
+            "token_type": "tiktok_oauth",
+            "open_id": info.open_id,
+            "expires_at": expires_at.isoformat() if expires_at else "",
+        },
+    )
+    conn.token_ref = token_path
+    db.add(conn)
+    await db.flush()
+    await db.refresh(conn)
+    return [conn]
+
+
 async def _upsert_connection(
     *,
     db: AsyncSession,
@@ -734,6 +790,37 @@ async def _linkedin_access_token(conn: SocialConnection, token_data: dict) -> st
     return fresh.access_token
 
 
+async def _tiktok_access_token(conn: SocialConnection, token_data: dict) -> str:
+    """Return a usable TikTok access token, refreshing if expired. TikTok rotates
+    refresh tokens, so persist whatever comes back."""
+    expires_at_raw = token_data.get("expires_at") or ""
+    still_valid = False
+    if expires_at_raw:
+        try:
+            still_valid = datetime.fromisoformat(expires_at_raw) > utcnow() + timedelta(seconds=60)
+        except ValueError:
+            still_valid = False
+    if still_valid and token_data.get("access_token"):
+        return token_data["access_token"]
+
+    refresh_token = token_data.get("refresh_token")
+    if not refresh_token:
+        raise RevOSError(
+            "Your TikTok connection has expired. Reconnect it in "
+            "Settings → Social Connections.",
+            code="token_expired", status_code=400,
+        )
+    fresh = await tiktok_client.refresh_access_token(refresh_token)
+    new_expires = utcnow() + timedelta(seconds=fresh.expires_in) if fresh.expires_in else None
+    await secrets_service.put_secret(conn.token_ref, {
+        **token_data,
+        "access_token": fresh.access_token,
+        "refresh_token": fresh.refresh_token or refresh_token,
+        "expires_at": new_expires.isoformat() if new_expires else "",
+    })
+    return fresh.access_token
+
+
 async def _fetch_media_bytes(ref: str) -> bytes:
     """Load media bytes for upload.
 
@@ -847,6 +934,14 @@ async def execute_publish(
         result = await linkedin_client.publish_share(
             access_token, token_data["member_id"], post.caption,
         )
+    elif conn.platform == SocialPlatform.tiktok:
+        video_url = post.media_urls[0] if post.media_urls else None
+        if not video_url:
+            raise RevOSError("TikTok posts require a video URL in media_urls.", code="missing_media", status_code=400)
+        access_token = await _tiktok_access_token(conn, token_data)
+        video_bytes = await _fetch_media_bytes(video_url)
+        title = (post.caption or "").strip() or "RevOS post"
+        result = await tiktok_client.publish_video(access_token, video_bytes, title)
     else:
         raise RevOSError(f"Platform '{conn.platform}' publishing not yet implemented.", code="unsupported_platform", status_code=400)
 

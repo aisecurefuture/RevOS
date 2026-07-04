@@ -67,7 +67,7 @@ def test_get_connect_url(monkeypatch):
 def test_get_connect_url_unsupported_platform():
     from app.core.exceptions import RevOSError
     with pytest.raises(RevOSError) as exc_info:
-        svc.get_connect_url("tiktok", ACCOUNT_ID)
+        svc.get_connect_url("pinterest", ACCOUNT_ID)
     assert exc_info.value.code == "unsupported_platform"
 
 

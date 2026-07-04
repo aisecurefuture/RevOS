@@ -155,6 +155,10 @@ class Settings(BaseSettings):
     youtube_client_id: str = ""
     youtube_client_secret: str = ""
     youtube_redirect_uri: str = ""  # e.g. https://api.revos360.com/api/social/youtube/callback
+    # TikTok Login Kit + Content Posting API. Note: TikTok calls the id "client_key".
+    tiktok_client_key: str = ""
+    tiktok_client_secret: str = ""
+    tiktok_redirect_uri: str = ""  # e.g. https://api.revos360.com/api/social/tiktok/callback
 
     # --- Low-cost integrations ----------------------------------------------
     calendly_api_key: str = ""

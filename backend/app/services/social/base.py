@@ -127,5 +127,7 @@ def adapter_status() -> dict[str, bool]:
         "linkedin": bool(
             settings.linkedin_client_id and settings.linkedin_client_secret and settings.linkedin_redirect_uri
         ),
-        "tiktok": False,  # no OAuth publishing integration yet
+        "tiktok": bool(
+            settings.tiktok_client_key and settings.tiktok_client_secret and settings.tiktok_redirect_uri
+        ),
     }
