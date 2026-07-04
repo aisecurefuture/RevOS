@@ -24,4 +24,9 @@ BEAT_SCHEDULE: dict = {
         "task": "revos.auto_approve_sweep",
         "schedule": 60.0,
     },
+    # Publish approved social posts whose scheduled time has arrived.
+    "publish-scheduled-posts": {
+        "task": "revos.publish_scheduled_posts",
+        "schedule": 60.0,
+    },
 }

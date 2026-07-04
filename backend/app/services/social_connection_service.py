@@ -11,6 +11,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timedelta
 
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.exceptions import NotFoundError, PermissionError_, RevOSError
 from app.core.ssrf import validate_outbound_url
+from app.core.tenancy import reset_active_account, set_active_account
 from app.models.approval import ApprovalAction, ApprovalRequest, ApprovalStatus
 from app.models.base import utcnow
 from app.models.social import SocialPlatform, SocialPost
@@ -34,6 +36,8 @@ from app.services.social import threads as threads_client
 from app.services.social import tiktok as tiktok_client
 from app.services.social import x as x_client
 from app.services.social import youtube as youtube_client
+
+logger = logging.getLogger("revos.social_connection")
 
 _STATE_SALT = "social-oauth-state"
 _STATE_MAX_AGE = 600  # 10 minutes
@@ -888,69 +892,15 @@ async def execute_publish(
         raise NotFoundError("Social post not found.")
 
     conn = await get_connection(db, connection_id, account_id)
-    token_data = await secrets_service.get_secret(conn.token_ref)
-    if token_data is None:
-        raise RevOSError("Token not found in secrets store.", code="token_missing", status_code=503)
 
-    # Publish via Meta adapter
-    if conn.platform == SocialPlatform.facebook:
-        result = await meta_client.publish_to_page(
-            page_id=token_data["page_id"],
-            page_token=token_data["access_token"],
-            caption=post.caption,
-        )
-    elif conn.platform == SocialPlatform.instagram:
-        image_url = post.media_urls[0] if post.media_urls else None
-        if not image_url:
-            raise RevOSError("Instagram posts require at least one image URL.", code="missing_media", status_code=400)
-        result = await meta_client.publish_to_instagram(
-            ig_user_id=token_data["ig_user_id"],
-            user_token=token_data["access_token"],
-            image_url=image_url,
-            caption=post.caption,
-        )
-    elif conn.platform == SocialPlatform.youtube:
-        video_url = post.media_urls[0] if post.media_urls else None
-        if not video_url:
-            raise RevOSError("YouTube posts require a video URL in media_urls.", code="missing_media", status_code=400)
-        access_token = await _youtube_access_token(conn, token_data)
-        video_bytes = await _fetch_media_bytes(video_url)
-        title = (post.caption or "Untitled").strip().splitlines()[0][:100] if post.caption else "Untitled"
-        result = await youtube_client.upload_video(
-            access_token=access_token,
-            video_bytes=video_bytes,
-            title=title,
-            description=post.caption,
-        )
-    elif conn.platform == SocialPlatform.twitter:
-        if not post.caption:
-            raise RevOSError("A tweet requires text in the post caption.", code="missing_text", status_code=400)
-        access_token = await _x_access_token(conn, token_data)
-        result = await x_client.publish_tweet(access_token, post.caption)
-    elif conn.platform == SocialPlatform.linkedin:
-        if not post.caption:
-            raise RevOSError("A LinkedIn post requires text in the post caption.", code="missing_text", status_code=400)
-        access_token = await _linkedin_access_token(conn, token_data)
-        result = await linkedin_client.publish_share(
-            access_token, token_data["member_id"], post.caption,
-        )
-    elif conn.platform == SocialPlatform.tiktok:
-        video_url = post.media_urls[0] if post.media_urls else None
-        if not video_url:
-            raise RevOSError("TikTok posts require a video URL in media_urls.", code="missing_media", status_code=400)
-        access_token = await _tiktok_access_token(conn, token_data)
-        video_bytes = await _fetch_media_bytes(video_url)
-        title = (post.caption or "").strip() or "RevOS post"
-        result = await tiktok_client.publish_video(access_token, video_bytes, title)
+    # Approve-now, publish-later: if a future time is set, park the post as
+    # `scheduled` and let the beat scheduler publish it when the time arrives.
+    if post.scheduled_at is not None and post.scheduled_at > utcnow():
+        post.state = ContentState.scheduled
+        post.social_connection_id = conn.id
+        db.add(post)
     else:
-        raise RevOSError(f"Platform '{conn.platform}' publishing not yet implemented.", code="unsupported_platform", status_code=400)
-
-    # Update post state
-    post.state = ContentState.published
-    post.published_at = utcnow()
-    post.external_post_id = result.external_id
-    post.social_connection_id = connection_id
-    db.add(post)
+        await _publish_post_now(db, post, conn)
 
     # Close the approval request
     req.status = ApprovalStatus.approved
@@ -961,3 +911,107 @@ async def execute_publish(
     await db.flush()
     await db.refresh(post)
     return post
+
+
+async def _dispatch_publish(post: SocialPost, conn: SocialConnection, token_data: dict):
+    """Platform switch → PublishResult. Pure — reads tokens, calls the adapter,
+    performs no DB writes. Shared by immediate and scheduled publishing."""
+    if conn.platform == SocialPlatform.facebook:
+        return await meta_client.publish_to_page(
+            page_id=token_data["page_id"],
+            page_token=token_data["access_token"],
+            caption=post.caption,
+        )
+    if conn.platform == SocialPlatform.instagram:
+        image_url = post.media_urls[0] if post.media_urls else None
+        if not image_url:
+            raise RevOSError("Instagram posts require at least one image URL.", code="missing_media", status_code=400)
+        return await meta_client.publish_to_instagram(
+            ig_user_id=token_data["ig_user_id"],
+            user_token=token_data["access_token"],
+            image_url=image_url,
+            caption=post.caption,
+        )
+    if conn.platform == SocialPlatform.youtube:
+        video_url = post.media_urls[0] if post.media_urls else None
+        if not video_url:
+            raise RevOSError("YouTube posts require a video URL in media_urls.", code="missing_media", status_code=400)
+        access_token = await _youtube_access_token(conn, token_data)
+        video_bytes = await _fetch_media_bytes(video_url)
+        title = (post.caption or "Untitled").strip().splitlines()[0][:100] if post.caption else "Untitled"
+        return await youtube_client.upload_video(
+            access_token=access_token, video_bytes=video_bytes,
+            title=title, description=post.caption,
+        )
+    if conn.platform == SocialPlatform.twitter:
+        if not post.caption:
+            raise RevOSError("A tweet requires text in the post caption.", code="missing_text", status_code=400)
+        access_token = await _x_access_token(conn, token_data)
+        return await x_client.publish_tweet(access_token, post.caption)
+    if conn.platform == SocialPlatform.linkedin:
+        if not post.caption:
+            raise RevOSError("A LinkedIn post requires text in the post caption.", code="missing_text", status_code=400)
+        access_token = await _linkedin_access_token(conn, token_data)
+        return await linkedin_client.publish_share(access_token, token_data["member_id"], post.caption)
+    if conn.platform == SocialPlatform.tiktok:
+        video_url = post.media_urls[0] if post.media_urls else None
+        if not video_url:
+            raise RevOSError("TikTok posts require a video URL in media_urls.", code="missing_media", status_code=400)
+        access_token = await _tiktok_access_token(conn, token_data)
+        video_bytes = await _fetch_media_bytes(video_url)
+        title = (post.caption or "").strip() or "RevOS post"
+        return await tiktok_client.publish_video(access_token, video_bytes, title)
+    raise RevOSError(f"Platform '{conn.platform}' publishing not yet implemented.", code="unsupported_platform", status_code=400)
+
+
+async def _publish_post_now(db: AsyncSession, post: SocialPost, conn: SocialConnection) -> SocialPost:
+    """Read the token, publish to the platform, and mark the post published."""
+    from app.models.content import ContentState
+
+    token_data = await secrets_service.get_secret(conn.token_ref)
+    if token_data is None:
+        raise RevOSError("Token not found in secrets store.", code="token_missing", status_code=503)
+    result = await _dispatch_publish(post, conn, token_data)
+    post.state = ContentState.published
+    post.published_at = utcnow()
+    post.external_post_id = result.external_id
+    post.social_connection_id = conn.id
+    db.add(post)
+    return post
+
+
+async def publish_scheduled_due(db: AsyncSession) -> dict:
+    """Publish approved posts whose scheduled time has arrived (beat-driven).
+
+    Each post publishes in its own savepoint so one failure never blocks the
+    rest; tenant context is scoped per post's account.
+    """
+    from app.models.content import ContentState
+
+    now = utcnow()
+    posts = (await db.execute(
+        select(SocialPost).where(
+            SocialPost.state == ContentState.scheduled,
+            SocialPost.scheduled_at.is_not(None),
+            SocialPost.scheduled_at <= now,
+            SocialPost.deleted_at.is_(None),
+        ).limit(200)
+    )).scalars().all()
+
+    published = 0
+    for post in posts:
+        if post.social_connection_id is None:
+            continue
+        token = set_active_account(post.account_id)
+        try:
+            conn = await get_connection(db, post.social_connection_id, post.account_id)
+            async with db.begin_nested():
+                await _publish_post_now(db, post, conn)
+            published += 1
+        except Exception:  # noqa: BLE001 — one bad post must not stop the sweep
+            logger.exception("Scheduled publish failed for post %s", post.id)
+        finally:
+            reset_active_account(token)
+
+    await db.flush()
+    return {"published": published}

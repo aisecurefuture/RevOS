@@ -115,6 +115,26 @@ def auto_approve_sweep() -> dict:
     return asyncio.run(_run_auto_approvals())
 
 
+async def _run_scheduled_posts() -> dict:
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            from app.services import social_connection_service
+
+            stats = await social_connection_service.publish_scheduled_due(session)
+            await session.commit()
+            return stats
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="revos.publish_scheduled_posts")
+def publish_scheduled_posts() -> dict:
+    """Every minute: publish approved social posts whose scheduled time arrived."""
+    return asyncio.run(_run_scheduled_posts())
+
+
 async def _run_expire_trials() -> dict:
     """Find trials that ended in the last hour and send reminder / expiry emails."""
     from datetime import timedelta

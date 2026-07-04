@@ -210,6 +210,7 @@ export interface SocialPost {
   caption?: string | null;
   hashtags: string[];
   state: string;
+  scheduled_at?: string | null;
   external_post_id?: string | null;
 }
 

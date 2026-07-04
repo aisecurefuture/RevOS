@@ -28,6 +28,7 @@ export default function SocialPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [platform, setPlatform] = useState("instagram");
   const [caption, setCaption] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,8 +62,16 @@ export default function SocialPage() {
     e.preventDefault();
     if (!selectedBrandId) return;
     try {
-      await socialApi.createPost({ brand_id: selectedBrandId, platform, caption });
+      await socialApi.createPost({
+        brand_id: selectedBrandId,
+        platform,
+        caption,
+        // datetime-local has no timezone; interpreted in the browser's local
+        // zone and converted to an ISO instant for the API.
+        scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+      });
       setCaption("");
+      setScheduledAt("");
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Create failed");
@@ -94,6 +103,13 @@ export default function SocialPage() {
       return (
         <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
           Published
+        </span>
+      );
+    }
+    if (p.state === "scheduled") {
+      return (
+        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+          Scheduled for {p.scheduled_at ? new Date(p.scheduled_at).toLocaleString() : "—"}
         </span>
       );
     }
@@ -189,6 +205,25 @@ export default function SocialPage() {
                 className="grow rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-500">Schedule for (optional):</label>
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+              {scheduledAt ? (
+                <button
+                  type="button"
+                  onClick={() => setScheduledAt("")}
+                  className="text-xs text-slate-400 hover:text-slate-600"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
             <Button type="submit">Add draft post</Button>
           </form>
         </Card>
@@ -212,6 +247,11 @@ export default function SocialPage() {
                     </span>
                     <span className="ml-2 text-xs capitalize text-slate-400">{p.state}</span>
                     <p className="mt-1 text-sm text-slate-700">{p.caption}</p>
+                    {p.state === "draft" && p.scheduled_at ? (
+                      <p className="mt-0.5 text-xs text-blue-500">
+                        Will publish {new Date(p.scheduled_at).toLocaleString()} once approved
+                      </p>
+                    ) : null}
                   </div>
                   {renderActions(p)}
                 </div>
