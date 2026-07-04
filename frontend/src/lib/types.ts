@@ -8,6 +8,10 @@ export interface User {
   full_name: string;
   role: Role;
   is_active: boolean;
+  totp_enabled: boolean;
+  email_verified: boolean;
+  timezone?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface LoginResponse {
