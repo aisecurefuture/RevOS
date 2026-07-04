@@ -114,7 +114,7 @@ services:
   openbao:
     image: openbao/openbao:2.2.0
     restart: unless-stopped
-    command: server
+    command: ["server", "-config=/vault/config/config.hcl"]
     cap_add:
       - IPC_LOCK
     volumes:
