@@ -112,6 +112,7 @@ export interface BillingStatus {
   trial_ends_at: string | null;
   current_period_end: string | null;
   is_trial_expired: boolean;
+  cancel_at_period_end: boolean;
   billing_interval: string | null;
   limits: {
     seats: number | null;
@@ -142,7 +143,7 @@ export const billingApi = {
       body: JSON.stringify({ plan, interval }),
     }),
   portal: () =>
-    apiFetch<{ portal_url: string }>("/billing/portal", {
-      method: "POST",
-    }),
+    apiFetch<{ portal_url: string }>("/billing/portal", { method: "POST" }),
+  cancel: () =>
+    apiFetch<BillingStatus>("/billing/cancel", { method: "POST" }),
 };

@@ -59,3 +59,6 @@ class Subscription(BaseModel, table=True):
 
     # Populated when the subscription is canceled.
     canceled_at: datetime | None = Field(default=None)
+    # True when the user has requested cancellation at period end (access continues
+    # until current_period_end; Stripe will set status=canceled on that date).
+    cancel_at_period_end: bool = Field(default=False)

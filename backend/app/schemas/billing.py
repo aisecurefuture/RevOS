@@ -41,6 +41,7 @@ class BillingStatusOut(BaseModel):
     trial_ends_at: datetime | None
     current_period_end: datetime | None
     is_trial_expired: bool
+    cancel_at_period_end: bool
     billing_interval: str | None  # "monthly" | "annual" | None
     limits: PlanLimitsOut
     prices: dict  # display-only price map in cents

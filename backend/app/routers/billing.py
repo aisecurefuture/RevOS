@@ -71,6 +71,7 @@ async def billing_status(request: Request, user: CurrentUser, db: DbSession) -> 
         trial_ends_at=sub.trial_ends_at if sub else None,
         current_period_end=sub.current_period_end if sub else None,
         is_trial_expired=expired,
+        cancel_at_period_end=sub.cancel_at_period_end if sub else False,
         billing_interval=sub.billing_interval if sub else None,
         limits=PlanLimitsOut(
             seats=limits.seats,
@@ -129,6 +130,7 @@ async def start_trial(
         trial_ends_at=sub.trial_ends_at,
         current_period_end=sub.current_period_end,
         is_trial_expired=expired,
+        cancel_at_period_end=sub.cancel_at_period_end,
         billing_interval=sub.billing_interval,
         limits=PlanLimitsOut(
             seats=limits.seats,
@@ -183,6 +185,59 @@ async def create_portal(
 
     url = await billing_service.create_portal_session(db, account_id)
     return PortalResponse(portal_url=url)
+
+
+# ---------------------------------------------------------------------------
+# Cancel
+# ---------------------------------------------------------------------------
+
+@router.post("/cancel", response_model=BillingStatusOut)
+async def cancel_subscription(
+    request: Request,
+    user: CurrentUser,
+    db: DbSession,
+    _c: None = Depends(verify_csrf),
+) -> BillingStatusOut:
+    """Schedule the subscription to cancel at the end of the current billing period."""
+    account_id = getattr(request.state, "account_id", None)
+    if account_id is None:
+        raise PermissionError_("No active account context.")
+
+    sub = await billing_service.cancel_subscription(db, account_id)
+
+    from app.config import settings as cfg
+    effective = get_effective_plan(sub)
+    limits = get_plan_limits(sub)
+    expired = is_trial_expired(sub)
+    prices = {
+        "pro_monthly_cents": cfg.plan_pro_monthly_cents,
+        "pro_annual_cents": cfg.plan_pro_annual_cents,
+        "agency_monthly_cents": cfg.plan_agency_monthly_cents,
+        "agency_annual_cents": cfg.plan_agency_annual_cents,
+    }
+    return BillingStatusOut(
+        plan=sub.plan,
+        effective_plan=effective,
+        status=sub.status,
+        trial_ends_at=sub.trial_ends_at,
+        current_period_end=sub.current_period_end,
+        is_trial_expired=expired,
+        cancel_at_period_end=sub.cancel_at_period_end,
+        billing_interval=sub.billing_interval,
+        limits=PlanLimitsOut(
+            seats=limits.seats,
+            brands=limits.brands,
+            contacts=limits.contacts,
+            emails_per_month=limits.emails_per_month,
+            social_connections=limits.social_connections,
+            ai_drafts_per_month=limits.ai_drafts_per_month,
+            landing_pages=limits.landing_pages,
+            api_access=limits.api_access,
+            client_workspaces=limits.client_workspaces,
+            white_label=limits.white_label,
+        ),
+        prices=prices,
+    )
 
 
 # ---------------------------------------------------------------------------

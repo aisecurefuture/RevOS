@@ -206,9 +206,32 @@ async def create_portal_session(
         raise NotFoundError("No active Stripe customer for this account.")
     session = s.billing_portal.Session.create(
         customer=sub.stripe_customer_id,
-        return_url=f"{settings.frontend_base_url}/billing",
+        return_url=f"{settings.frontend_base_url}/dashboard/profile",
     )
     return session["url"]
+
+
+async def cancel_subscription(db: AsyncSession, account_id: uuid.UUID) -> Subscription:
+    """Schedule the Stripe subscription to cancel at the current period end.
+
+    Does not cancel immediately — the user keeps access until their paid period
+    expires. Sets cancel_at_period_end=True on the Stripe side and records the
+    cancellation intent locally so the UI can reflect it immediately.
+    """
+    sub = await get_subscription(db, account_id)
+    if sub is None or not sub.stripe_subscription_id:
+        raise NotFoundError("No active subscription to cancel.")
+    if sub.status not in (SubscriptionStatus.active, SubscriptionStatus.trialing):
+        raise RevOSError("Subscription is not in a cancellable state.", status_code=400, code="not_cancellable")
+
+    s = _stripe()
+    s.Subscription.modify(sub.stripe_subscription_id, cancel_at_period_end=True)
+
+    sub.cancel_at_period_end = True
+    db.add(sub)
+    await db.flush()
+    logger.info("Subscription cancellation scheduled for account %s", account_id)
+    return sub
 
 
 # ---------------------------------------------------------------------------

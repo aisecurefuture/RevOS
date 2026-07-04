@@ -383,6 +383,7 @@ function BillingSection() {
   const [plan, setPlan] = useState<"pro" | "agency">("pro");
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
   const [working, setWorking] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   useEffect(() => {
     billingApi.status()
@@ -409,6 +410,20 @@ function BillingSection() {
       window.location.href = portal_url;
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not open billing portal.");
+      setWorking(false);
+    }
+  }
+
+  async function doCancel() {
+    setWorking(true);
+    setError(null);
+    try {
+      const updated = await billingApi.cancel();
+      setBs(updated);
+      setConfirmCancel(false);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not cancel subscription.");
+    } finally {
       setWorking(false);
     }
   }
@@ -478,13 +493,63 @@ function BillingSection() {
 
       {/* Manage billing for paid subscribers */}
       {isPaid && (
-        <div className="mt-4">
-          <Button variant="secondary" onClick={goPortal} disabled={working}>
-            {working ? "Opening…" : "Manage billing & invoices"}
-          </Button>
-          <p className="mt-1 text-xs text-slate-400">
-            Change plan, update payment method, or cancel via Stripe.
-          </p>
+        <div className="mt-4 space-y-3">
+          {bs?.cancel_at_period_end && bs.current_period_end && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+              Your subscription is set to cancel on{" "}
+              <strong>{new Date(bs.current_period_end).toLocaleDateString()}</strong>. You will keep
+              access until then.
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={goPortal} disabled={working}>
+              {working ? "Opening…" : "Manage billing & invoices"}
+            </Button>
+
+            {!bs?.cancel_at_period_end && (
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmCancel(true)}
+                disabled={working}
+                className="text-red-600 border-red-200 hover:bg-red-50"
+              >
+                Cancel subscription
+              </Button>
+            )}
+          </div>
+
+          {/* Inline confirmation */}
+          {confirmCancel && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 space-y-2">
+              <p className="text-sm font-medium text-red-800">Cancel your subscription?</p>
+              <p className="text-xs text-red-700">
+                You&apos;ll keep full access until{" "}
+                {bs?.current_period_end
+                  ? new Date(bs.current_period_end).toLocaleDateString()
+                  : "the end of your billing period"}
+                . After that, your account will be downgraded.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={doCancel}
+                  disabled={working}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {working ? "Cancelling…" : "Yes, cancel at period end"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmCancel(false)}
+                  disabled={working}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Keep subscription
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
