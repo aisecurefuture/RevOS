@@ -44,6 +44,7 @@ def register_routers(app: FastAPI) -> None:
         analytics,
         approvals,
         auth,
+        bao,
         billing,
         brands,
         campaign_send,
@@ -72,6 +73,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(auth.router, prefix="/api")
     app.include_router(accounts.router, prefix="/api")
     app.include_router(billing.router, prefix="/api")
+    app.include_router(bao.router, prefix="/api")
     app.include_router(brands.router, prefix="/api")
     app.include_router(offers.router, prefix="/api")
     app.include_router(campaigns.router, prefix="/api")

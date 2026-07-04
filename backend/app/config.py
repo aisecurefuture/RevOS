@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     # Trial length in days for new accounts.
     trial_days: int = 14
 
+    # --- Secrets (OpenBao / Vault) ------------------------------------------
+    bao_addr: str = "http://openbao:8200"
+    bao_token: str = ""          # root or AppRole token; empty = Bao disabled
+    bao_kv_mount: str = "secret" # KV v2 mount name
+
     # --- Storage ------------------------------------------------------------
     storage_backend: Literal["local", "s3"] = "local"
     storage_local_dir: str = "./storage"

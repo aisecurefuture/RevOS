@@ -50,6 +50,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      openbao:
+        condition: service_started
     ports:
       - "8000:8000"
     volumes:
@@ -71,6 +73,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      openbao:
+        condition: service_started
     volumes:
       - ./backend:/app
       - storage-data:/app/storage
@@ -88,6 +92,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      openbao:
+        condition: service_started
     volumes:
       - ./backend:/app
     command: >
@@ -105,7 +111,27 @@ services:
     ports:
       - "3000:3000"
 
+  openbao:
+    image: openbao/openbao:2.2.0
+    restart: unless-stopped
+    command: server
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - ./openbao/config.hcl:/vault/config/config.hcl:ro
+      - openbao-data:/vault/data
+    # Only reachable inside the Docker network — not exposed on host
+    expose:
+      - "8200"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8200/v1/sys/health || true"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   postgres-data:
   redis-data:
   storage-data:
+  openbao-data:
