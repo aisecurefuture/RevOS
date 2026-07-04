@@ -114,8 +114,7 @@ export default function PrivacyPage() {
                 to our app type that are necessary to provide social publishing features. These
                 cover managing Facebook Pages, reading page engagement, and publishing content
                 to Instagram Business Accounts. Certain use cases are restricted by Meta
-                and were not available for us to request. We do not request or receive access
-                to personal profiles, private messages, or ad accounts.
+                and were not available for us to request.
               </li>
               <li>
                 <strong>What we access:</strong> We access your Facebook Pages and linked
