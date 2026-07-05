@@ -156,10 +156,10 @@ async def run_for_brand(db: AsyncSession, config: AutopilotConfig) -> dict:
                 continue
             stats["generated"] += 1
 
-            check = await brand_book_service.check_content(db, config.brand_id, caption)
+            check = await brand_book_service.verify_content(db, config.brand_id, caption)
             if check.blocked:
                 stats["blocked"] += 1
-                logger.info("Autopilot blocked content for brand %s: %s", config.brand_id, check.banned_hits)
+                logger.info("Autopilot blocked content for brand %s: %s", config.brand_id, check.deterministic.banned_hits)
                 continue
 
             post = await social_service.create_post(db, {

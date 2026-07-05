@@ -21,6 +21,9 @@ M5 layers LLM-based semantic verification on top of this; the interface is stabl
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -28,12 +31,16 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import NotFoundError
 from app.models.base import utcnow
 from app.models.brand import Brand, BrandVoice, BuyerPersona
 from app.models.brand_book import BrandBook, BrandClaim, BrandFact
 from app.models.offer import Offer, OfferStatus
 from app.models.user import AdminUser
+from app.services import ai_service
+
+logger = logging.getLogger("revos.brand_book")
 
 
 # ---------------------------------------------------------------------------
@@ -372,4 +379,138 @@ async def check_content(
         banned_hits=banned_hits,
         missing_disclaimers=missing_disclaimers,
         unverified_numbers=unverified,
+    )
+
+
+# ---------------------------------------------------------------------------
+# M5 — LLM claim verification (semantic layer on top of the deterministic gate)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LlmVerification:
+    ok: bool                                    # True only if the verifier ran AND parsed
+    unsupported_claims: list[str] = field(default_factory=list)
+    error: str | None = None                    # reason it couldn't verify
+
+
+@dataclass
+class VerificationResult:
+    """Combined gate: the deterministic check plus the optional LLM claim check.
+
+    ``passed`` is the safe-for-hands-off verdict — clean on EVERY layer that
+    ran. It fails closed: if the LLM check was requested and could not run, the
+    content is NOT considered passed.
+    """
+    passed: bool
+    blocked: bool
+    deterministic: ContentCheck
+    llm_checked: bool = False
+    unsupported_claims: list[str] = field(default_factory=list)
+    llm_error: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "passed": self.passed,
+            "blocked": self.blocked,
+            "banned_hits": self.deterministic.banned_hits,
+            "unverified_numbers": self.deterministic.unverified_numbers,
+            "missing_disclaimers": self.deterministic.missing_disclaimers,
+            "llm_checked": self.llm_checked,
+            "unsupported_claims": self.unsupported_claims,
+            "llm_error": self.llm_error,
+        }
+
+
+_VERIFIER_SYSTEM = (
+    "You are a strict fact-checker for marketing content. You are given the COMPLETE set "
+    "of facts a brand is permitted to assert, and a piece of content. Find every FACTUAL "
+    "CLAIM in the content that is not directly supported by those facts. A factual claim "
+    "states something as objective truth: a capability, feature, statistic, certification, "
+    "award, partnership, comparison, guarantee, or specific outcome. Calls to action, "
+    "opinions, questions, and general encouragement are NOT factual claims. Be strict — if "
+    "a claim is not clearly supported by the permitted facts, list it verbatim. Respond with "
+    'ONLY a JSON object and nothing else: {"unsupported_claims": ["<claim>", ...]}. If every '
+    'factual claim is supported (or there are none), respond {"unsupported_claims": []}.'
+)
+
+
+def _parse_verdict(raw: str) -> list[str] | None:
+    """Extract the unsupported_claims list from the model's response, tolerating
+    markdown fences / preamble. Returns None if it can't be parsed (fail closed)."""
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except (ValueError, TypeError):
+        return None
+    claims = data.get("unsupported_claims")
+    if not isinstance(claims, list):
+        return None
+    return [str(c).strip() for c in claims if str(c).strip()][:25]
+
+
+async def verify_claims_llm(*, approved: list[str], facts: list[str], content: str) -> LlmVerification:
+    """LLM claim check. Fails closed: any inability to verify → ok=False."""
+    if not ai_service.ai_available():
+        return LlmVerification(ok=False, error="no_provider")
+
+    source_parts = []
+    if approved:
+        source_parts.append("Approved claims:\n" + "\n".join(f"- {c}" for c in approved))
+    if facts:
+        source_parts.append("Known facts:\n" + "\n".join(f"- {f}" for f in facts))
+    source = "\n\n".join(source_parts) or "(no approved claims or facts on file)"
+    context = f"PERMITTED FACTS:\n{source}\n\nCONTENT TO CHECK:\n{content}"
+
+    raw = await asyncio.to_thread(
+        ai_service.analyze, system=_VERIFIER_SYSTEM, context=context,
+        max_tokens=600, use_case="summary",
+    )
+    if not raw:
+        return LlmVerification(ok=False, error="generation_failed")
+    parsed = _parse_verdict(raw)
+    if parsed is None:
+        logger.warning("Claim verifier returned unparseable output: %s", raw[:300])
+        return LlmVerification(ok=False, error="unparseable")
+    return LlmVerification(ok=True, unsupported_claims=parsed)
+
+
+async def verify_content(
+    db: AsyncSession, brand_id: uuid.UUID, text: str, *,
+    require_disclaimers: bool = False, use_llm: bool | None = None,
+) -> VerificationResult:
+    """Full gate = deterministic check + (optional) LLM claim verification.
+
+    ``use_llm`` overrides the ``LLM_CLAIM_VERIFICATION`` setting. When the LLM
+    check runs but cannot complete (call/parse failure), the result fails closed
+    (passed=False). When no AI provider exists at all, it degrades to
+    deterministic-only (there's no LLM to verify with, and no LLM to have
+    generated the content either)."""
+    det = await check_content(db, brand_id, text, require_disclaimers=require_disclaimers)
+
+    run_llm = settings.llm_claim_verification if use_llm is None else use_llm
+    if not run_llm or not ai_service.ai_available():
+        return VerificationResult(
+            passed=det.passed, blocked=det.blocked, deterministic=det, llm_checked=False,
+        )
+
+    claims = await _approved_claims(db, brand_id)
+    facts = await list_facts(db, brand_id)
+    llm = await verify_claims_llm(
+        approved=[c.claim for c in claims],
+        facts=[f"{f.topic}: {f.content}" for f in facts],
+        content=text,
+    )
+    if not llm.ok:
+        # Requested + provider available, but verification failed → fail closed.
+        return VerificationResult(
+            passed=False, blocked=det.blocked, deterministic=det,
+            llm_checked=False, llm_error=llm.error,
+        )
+
+    passed = det.passed and not llm.unsupported_claims
+    return VerificationResult(
+        passed=passed, blocked=det.blocked, deterministic=det,
+        llm_checked=True, unsupported_claims=llm.unsupported_claims,
     )

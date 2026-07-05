@@ -489,9 +489,15 @@ function GenerateVideoCard({ persona }: { persona: PersonaIdentity }) {
             }`}>
               {scriptGate.blocked
                 ? `⚠ Blocked (banned: ${scriptGate.banned_hits.join(", ")}) — edit before generating.`
-                : scriptGate.passed
-                  ? "✓ On-brand and grounded — passed the accuracy check."
-                  : `⚠ Review: unverified ${scriptGate.unverified_numbers.join(", ")}`}
+                : (scriptGate.unsupported_claims?.length ?? 0) > 0
+                  ? `⚠ Unsupported claims (not in your Brand Book): ${scriptGate.unsupported_claims!.join("; ")}`
+                  : scriptGate.unverified_numbers.length > 0
+                    ? `⚠ Review — unverified figures: ${scriptGate.unverified_numbers.join(", ")}`
+                    : scriptGate.llm_error
+                      ? "⚠ Couldn't fully verify — review before publishing."
+                      : scriptGate.passed
+                        ? `✓ On-brand and grounded${scriptGate.llm_checked ? " (AI-verified)" : ""} — passed the accuracy check.`
+                        : "⚠ Review before generating."}
             </p>
           ) : (
             <p className="mt-1 text-xs text-slate-400">

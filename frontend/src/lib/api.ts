@@ -527,6 +527,9 @@ export interface VideoScript {
     banned_hits: string[];
     unverified_numbers: string[];
     missing_disclaimers: string[];
+    llm_checked?: boolean;
+    unsupported_claims?: string[];
+    llm_error?: string | null;
   };
   created_at: string;
 }

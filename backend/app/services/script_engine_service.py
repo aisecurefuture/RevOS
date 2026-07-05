@@ -47,16 +47,6 @@ async def _brand_in_account(db: AsyncSession, brand_id: uuid.UUID, account_id: u
     return brand
 
 
-def _gate_dict(check: brand_book_service.ContentCheck) -> dict:
-    return {
-        "passed": check.passed,
-        "blocked": check.blocked,
-        "banned_hits": check.banned_hits,
-        "unverified_numbers": check.unverified_numbers,
-        "missing_disclaimers": check.missing_disclaimers,
-    }
-
-
 # ---------------------------------------------------------------------------
 # Generation
 # ---------------------------------------------------------------------------
@@ -119,12 +109,12 @@ async def generate_script(
         )
     text = text.strip()
 
-    check = await brand_book_service.check_content(db, brand_id, text)
+    check = await brand_book_service.verify_content(db, brand_id, text)
     script = VideoScript(
         account_id=account_id, brand_id=brand_id, persona_identity_id=persona_identity_id,
         target_seconds=target_seconds, angle=angle,
         script=text, hook=_first_sentence(text), word_count=len(text.split()),
-        passed_gate=check.passed, gate=_gate_dict(check),
+        passed_gate=check.passed, gate=check.to_dict(),
         created_by=user.id,
     )
     db.add(script)
@@ -174,12 +164,12 @@ async def update_script(
     new_text = new_text.strip()
     if not new_text:
         raise RevOSError("Script cannot be empty.", code="empty_script", status_code=400)
-    check = await brand_book_service.check_content(db, script.brand_id, new_text)
+    check = await brand_book_service.verify_content(db, script.brand_id, new_text)
     script.script = new_text
     script.hook = _first_sentence(new_text)
     script.word_count = len(new_text.split())
     script.passed_gate = check.passed
-    script.gate = _gate_dict(check)
+    script.gate = check.to_dict()
     db.add(script)
     await db.flush()
     await db.refresh(script)

@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     # Keys are ai_service use-cases: email, social, landing, ideas, summary.
     local_ai_model_map: dict[str, str] = Field(default_factory=dict)
     ai_rate_limit: str = "20/minute"
+    # M5: run a second, LLM-based claim-verification pass on top of the
+    # deterministic brand-book gate. Off by default (it's an extra LLM call per
+    # generation); enabling it makes hands-off publishing require an LLM to
+    # confirm every factual claim is supported by the brand book. Fails CLOSED —
+    # if the verifier can't run/parse, content is treated as unverified.
+    llm_claim_verification: bool = False
 
     # --- Payments -----------------------------------------------------------
     stripe_secret_key: str = ""
