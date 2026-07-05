@@ -541,11 +541,14 @@ function GenerateVideoCard({ persona }: { persona: PersonaIdentity }) {
               </div>
               <p className="truncate text-xs text-slate-400">{j.script}</p>
               {j.status === "succeeded" && j.has_output ? (
-                <video
-                  src={avatarApi.videoUrl(j.id)}
-                  controls
-                  className="mt-2 max-h-64 w-full rounded"
-                />
+                <>
+                  <video
+                    src={avatarApi.videoUrl(j.id)}
+                    controls
+                    className="mt-2 max-h-64 w-full rounded"
+                  />
+                  <PublishRow jobId={j.id} />
+                </>
               ) : null}
               {j.status === "failed" && j.error ? (
                 <p className="mt-1 text-xs text-red-600">{j.error}</p>
@@ -555,5 +558,59 @@ function GenerateVideoCard({ persona }: { persona: PersonaIdentity }) {
         </ul>
       ) : null}
     </Card>
+  );
+}
+
+const SOCIAL_PLATFORMS = ["instagram", "tiktok", "youtube", "facebook", "linkedin", "twitter", "threads"];
+
+function PublishRow({ jobId }: { jobId: string }) {
+  const [platform, setPlatform] = useState("tiktok");
+  const [caption, setCaption] = useState("");
+  const [burnCaptions, setBurnCaptions] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function publish() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      await avatarApi.publish(jobId, {
+        platform, caption: caption || undefined, burn_captions: burnCaptions,
+      });
+      setResult("Sent to the Approvals queue.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not submit for publishing");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={platform} onChange={(e) => setPlatform(e.target.value)}
+          className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+        >
+          {SOCIAL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <input
+          value={caption} onChange={(e) => setCaption(e.target.value)}
+          placeholder="Caption (optional — defaults to the script's opening line)"
+          className="grow rounded-lg border border-slate-300 px-2 py-1 text-xs"
+        />
+        <label className="flex items-center gap-1 text-xs text-slate-600">
+          <input type="checkbox" checked={burnCaptions} onChange={(e) => setBurnCaptions(e.target.checked)} />
+          Burn captions
+        </label>
+        <Button type="button" variant="secondary" onClick={() => void publish()} disabled={busy}>
+          {busy ? "Sending…" : "Send for approval"}
+        </Button>
+      </div>
+      {result ? <p className="text-xs text-green-600">✓ {result}</p> : null}
+      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+    </div>
   );
 }

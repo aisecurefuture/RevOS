@@ -7,6 +7,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.social import SocialPlatform
+
 
 class AvatarJobCreate(BaseModel):
     persona_identity_id: uuid.UUID
@@ -37,3 +39,15 @@ class AvatarJobOut(BaseModel):
         out = cls.model_validate(job)
         out.has_output = bool(job.output_path)
         return out
+
+
+class AvatarPublishRequest(BaseModel):
+    platform: SocialPlatform
+    caption: str | None = Field(default=None, max_length=3000)
+    burn_captions: bool = True
+
+
+class AvatarPublishOut(BaseModel):
+    post_id: uuid.UUID
+    approval_request_id: uuid.UUID
+    platform: str

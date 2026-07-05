@@ -508,6 +508,10 @@ export const avatarApi = {
     apiFetch<AvatarJob>("/avatar/jobs", { method: "POST", body: JSON.stringify(data) }),
   getJob: (id: string) => apiFetch<AvatarJob>(`/avatar/jobs/${id}`),
   videoUrl: (id: string) => `/api/avatar/jobs/${id}/video`,
+  publish: (id: string, data: { platform: string; caption?: string; burn_captions?: boolean }) =>
+    apiFetch<{ post_id: string; approval_request_id: string; platform: string }>(
+      `/avatar/jobs/${id}/publish`, { method: "POST", body: JSON.stringify(data) },
+    ),
 };
 
 // --- Video script engine ----------------------------------------------------

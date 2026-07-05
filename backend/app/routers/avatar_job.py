@@ -18,8 +18,8 @@ from app.core.exceptions import NotFoundError, RevOSError
 from app.deps import DbSession, require_authenticated, require_editor, verify_csrf
 from app.models.avatar_job import AvatarJobStatus
 from app.models.user import AdminUser
-from app.schemas.avatar_job import AvatarJobCreate, AvatarJobOut
-from app.services import avatar_service
+from app.schemas.avatar_job import AvatarJobCreate, AvatarJobOut, AvatarPublishOut, AvatarPublishRequest
+from app.services import avatar_render_service, avatar_service
 from app.services.storage_service import get_storage
 
 router = APIRouter(prefix="/avatar", tags=["avatar"])
@@ -75,6 +75,22 @@ async def get_job(
 ) -> AvatarJobOut:
     job = await avatar_service.get_job(db, job_id, _account_id(request))
     return AvatarJobOut.from_job(job)
+
+
+@router.post("/jobs/{job_id}/publish", response_model=AvatarPublishOut)
+async def publish_job(
+    job_id: uuid.UUID, body: AvatarPublishRequest, request: Request, db: DbSession,
+    user: AdminUser = Depends(require_editor), _: None = Depends(verify_csrf),
+) -> AvatarPublishOut:
+    """Render the finished video (captions + platform framing) and submit it
+    to the approval queue as a new social post."""
+    account_id = _account_id(request)
+    job = await avatar_service.get_job(db, job_id, account_id)
+    post, approval = await avatar_render_service.publish_avatar_job(
+        db, job, account_id, user,
+        platform=body.platform, caption=body.caption, burn_captions_on=body.burn_captions,
+    )
+    return AvatarPublishOut(post_id=post.id, approval_request_id=approval.id, platform=str(post.platform))
 
 
 @router.get("/jobs/{job_id}/video")
