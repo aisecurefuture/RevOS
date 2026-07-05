@@ -106,6 +106,7 @@ from app.models.social import (
     SocialPost,
 )
 from app.models.social_connection import SocialConnection, SocialConnectionStatus
+from app.models.video_script import VideoScript
 from app.models.user import AdminUser, ApiKey, AuditLog, RecoveryCode, Role
 
 __all__ = [
@@ -161,4 +162,6 @@ __all__ = [
     "PersonaIdentity", "PersonaIdentityStatus", "PersonaConsent",
     # avatar jobs
     "AvatarVideoJob", "AvatarJobStatus",
+    # video scripts
+    "VideoScript",
 ]

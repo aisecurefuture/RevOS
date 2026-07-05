@@ -10,12 +10,15 @@ import {
   ApiError,
   avatarApi,
   personaApi,
+  scriptApi,
   type AvatarDuration,
   type AvatarJob,
   type PersonaConsent,
   type PersonaIdentity,
+  type VideoScript,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useBrand } from "@/lib/brand";
 
 function fmtWait(seconds: number): string {
   const m = Math.round(seconds / 60);
@@ -370,12 +373,40 @@ function PersonaDetail({
 }
 
 function GenerateVideoCard({ persona }: { persona: PersonaIdentity }) {
+  const { brands, selectedBrandId } = useBrand();
+  const brandId = persona.brand_id ?? selectedBrandId ?? brands[0]?.id ?? null;
+
   const [durations, setDurations] = useState<AvatarDuration[]>([]);
   const [targetSeconds, setTargetSeconds] = useState(15);
   const [script, setScript] = useState("");
+  const [angle, setAngle] = useState("");
+  const [scriptGate, setScriptGate] = useState<VideoScript["gate"] | null>(null);
+  const [writing, setWriting] = useState(false);
   const [jobs, setJobs] = useState<AvatarJob[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function writeScript() {
+    if (!brandId) {
+      setError("Assign this persona a brand (with a Brand Book) to auto-write scripts.");
+      return;
+    }
+    setWriting(true);
+    setError(null);
+    setScriptGate(null);
+    try {
+      const s = await scriptApi.generate({
+        brand_id: brandId, target_seconds: targetSeconds,
+        persona_identity_id: persona.id, angle: angle || undefined,
+      });
+      setScript(s.script);
+      setScriptGate(s.gate);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not write script");
+    } finally {
+      setWriting(false);
+    }
+  }
 
   const loadJobs = useCallback(async () => {
     try {
@@ -439,14 +470,45 @@ function GenerateVideoCard({ persona }: { persona: PersonaIdentity }) {
           </select>
           {est ? <span className="text-xs text-slate-500">est. wait {fmtWait(est)}</span> : null}
         </div>
+
+        {/* AI script writer — grounded in the brand book, sized to the duration */}
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+          <div className="flex gap-2">
+            <input
+              value={angle} onChange={(e) => setAngle(e.target.value)}
+              placeholder="What's this video about? (optional angle)"
+              className="grow rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+            <Button type="button" variant="secondary" onClick={() => void writeScript()} disabled={writing}>
+              {writing ? "Writing…" : "✨ Write with AI"}
+            </Button>
+          </div>
+          {scriptGate ? (
+            <p className={`mt-1 text-xs ${
+              scriptGate.blocked ? "text-red-600" : scriptGate.passed ? "text-green-600" : "text-amber-600"
+            }`}>
+              {scriptGate.blocked
+                ? `⚠ Blocked (banned: ${scriptGate.banned_hits.join(", ")}) — edit before generating.`
+                : scriptGate.passed
+                  ? "✓ On-brand and grounded — passed the accuracy check."
+                  : `⚠ Review: unverified ${scriptGate.unverified_numbers.join(", ")}`}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-400">
+              Grounded in this brand&apos;s Brand Book, sized to the chosen length, and checked
+              for accuracy. Edit freely before generating.
+            </p>
+          )}
+        </div>
+
         <textarea
-          required rows={3} value={script} onChange={(e) => setScript(e.target.value)}
-          placeholder="The script your avatar will speak…"
+          required rows={4} value={script} onChange={(e) => { setScript(e.target.value); setScriptGate(null); }}
+          placeholder="The script your avatar will speak… (write it yourself, or use ✨ Write with AI)"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
         />
         {error ? <p className="text-xs text-red-600">{error}</p> : null}
         <Button type="submit" disabled={busy || !script.trim()}>
-          {busy ? "Starting…" : "Generate"}
+          {busy ? "Starting…" : "Generate video"}
         </Button>
       </form>
 

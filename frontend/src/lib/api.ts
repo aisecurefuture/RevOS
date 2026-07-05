@@ -510,6 +510,36 @@ export const avatarApi = {
   videoUrl: (id: string) => `/api/avatar/jobs/${id}/video`,
 };
 
+// --- Video script engine ----------------------------------------------------
+export interface VideoScript {
+  id: string;
+  brand_id: string;
+  persona_identity_id: string | null;
+  target_seconds: number;
+  angle: string | null;
+  script: string;
+  hook: string | null;
+  word_count: number;
+  passed_gate: boolean;
+  gate: {
+    passed: boolean;
+    blocked: boolean;
+    banned_hits: string[];
+    unverified_numbers: string[];
+    missing_disclaimers: string[];
+  };
+  created_at: string;
+}
+
+export const scriptApi = {
+  generate: (data: {
+    brand_id: string; target_seconds: number;
+    persona_identity_id?: string; angle?: string;
+  }) => apiFetch<VideoScript>("/scripts/generate", { method: "POST", body: JSON.stringify(data) }),
+  list: (personaId?: string) =>
+    apiFetch<VideoScript[]>(`/scripts${personaId ? `?persona_identity_id=${personaId}` : ""}`),
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),
