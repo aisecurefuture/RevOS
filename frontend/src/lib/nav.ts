@@ -13,6 +13,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Overview", href: "/dashboard", icon: "📊" },
   { label: "Brands", href: "/dashboard/brands", icon: "🏢" },
+  { label: "Brand Book", href: "/dashboard/brand-book", icon: "📖" },
   { label: "Offers", href: "/dashboard/offers", icon: "🎁" },
   { label: "Leads", href: "/dashboard/leads", icon: "🧲" },
   { label: "Forms", href: "/dashboard/forms", icon: "📋" },

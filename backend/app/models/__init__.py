@@ -18,6 +18,7 @@ from app.models.analytics import (
 from app.models.approval import ApprovalAction, ApprovalRequest, ApprovalStatus
 from app.models.base import BaseModel, IDModel, TimestampModel, utcnow
 from app.models.brand import Audience, Brand, BrandType, BrandVoice, BuyerPersona
+from app.models.brand_book import BrandBook, BrandClaim, BrandFact, ClaimCategory
 from app.models.campaign import (
     Campaign,
     CampaignChannel,
@@ -145,4 +146,6 @@ __all__ = [
     "IntegrationCredential", "IntegrationProvider", "IntegrationCredentialStatus",
     # scheduler
     "EventType", "Booking", "BookingStatus", "LocationType",
+    # brand book
+    "BrandBook", "BrandClaim", "BrandFact", "ClaimCategory",
 ]

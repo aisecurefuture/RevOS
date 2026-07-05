@@ -326,6 +326,67 @@ export const publicSchedulerApi = {
     }),
 };
 
+// --- Brand Book -------------------------------------------------------------
+export interface BrandBook {
+  id: string;
+  brand_id: string;
+  mission: string | null;
+  positioning: string | null;
+  elevator_pitch: string | null;
+  target_summary: string | null;
+  key_messages: string[];
+  banned_terms: string[];
+  required_disclaimers: string[];
+  compliance_notes: string | null;
+  competitors: string[];
+  is_published: boolean;
+}
+
+export interface BrandClaim {
+  id: string;
+  claim: string;
+  proof: string | null;
+  category: string;
+  approved: boolean;
+  expires_at: string | null;
+}
+
+export interface BrandFact {
+  id: string;
+  topic: string;
+  content: string;
+  category: string | null;
+  source: string | null;
+}
+
+export interface ContentCheck {
+  passed: boolean;
+  blocked: boolean;
+  banned_hits: string[];
+  missing_disclaimers: string[];
+  unverified_numbers: string[];
+}
+
+export const brandBookApi = {
+  get: (brandId: string) => apiFetch<BrandBook>(`/brand-book/${brandId}`),
+  update: (brandId: string, data: Partial<BrandBook>) =>
+    apiFetch<BrandBook>(`/brand-book/${brandId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  listClaims: (brandId: string) => apiFetch<BrandClaim[]>(`/brand-book/${brandId}/claims`),
+  addClaim: (brandId: string, data: { claim: string; proof?: string; category?: string }) =>
+    apiFetch<BrandClaim>(`/brand-book/${brandId}/claims`, { method: "POST", body: JSON.stringify(data) }),
+  deleteClaim: (brandId: string, id: string) =>
+    apiFetch<void>(`/brand-book/${brandId}/claims/${id}`, { method: "DELETE" }),
+  listFacts: (brandId: string) => apiFetch<BrandFact[]>(`/brand-book/${brandId}/facts`),
+  addFact: (brandId: string, data: { topic: string; content: string; source?: string }) =>
+    apiFetch<BrandFact>(`/brand-book/${brandId}/facts`, { method: "POST", body: JSON.stringify(data) }),
+  deleteFact: (brandId: string, id: string) =>
+    apiFetch<void>(`/brand-book/${brandId}/facts/${id}`, { method: "DELETE" }),
+  check: (brandId: string, text: string) =>
+    apiFetch<ContentCheck>(`/brand-book/${brandId}/check`, {
+      method: "POST", body: JSON.stringify({ text }),
+    }),
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),
