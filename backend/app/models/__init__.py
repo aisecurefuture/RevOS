@@ -73,6 +73,12 @@ from app.models.lead import (
 )
 from app.models.media import MediaAsset, MediaKind, MediaStatus, MediaVariant
 from app.models.offer import Offer, OfferStatus, OfferType
+from app.models.scheduler import (
+    Booking,
+    BookingStatus,
+    EventType,
+    LocationType,
+)
 from app.models.sequence import (
     ABTest,
     Enrollment,
@@ -137,4 +143,6 @@ __all__ = [
     "MediaAsset", "MediaVariant", "MediaKind", "MediaStatus",
     # integration credentials
     "IntegrationCredential", "IntegrationProvider", "IntegrationCredentialStatus",
+    # scheduler
+    "EventType", "Booking", "BookingStatus", "LocationType",
 ]

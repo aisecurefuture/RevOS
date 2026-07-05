@@ -23,6 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Content", href: "/dashboard/content", icon: "📝" },
   { label: "Media", href: "/dashboard/media", icon: "🎬" },
   { label: "Social", href: "/dashboard/social", icon: "📣" },
+  { label: "Scheduler", href: "/dashboard/scheduler", icon: "📅" },
   { label: "Analytics", href: "/dashboard/analytics", icon: "📈" },
   { label: "Approvals", href: "/dashboard/approvals", icon: "✅" },
   { label: "Settings", href: "/dashboard/settings", icon: "⚙️", minRole: "owner" },

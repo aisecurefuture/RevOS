@@ -233,6 +233,99 @@ export const integrationCredentialsApi = {
     ),
 };
 
+// --- Scheduler --------------------------------------------------------------
+export interface AvailabilityWindow {
+  weekday: number; // Mon=0 .. Sun=6
+  start: string;   // "HH:MM"
+  end: string;
+}
+
+export interface EventType {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  duration_minutes: number;
+  buffer_before_minutes: number;
+  buffer_after_minutes: number;
+  min_notice_minutes: number;
+  max_days_ahead: number;
+  timezone: string;
+  weekly_availability: AvailabilityWindow[];
+  location_type: "custom" | "phone" | "in_person";
+  location_detail: string | null;
+  active: boolean;
+}
+
+export interface SchedulerBooking {
+  id: string;
+  event_type_id: string;
+  invitee_name: string;
+  invitee_email: string;
+  invitee_timezone: string;
+  invitee_notes: string | null;
+  start_at: string;
+  end_at: string;
+  status: string;
+  location_type: string;
+  location_detail: string | null;
+}
+
+export interface PublicEventType {
+  id: string;
+  name: string;
+  description: string | null;
+  duration_minutes: number;
+  timezone: string;
+  location_type: string;
+}
+
+export interface PublicBooking {
+  event_type_id: string;
+  invitee_name: string;
+  invitee_email: string;
+  invitee_timezone: string;
+  start_at: string;
+  end_at: string;
+  status: string;
+  location_type: string;
+  location_detail: string | null;
+  manage_token: string;
+}
+
+export const schedulerApi = {
+  listEventTypes: () => apiFetch<EventType[]>("/scheduler/event-types"),
+  createEventType: (data: Partial<EventType>) =>
+    apiFetch<EventType>("/scheduler/event-types", { method: "POST", body: JSON.stringify(data) }),
+  updateEventType: (id: string, data: Partial<EventType>) =>
+    apiFetch<EventType>(`/scheduler/event-types/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteEventType: (id: string) =>
+    apiFetch<void>(`/scheduler/event-types/${id}`, { method: "DELETE" }),
+  listBookings: (upcomingOnly = false) =>
+    apiFetch<SchedulerBooking[]>(`/scheduler/bookings${upcomingOnly ? "?upcoming_only=true" : ""}`),
+};
+
+export const publicSchedulerApi = {
+  getEvent: (id: string) => apiFetch<PublicEventType>(`/public/scheduler/event/${id}`),
+  getSlots: (id: string, from: string, to: string) =>
+    apiFetch<{ timezone: string; duration_minutes: number; slots: string[] }>(
+      `/public/scheduler/event/${id}/slots?from=${from}&to=${to}`,
+    ),
+  book: (id: string, body: {
+    start_at: string; invitee_name: string; invitee_email: string;
+    invitee_timezone: string; invitee_notes?: string;
+  }) => apiFetch<PublicBooking>(`/public/scheduler/event/${id}/book`, {
+    method: "POST", body: JSON.stringify(body),
+  }),
+  getBooking: (token: string) => apiFetch<PublicBooking>(`/public/scheduler/booking/${token}`),
+  cancel: (token: string) =>
+    apiFetch<PublicBooking>(`/public/scheduler/booking/${token}/cancel`, { method: "POST" }),
+  reschedule: (token: string, startAt: string) =>
+    apiFetch<PublicBooking>(`/public/scheduler/booking/${token}/reschedule`, {
+      method: "POST", body: JSON.stringify({ start_at: startAt }),
+    }),
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),

@@ -66,6 +66,8 @@ def register_routers(app: FastAPI) -> None:
         notes_tasks,
         offers,
         public,
+        public_scheduler,
+        scheduler,
         sequences,
         social,
         social_oauth,
@@ -105,6 +107,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(analytics.router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
     app.include_router(integration_credentials.router, prefix="/api")
+    app.include_router(scheduler.router, prefix="/api")
+    app.include_router(public_scheduler.router, prefix="/api")
     app.include_router(ai.router, prefix="/api")
 
 
