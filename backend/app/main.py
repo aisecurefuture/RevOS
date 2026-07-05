@@ -46,6 +46,7 @@ def register_routers(app: FastAPI) -> None:
         auth,
         autopilot,
         automation,
+        avatar_job,
         bao,
         billing,
         brand_book,
@@ -98,6 +99,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(approvals.router, prefix="/api")
     app.include_router(automation.router, prefix="/api")
     app.include_router(autopilot.router, prefix="/api")
+    app.include_router(avatar_job.router, prefix="/api")
     app.include_router(webhooks.router, prefix="/api")
     app.include_router(contacts.router, prefix="/api")
     app.include_router(companies.router, prefix="/api")

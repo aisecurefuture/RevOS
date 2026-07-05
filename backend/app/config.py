@@ -164,6 +164,21 @@ class Settings(BaseSettings):
     # configured per-account from Settings → Integrations (see
     # IntegrationCredential / integration_credentials_service), not via env vars.
 
+    # --- Avatar video generation (P3-M3) ------------------------------------
+    # Self-hosted CPU inference. "none" (disabled), "stub" (placeholder output,
+    # for tests/demo), or "local" (the real XTTS + Wav2Lip subprocess pipeline,
+    # only present in the dedicated avatar-worker image).
+    avatar_backend: Literal["none", "stub", "local"] = "none"
+    avatar_xtts_python: str = ""       # path to the XTTS venv's python
+    avatar_wav2lip_dir: str = ""       # path to the (patched) Wav2Lip repo
+    avatar_wav2lip_python: str = ""    # path to the Wav2Lip venv's python
+    avatar_wav2lip_checkpoint: str = ""  # path to the .pt checkpoint
+    # Wall-clock estimate tuning, measured on the CPU box: ~1.7s of compute per
+    # output frame at 30fps ≈ 51s of compute per second of finished video.
+    avatar_est_fps: int = 30
+    avatar_est_seconds_per_frame: float = 1.7
+    avatar_job_timeout_seconds: int = 3 * 60 * 60  # 3h hard cap per generation
+
     # Hard ceiling on any request body (bytes). Above the media upload cap so
     # that route's own limit applies first; this is the global DoS backstop.
     max_request_bytes: int = 256 * 1024 * 1024

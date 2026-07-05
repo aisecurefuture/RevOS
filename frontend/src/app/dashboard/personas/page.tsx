@@ -8,11 +8,21 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import {
   ApiError,
+  avatarApi,
   personaApi,
+  type AvatarDuration,
+  type AvatarJob,
   type PersonaConsent,
   type PersonaIdentity,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+
+function fmtWait(seconds: number): string {
+  const m = Math.round(seconds / 60);
+  if (m < 1) return "<1 min";
+  if (m < 90) return `~${m} min`;
+  return `~${(m / 60).toFixed(1)} hr`;
+}
 
 const STATUS_STYLE: Record<string, string> = {
   draft: "bg-slate-100 text-slate-500",
@@ -353,6 +363,129 @@ function PersonaDetail({
           <p className="text-sm text-slate-400">Only account admins can record consent.</p>
         )}
       </Card>
+
+      {persona.status === "ready" && canEdit ? <GenerateVideoCard persona={persona} /> : null}
     </div>
+  );
+}
+
+function GenerateVideoCard({ persona }: { persona: PersonaIdentity }) {
+  const [durations, setDurations] = useState<AvatarDuration[]>([]);
+  const [targetSeconds, setTargetSeconds] = useState(15);
+  const [script, setScript] = useState("");
+  const [jobs, setJobs] = useState<AvatarJob[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadJobs = useCallback(async () => {
+    try {
+      setJobs(await avatarApi.listJobs(persona.id));
+    } catch {
+      /* non-fatal */
+    }
+  }, [persona.id]);
+
+  useEffect(() => {
+    avatarApi.durations().then((d) => setDurations(d.durations)).catch(() => setDurations([]));
+    void loadJobs();
+  }, [loadJobs]);
+
+  // Poll while any job is still running.
+  useEffect(() => {
+    if (!jobs.some((j) => j.status === "queued" || j.status === "processing")) return;
+    const t = setInterval(() => void loadJobs(), 15000);
+    return () => clearInterval(t);
+  }, [jobs, loadJobs]);
+
+  const est = durations.find((d) => d.seconds === targetSeconds)?.estimated_seconds ?? null;
+
+  async function generate(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await avatarApi.createJob({
+        persona_identity_id: persona.id, script, target_seconds: targetSeconds,
+      });
+      setScript("");
+      await loadJobs();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not start generation");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardTitle>🎬 Generate avatar video</CardTitle>
+      <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+        Generation runs entirely on your own server (no paid APIs) and is
+        <strong> slow on CPU</strong> — see the estimate below. It runs in the background;
+        you can leave this page and check back.
+      </div>
+
+      <form onSubmit={generate} className="space-y-2">
+        <div className="flex items-center gap-2 text-sm">
+          <label className="font-medium text-slate-700">Length</label>
+          <select
+            value={targetSeconds}
+            onChange={(e) => setTargetSeconds(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 px-3 py-2"
+          >
+            {(durations.length ? durations.map((d) => d.seconds) : [7, 15, 30, 45, 60, 90, 120]).map((s) => (
+              <option key={s} value={s}>{s}s</option>
+            ))}
+          </select>
+          {est ? <span className="text-xs text-slate-500">est. wait {fmtWait(est)}</span> : null}
+        </div>
+        <textarea
+          required rows={3} value={script} onChange={(e) => setScript(e.target.value)}
+          placeholder="The script your avatar will speak…"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+        />
+        {error ? <p className="text-xs text-red-600">{error}</p> : null}
+        <Button type="submit" disabled={busy || !script.trim()}>
+          {busy ? "Starting…" : "Generate"}
+        </Button>
+      </form>
+
+      {jobs.length ? (
+        <ul className="mt-4 space-y-2">
+          {jobs.map((j) => (
+            <li key={j.id} className="rounded-lg border border-slate-200 p-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600">
+                  {j.target_seconds}s ·{" "}
+                  <span className={
+                    j.status === "succeeded" ? "text-green-600"
+                      : j.status === "failed" ? "text-red-600"
+                      : "text-amber-600"
+                  }>
+                    {j.status === "processing" ? "generating…"
+                      : j.status === "queued" ? "queued"
+                      : j.status}
+                  </span>
+                </span>
+                {(j.status === "queued" || j.status === "processing") && j.estimated_seconds ? (
+                  <span className="text-xs text-slate-400">est. {fmtWait(j.estimated_seconds)}</span>
+                ) : null}
+              </div>
+              <p className="truncate text-xs text-slate-400">{j.script}</p>
+              {j.status === "succeeded" && j.has_output ? (
+                <video
+                  src={avatarApi.videoUrl(j.id)}
+                  controls
+                  className="mt-2 max-h-64 w-full rounded"
+                />
+              ) : null}
+              {j.status === "failed" && j.error ? (
+                <p className="mt-1 text-xs text-red-600">{j.error}</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
   );
 }

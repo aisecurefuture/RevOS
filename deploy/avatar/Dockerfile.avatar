@@ -1,0 +1,85 @@
+# RevOS avatar-worker image (Phase 3 M3) — self-hosted CPU voice + lip-sync.
+#
+# Carries the ML stack (kept OUT of the main API image) and runs the Celery
+# worker on the dedicated `avatar` queue. XTTS-v2 and Wav2Lip have conflicting
+# deps (librosa/numpy), so each lives in its own isolated venv under /opt; the
+# worker orchestrates them by subprocess (see services/avatar/inference.py).
+#
+# Every version pin below was validated on the target CPU box during the M3
+# feasibility spike — do not "upgrade to latest" without re-validating; several
+# of these (transformers, torchcodec CPU build, numpy ceiling) are load-bearing.
+#
+# Build (from repo root):
+#   docker build -f deploy/avatar/Dockerfile.avatar -t revos-avatar .
+#
+# The Wav2Lip checkpoint is NOT baked in (large + license-encumbered). Provide
+# it at runtime via a bind mount and point AVATAR_WAV2LIP_CHECKPOINT at it.
+
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# System deps: build tools + libpq (RevOS deps), ffmpeg (muxing), espeak-ng
+# (XTTS phonemizer), git (clone Wav2Lip), libgl/libglib for headless opencv.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential libpq-dev git ffmpeg espeak-ng \
+       libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- RevOS backend deps (for the Celery worker / models / db) ----------------
+COPY backend/requirements.txt .
+RUN pip install -r requirements.txt
+
+# --- uv (drives the isolated ML venvs) ---------------------------------------
+RUN pip install uv
+
+# --- XTTS-v2 venv (voice cloning) --------------------------------------------
+# torch/torchaudio/torchcodec MUST come from PyTorch's CPU index (plain PyPI
+# ships CUDA-linked builds that fail with libnvrtc.so on a CPU box).
+# transformers pinned to the last 4.x (coqui-tts declares only >=4.57, and 5.x
+# broke it).
+RUN uv venv --python 3.12 /opt/xtts \
+    && uv pip install --python /opt/xtts \
+       --index-url https://download.pytorch.org/whl/cpu \
+       torch==2.12.1 torchaudio==2.11.0 torchcodec \
+    && uv pip install --python /opt/xtts \
+       coqui-tts==0.27.5 "transformers==4.57.1"
+
+# --- Wav2Lip venv + repo (lip-sync) ------------------------------------------
+# numpy ceiling <=2.4 (numba, via librosa, caps there); opencv-python-headless
+# (the GUI build needs libGL that headless servers lack).
+RUN uv venv --python 3.12 /opt/wav2lip \
+    && uv pip install --python /opt/wav2lip \
+       --index-url https://download.pytorch.org/whl/cpu torch==2.12.1 torchvision \
+    && uv pip install --python /opt/wav2lip \
+       "numpy<=2.4,>=1.22" opencv-python-headless "librosa==0.9.2" numba tqdm scipy
+
+RUN git clone https://github.com/Rudrabha/Wav2Lip.git /opt/Wav2Lip
+COPY deploy/avatar/patch_wav2lip.py /opt/patch_wav2lip.py
+RUN python /opt/patch_wav2lip.py /opt/Wav2Lip/inference.py \
+    && mkdir -p /opt/Wav2Lip/checkpoints
+
+# --- RevOS application source ------------------------------------------------
+COPY backend/ .
+
+# Paths the LocalCpuBackend reads (overridable via env / compose).
+ENV AVATAR_BACKEND=local \
+    AVATAR_XTTS_PYTHON=/opt/xtts/bin/python \
+    AVATAR_WAV2LIP_PYTHON=/opt/wav2lip/bin/python \
+    AVATAR_WAV2LIP_DIR=/opt/Wav2Lip \
+    AVATAR_WAV2LIP_CHECKPOINT=/opt/Wav2Lip/checkpoints/wav2lip.pt
+
+RUN useradd --create-home --uid 10002 avatar \
+    && mkdir -p /app/storage \
+    && chown -R avatar:avatar /app /opt/Wav2Lip /opt/xtts /opt/wav2lip
+USER avatar
+
+# One long job at a time (each pins the CPU); concurrency=1 keeps it predictable.
+CMD ["celery", "-A", "app.workers.celery_app.celery_app", "worker", \
+     "-Q", "avatar", "--concurrency=1", "--loglevel=info"]

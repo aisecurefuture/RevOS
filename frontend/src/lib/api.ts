@@ -479,6 +479,37 @@ export const personaApi = {
     apiFetch<PersonaIdentity>(`/personas/${id}/consent/revoke`, { method: "POST" }),
 };
 
+// --- Avatar video generation ------------------------------------------------
+export interface AvatarJob {
+  id: string;
+  persona_identity_id: string;
+  brand_id: string | null;
+  script: string;
+  target_seconds: number;
+  status: "queued" | "processing" | "succeeded" | "failed" | "cancelled";
+  estimated_seconds: number | null;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  has_output: boolean;
+}
+
+export interface AvatarDuration {
+  seconds: number;
+  estimated_seconds: number;
+}
+
+export const avatarApi = {
+  durations: () => apiFetch<{ durations: AvatarDuration[] }>("/avatar/durations"),
+  listJobs: (personaId?: string) =>
+    apiFetch<AvatarJob[]>(`/avatar/jobs${personaId ? `?persona_identity_id=${personaId}` : ""}`),
+  createJob: (data: { persona_identity_id: string; script: string; target_seconds: number }) =>
+    apiFetch<AvatarJob>("/avatar/jobs", { method: "POST", body: JSON.stringify(data) }),
+  getJob: (id: string) => apiFetch<AvatarJob>(`/avatar/jobs/${id}`),
+  videoUrl: (id: string) => `/api/avatar/jobs/${id}/video`,
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),

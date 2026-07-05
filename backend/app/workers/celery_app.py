@@ -16,7 +16,7 @@ celery_app = Celery(
     "revos",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.workers.tasks"],  # task modules registered with the worker
+    include=["app.workers.tasks", "app.workers.avatar_tasks"],
 )
 
 celery_app.conf.update(
@@ -31,6 +31,12 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     result_expires=60 * 60 * 24,         # keep results 24h
     beat_schedule=BEAT_SCHEDULE,
+    # Avatar generation is minutes-to-hours and runs on a dedicated worker/queue
+    # so it never blocks the fast email/social workers.
+    task_routes={"avatar.generate": {"queue": "avatar"}},
+    # A generation can exceed the default 1h visibility timeout; extend it so the
+    # broker doesn't redeliver a job that's legitimately still running.
+    broker_transport_options={"visibility_timeout": 4 * 60 * 60},
 )
 
 
