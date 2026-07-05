@@ -29,4 +29,9 @@ BEAT_SCHEDULE: dict = {
         "task": "revos.publish_scheduled_posts",
         "schedule": 60.0,
     },
+    # Content autopilot: generate + gate on-brand content on each brand's cadence.
+    "content-autopilot": {
+        "task": "revos.content_autopilot",
+        "schedule": 3600.0,
+    },
 }

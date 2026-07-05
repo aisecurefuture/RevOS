@@ -8,12 +8,16 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import {
   ApiError,
+  autopilotApi,
   brandBookApi,
+  type AutopilotConfig,
+  type AutopilotRun,
   type BrandBook,
   type BrandClaim,
   type BrandFact,
   type ContentCheck,
 } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
 
 function linesToArray(s: string): string[] {
@@ -224,7 +228,160 @@ export default function BrandBookPage() {
       ) : null}
 
       {brandId ? <CheckerCard brandId={brandId} /> : null}
+      {brandId ? <AutopilotCard brandId={brandId} /> : null}
     </>
+  );
+}
+
+const TEXT_PLATFORMS = ["facebook", "twitter", "linkedin", "threads"];
+
+function AutopilotCard({ brandId }: { brandId: string }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin" || user?.role === "owner";
+
+  const [cfg, setCfg] = useState<AutopilotConfig | null>(null);
+  const [themes, setThemes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [run, setRun] = useState<AutopilotRun | null>(null);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    autopilotApi.get(brandId)
+      .then((c) => { setCfg(c); setThemes(c.content_themes.join("\n")); })
+      .catch(() => setCfg(null));
+  }, [brandId, isAdmin]);
+
+  if (!isAdmin) return null;
+  if (!cfg) return null;
+
+  function patch(data: Partial<AutopilotConfig>) {
+    setCfg((c) => (c ? { ...c, ...data } : c));
+  }
+  function togglePlatform(p: string) {
+    const has = cfg!.platforms.includes(p);
+    patch({ platforms: has ? cfg!.platforms.filter((x) => x !== p) : [...cfg!.platforms, p] });
+  }
+
+  async function save() {
+    setBusy(true); setError(null);
+    try {
+      const c = await autopilotApi.update(brandId, {
+        enabled: cfg!.enabled, auto_publish: cfg!.auto_publish,
+        platforms: cfg!.platforms, posts_per_run: cfg!.posts_per_run,
+        run_interval_hours: cfg!.run_interval_hours, default_cta: cfg!.default_cta,
+        content_themes: themes.split("\n").map((t) => t.trim()).filter(Boolean),
+      });
+      setCfg(c); setThemes(c.content_themes.join("\n"));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runNow() {
+    setBusy(true); setError(null); setRun(null);
+    try {
+      setRun(await autopilotApi.run(brandId));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Run failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardTitle>🤖 Content autopilot</CardTitle>
+      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <strong>Hands-off content.</strong> Autopilot generates on-brand posts grounded in this
+        book and runs them through the accuracy gate above. With auto-publish on, only content
+        that passes <em>cleanly</em> is posted automatically — anything flagged (e.g. an unverified
+        statistic) always waits for your review, and banned-term content is discarded. Requires a
+        <strong> published</strong> book and connected accounts.
+      </div>
+
+      <div className="space-y-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={cfg.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
+          Enable autopilot
+        </label>
+
+        <div>
+          <p className="mb-1 text-xs font-medium text-slate-500">Platforms (text posts)</p>
+          <div className="flex flex-wrap gap-3">
+            {TEXT_PLATFORMS.map((p) => (
+              <label key={p} className="flex items-center gap-1 text-sm">
+                <input type="checkbox" checked={cfg.platforms.includes(p)} onChange={() => togglePlatform(p)} />
+                {p}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-4 text-sm">
+          <label className="flex items-center gap-2">
+            Posts per run
+            <input type="number" min={1} max={5} value={cfg.posts_per_run}
+              onChange={(e) => patch({ posts_per_run: Number(e.target.value) })}
+              className="w-16 rounded border border-slate-300 px-2 py-1" />
+          </label>
+          <label className="flex items-center gap-2">
+            Every (hours)
+            <input type="number" min={1} value={cfg.run_interval_hours}
+              onChange={(e) => patch({ run_interval_hours: Number(e.target.value) })}
+              className="w-20 rounded border border-slate-300 px-2 py-1" />
+          </label>
+        </div>
+
+        <Field label="Content angles / themes" hint="One per line — rotated across posts.">
+          <textarea rows={2} className={ta} value={themes} onChange={(e) => setThemes(e.target.value)} />
+        </Field>
+        <Field label="Default call to action">
+          <input className={ta} value={cfg.default_cta ?? ""}
+            onChange={(e) => patch({ default_cta: e.target.value })} />
+        </Field>
+
+        <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+          <input type="checkbox" checked={cfg.auto_publish} className="mt-0.5"
+            onChange={(e) => patch({ auto_publish: e.target.checked })} />
+          <span>
+            <strong>Auto-publish clean content (full hands-off)</strong>
+            <span className="block text-xs text-slate-500">
+              Off = every generated post is queued for your approval. On = clean posts publish
+              automatically; flagged ones still wait for you.
+            </span>
+          </span>
+        </label>
+
+        {error ? <p className="text-xs text-red-600">{error}</p> : null}
+        <div className="flex items-center gap-2">
+          <Button onClick={() => void save()} disabled={busy}>Save autopilot</Button>
+          <Button variant="secondary" onClick={() => void runNow()} disabled={busy}>
+            {busy ? "Running…" : "Run once now"}
+          </Button>
+          {cfg.last_run_at ? (
+            <span className="text-xs text-slate-400">
+              Last run {new Date(cfg.last_run_at + "Z").toLocaleString()}
+            </span>
+          ) : null}
+        </div>
+
+        {run ? (
+          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-700">
+            Generated {run.generated} · Published {run.published} · Queued for review {run.queued}
+            {" "}· Blocked {run.blocked}
+            {run.generated === 0 ? (
+              <span className="block text-xs text-slate-400">
+                Nothing generated — check that an AI provider is configured, the book is published,
+                and a target platform is connected.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </Card>
   );
 }
 

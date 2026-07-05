@@ -387,6 +387,35 @@ export const brandBookApi = {
     }),
 };
 
+// --- Content autopilot ------------------------------------------------------
+export interface AutopilotConfig {
+  brand_id: string;
+  enabled: boolean;
+  auto_publish: boolean;
+  platforms: string[];
+  posts_per_run: number;
+  run_interval_hours: number;
+  content_themes: string[];
+  default_cta: string | null;
+  last_run_at: string | null;
+}
+
+export interface AutopilotRun {
+  generated: number;
+  published: number;
+  queued: number;
+  blocked: number;
+  skipped: number;
+}
+
+export const autopilotApi = {
+  get: (brandId: string) => apiFetch<AutopilotConfig>(`/autopilot/${brandId}`),
+  update: (brandId: string, data: Partial<AutopilotConfig>) =>
+    apiFetch<AutopilotConfig>(`/autopilot/${brandId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  run: (brandId: string) =>
+    apiFetch<AutopilotRun>(`/autopilot/${brandId}/run`, { method: "POST" }),
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),

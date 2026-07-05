@@ -135,6 +135,26 @@ def publish_scheduled_posts() -> dict:
     return asyncio.run(_run_scheduled_posts())
 
 
+async def _run_autopilot() -> dict:
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            from app.services import content_autopilot_service
+
+            stats = await content_autopilot_service.run_autopilot(session)
+            await session.commit()
+            return stats
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="revos.content_autopilot")
+def content_autopilot() -> dict:
+    """Hourly: generate + gate on-brand content for brands whose cadence is due."""
+    return asyncio.run(_run_autopilot())
+
+
 async def _run_expire_trials() -> dict:
     """Find trials that ended in the last hour and send reminder / expiry emails."""
     from datetime import timedelta
