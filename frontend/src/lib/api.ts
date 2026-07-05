@@ -416,6 +416,69 @@ export const autopilotApi = {
     apiFetch<AutopilotRun>(`/autopilot/${brandId}/run`, { method: "POST" }),
 };
 
+// --- Persona identity (avatar likeness + voice + consent) --------------------
+export interface PersonaIdentity {
+  id: string;
+  brand_id: string | null;
+  buyer_persona_id: string | null;
+  name: string;
+  description: string | null;
+  status: "draft" | "pending_consent" | "ready" | "revoked";
+  appearance_notes: string | null;
+  voice_notes: string | null;
+  training_video_path: string | null;
+  voice_sample_path: string | null;
+  reference_image_paths: string[];
+  voice_model_ref: string | null;
+  avatar_model_ref: string | null;
+}
+
+export interface PersonaConsent {
+  id: string;
+  subject_name: string;
+  subject_email: string;
+  consent_statement: string;
+  policy_version: string;
+  granted_at: string | null;
+  revoked_at: string | null;
+  is_active: boolean;
+}
+
+export const personaApi = {
+  list: (brandId?: string | null) =>
+    apiFetch<PersonaIdentity[]>(`/personas${brandId ? `?brand_id=${brandId}` : ""}`),
+  get: (id: string) => apiFetch<PersonaIdentity>(`/personas/${id}`),
+  create: (data: { name: string; brand_id?: string | null; description?: string }) =>
+    apiFetch<PersonaIdentity>("/personas", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<PersonaIdentity>) =>
+    apiFetch<PersonaIdentity>(`/personas/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  remove: (id: string) => apiFetch<void>(`/personas/${id}`, { method: "DELETE" }),
+  uploadTrainingVideo: (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiUpload<PersonaIdentity>(`/personas/${id}/training-video`, fd);
+  },
+  uploadVoiceSample: (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiUpload<PersonaIdentity>(`/personas/${id}/voice-sample`, fd);
+  },
+  uploadReferenceImage: (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiUpload<PersonaIdentity>(`/personas/${id}/reference-images`, fd);
+  },
+  removeReferenceImage: (id: string, path: string) =>
+    apiFetch<PersonaIdentity>(`/personas/${id}/reference-images?path=${encodeURIComponent(path)}`, {
+      method: "DELETE",
+    }),
+  listConsents: (id: string) => apiFetch<PersonaConsent[]>(`/personas/${id}/consents`),
+  grantConsent: (id: string, data: { subject_name: string; subject_email: string; consent_statement: string }) =>
+    apiFetch<PersonaConsent>(`/personas/${id}/consent`, { method: "POST", body: JSON.stringify(data) }),
+  revokeConsent: (id: string) =>
+    apiFetch<PersonaIdentity>(`/personas/${id}/consent/revoke`, { method: "POST" }),
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),

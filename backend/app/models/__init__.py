@@ -75,6 +75,11 @@ from app.models.lead import (
 )
 from app.models.media import MediaAsset, MediaKind, MediaStatus, MediaVariant
 from app.models.offer import Offer, OfferStatus, OfferType
+from app.models.persona_identity import (
+    PersonaConsent,
+    PersonaIdentity,
+    PersonaIdentityStatus,
+)
 from app.models.scheduler import (
     Booking,
     BookingStatus,
@@ -151,4 +156,6 @@ __all__ = [
     "BrandBook", "BrandClaim", "BrandFact", "ClaimCategory",
     # autopilot
     "AutopilotConfig",
+    # persona identity
+    "PersonaIdentity", "PersonaIdentityStatus", "PersonaConsent",
 ]

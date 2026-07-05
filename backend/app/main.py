@@ -67,6 +67,7 @@ def register_routers(app: FastAPI) -> None:
         media,
         notes_tasks,
         offers,
+        persona_identity,
         public,
         public_scheduler,
         scheduler,
@@ -113,6 +114,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(integration_credentials.router, prefix="/api")
     app.include_router(scheduler.router, prefix="/api")
     app.include_router(public_scheduler.router, prefix="/api")
+    app.include_router(persona_identity.router, prefix="/api")
     app.include_router(ai.router, prefix="/api")
 
 
