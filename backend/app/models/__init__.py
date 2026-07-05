@@ -57,6 +57,11 @@ from app.models.email import (
     Suppression,
     SuppressionReason,
 )
+from app.models.integration_credential import (
+    IntegrationCredential,
+    IntegrationCredentialStatus,
+    IntegrationProvider,
+)
 from app.models.lead import (
     ConsentRecord,
     ConsentStatus,
@@ -86,6 +91,7 @@ from app.models.social import (
     SocialPlatform,
     SocialPost,
 )
+from app.models.social_connection import SocialConnection, SocialConnectionStatus
 from app.models.user import AdminUser, ApiKey, AuditLog, RecoveryCode, Role
 
 __all__ = [
@@ -121,7 +127,7 @@ __all__ = [
     "Pillar", "Hook", "CTA", "Hashtag",
     # social
     "SocialAccount", "SocialCampaign", "SocialCampaignStatus", "SocialPost",
-    "SocialPlatform",
+    "SocialPlatform", "SocialConnection", "SocialConnectionStatus",
     # analytics
     "Event", "UTMLink", "ConversionGoal", "RevenueRecord", "RevenueGoal",
     "RevenueStatus",
@@ -129,4 +135,6 @@ __all__ = [
     "ApprovalRequest", "ApprovalAction", "ApprovalStatus",
     # media
     "MediaAsset", "MediaVariant", "MediaKind", "MediaStatus",
+    # integration credentials
+    "IntegrationCredential", "IntegrationProvider", "IntegrationCredentialStatus",
 ]

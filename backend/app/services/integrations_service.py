@@ -21,18 +21,19 @@ from app.services.social.base import adapter_status
 
 
 def integration_status() -> dict:
-    """Rich snapshot for the Settings page. Analytics keys are client-public."""
+    """Rich snapshot for the Settings page. Analytics keys are client-public.
+
+    Calendly/Notion/Bitly/Zapier/Google Sheets are per-account now (see
+    IntegrationCredential / integration_credentials_service) and are not part
+    of this server-wide snapshot — the Integrations tab reads their status
+    from GET /integrations/credentials instead.
+    """
     return {
         "email": bool(settings.resend_api_key),
         "email_live": settings.email_enabled,
         "ai": settings.ai_enabled,
         "stripe": bool(settings.stripe_secret_key),
         "s3": settings.storage_backend == "s3" and bool(settings.s3_bucket),
-        "calendly": bool(settings.calendly_api_key),
-        "notion": bool(settings.notion_api_key),
-        "zapier": bool(settings.zapier_webhook_secret),
-        "bitly": bool(settings.bitly_access_token),
-        "google_sheets": bool(settings.google_sheets_credentials_json),
         "social": adapter_status(),
         "analytics": {
             "plausible_domain": settings.plausible_domain or None,
@@ -72,11 +73,12 @@ _REPLAY_TOLERANCE = 5 * 60
 
 
 def verify_inbound_signature(
-    payload: bytes, signature: str | None, timestamp: str | None
+    payload: bytes, signature: str | None, timestamp: str | None, secret: str | None
 ) -> bool:
     """HMAC over ``{timestamp}.{body}`` with replay protection (rejects stale
-    timestamps), mirroring the Stripe/Svix scheme."""
-    secret = settings.zapier_webhook_secret
+    timestamps), mirroring the Stripe/Svix scheme. ``secret`` is the target
+    account's per-account inbound signing secret (see
+    integration_credentials_service.get_zapier_inbound_secret)."""
     if not (secret and signature and timestamp):
         return False
     try:
@@ -89,18 +91,26 @@ def verify_inbound_signature(
     return hmac.compare_digest(signature, expected)
 
 
-async def handle_inbound_contact(db: AsyncSession, data: dict) -> dict:
+async def handle_inbound_contact(db: AsyncSession, account_id: uuid.UUID, data: dict) -> dict:
     """Create a CRM contact from an inbound automation payload (NOT a mailable
-    lead — opt-in must happen through the consent flow)."""
+    lead — opt-in must happen through the consent flow).
+
+    ``account_id`` comes from the signed URL (the account whose inbound secret
+    verified this request) and is always what the write is scoped to. An
+    optional ``brand_id`` in the payload is honored only if that brand actually
+    belongs to this account — otherwise it's dropped rather than trusted, since
+    the payload itself is unauthenticated beyond the account-level signature.
+    """
+    from app.core.tenancy import set_active_account
+    from app.models.brand import Brand
+
+    set_active_account(account_id)
     brand_id = data.get("brand_id")
     bid = uuid.UUID(brand_id) if brand_id else None
-    if bid is not None:  # bind the inbound (no-auth) write to the brand's account
-        from app.core.tenancy import set_active_account
-        from app.models.brand import Brand
-
+    if bid is not None:
         brand = await db.get(Brand, bid)
-        if brand is not None:
-            set_active_account(brand.account_id)
+        if brand is None or brand.account_id != account_id:
+            bid = None
     contact = await crm_service.create_contact(db, {
         "brand_id": bid,
         "first_name": data.get("first_name"), "last_name": data.get("last_name"),

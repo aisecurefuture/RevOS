@@ -49,38 +49,9 @@ async def test_contact_export_csv_and_notion(api, make_user):
     assert "| First | Last |" in notion.text  # markdown table header
 
 
-@pytest.mark.asyncio
-async def test_zapier_inbound_creates_contact_not_lead(api, make_user, monkeypatch):
-    monkeypatch.setattr(settings, "zapier_webhook_secret", "zap-secret")
-    h = await _login(api, **await make_user("admin@test.com", "AdminPass123", Role.admin))
-    bid = (await api.post("/api/brands", headers=h, json={"name": "Zap Brand"})).json()["id"]
-
-    body = json.dumps({"brand_id": bid, "email": "zap@x.com", "first_name": "Zee"}).encode()
-    ts = str(int(time.time()))
-    sig = hmac.new(b"zap-secret", f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
-
-    ok = await api.post("/api/integrations/inbound/contact", content=body,
-                        headers={"X-Signature": sig, "X-Timestamp": ts,
-                                 "content-type": "application/json"})
-    assert ok.status_code == 200
-
-    # Wrong signature -> rejected.
-    bad = await api.post("/api/integrations/inbound/contact", content=body,
-                         headers={"X-Signature": "wrong", "X-Timestamp": ts,
-                                  "content-type": "application/json"})
-    assert bad.status_code == 401
-
-    # Stale timestamp -> rejected (replay protection).
-    old_ts = str(int(time.time()) - 3600)
-    old_sig = hmac.new(b"zap-secret", f"{old_ts}.".encode() + body, hashlib.sha256).hexdigest()
-    stale = await api.post("/api/integrations/inbound/contact", content=body,
-                           headers={"X-Signature": old_sig, "X-Timestamp": old_ts,
-                                    "content-type": "application/json"})
-    assert stale.status_code == 401
-
-    # Created as a contact; never a mailable lead.
-    assert any(c["email"] == "zap@x.com" for c in (await api.get("/api/contacts")).json())
-    assert (await api.get("/api/leads")).json() == []
+# Zapier inbound is now per-account (POST /integrations/inbound/contact/{account_id},
+# signed with a per-account secret from Settings → Connected Apps) — see
+# test_integration_credentials.py::test_inbound_contact_* for the current contract.
 
 
 @pytest.mark.asyncio

@@ -250,11 +250,6 @@ export interface IntegrationStatus {
   ai: boolean;
   stripe: boolean;
   s3: boolean;
-  calendly: boolean;
-  notion: boolean;
-  zapier: boolean;
-  bitly: boolean;
-  google_sheets: boolean;
   social: Record<string, boolean>;
   analytics: {
     plausible_domain: string | null;

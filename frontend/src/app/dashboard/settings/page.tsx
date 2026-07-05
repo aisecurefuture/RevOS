@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/PageHeader";
@@ -67,12 +68,15 @@ export default function SettingsPage() {
               <Row label="Stripe (payments)" on={status.stripe} />
               <Row label="AI provider" on={status.ai} />
               <Row label="S3 storage" on={status.s3} />
-              <Row label="Calendly" on={status.calendly} />
-              <Row label="Notion" on={status.notion} />
-              <Row label="Zapier / Make" on={status.zapier} />
-              <Row label="Bitly" on={status.bitly} />
-              <Row label="Google Sheets" on={status.google_sheets} />
             </ul>
+            <p className="mt-3 text-xs text-slate-400">
+              Calendly, Notion, Bitly, Zapier, and Google Sheets are configured
+              per-account on the{" "}
+              <Link href="/dashboard/settings/connected-apps" className="text-brand hover:underline">
+                Connected Apps
+              </Link>{" "}
+              tab.
+            </p>
           </Card>
 
           <Card>

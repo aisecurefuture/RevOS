@@ -24,6 +24,7 @@ from app.services import (
     consent_service,
     event_service,
     form_service,
+    integrations_service,
     landing_service,
     public_render,
     utm_service,
@@ -112,7 +113,29 @@ async def submit_form(
         consent=_truthy(data.get("consent")), utm=utm,
         referrer=data.get("referrer"), extra=extra, ip=ip, ua=ua,
     )
+    await _fire_zapier_new_lead(db, form, email, data)
     return _respond(is_json, result)
+
+
+async def _fire_zapier_new_lead(db: DbSession, form: Form, email: str, data: dict) -> None:
+    """Best-effort Zapier/Make outbound event on a new form submission. Never
+    raises — a webhook outage must not break the public submission response."""
+    try:
+        from app.models.integration_credential import IntegrationProvider
+        from app.services import integration_credentials_service
+
+        cred = await integration_credentials_service.get_credential(
+            db, form.account_id, IntegrationProvider.zapier,
+        )
+        url = (cred.config.get("outbound_webhook_url") if cred else None)
+        if not url:
+            return
+        await integrations_service.dispatch_outbound(url, {
+            "event": "new_lead", "form_id": str(form.id), "brand_id": str(form.brand_id),
+            "email": email, "first_name": data.get("first_name"), "last_name": data.get("last_name"),
+        })
+    except Exception:  # noqa: BLE001 — best-effort side channel
+        pass
 
 
 def _respond(is_json: bool, result: dict):

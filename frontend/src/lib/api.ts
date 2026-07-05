@@ -170,6 +170,69 @@ export const automationApi = {
     }),
 };
 
+// --- Connected apps (per-account low-cost integrations) ---------------------
+export interface IntegrationCredential {
+  provider: "calendly" | "notion" | "bitly" | "zapier" | "google_sheets";
+  config: Record<string, unknown>;
+  status: string;
+}
+
+export interface ZapierSaveResult {
+  credential: IntegrationCredential;
+  inbound_webhook_url: string;
+  inbound_secret: string | null;
+}
+
+export const integrationCredentialsApi = {
+  list: () => apiFetch<IntegrationCredential[]>("/integrations/credentials"),
+  saveCalendly: (schedulingUrl: string) =>
+    apiFetch<IntegrationCredential>("/integrations/credentials/calendly", {
+      method: "POST",
+      body: JSON.stringify({ scheduling_url: schedulingUrl }),
+    }),
+  saveNotion: (apiKey: string, databaseId: string) =>
+    apiFetch<IntegrationCredential>("/integrations/credentials/notion", {
+      method: "POST",
+      body: JSON.stringify({ api_key: apiKey, database_id: databaseId }),
+    }),
+  saveBitly: (accessToken: string) =>
+    apiFetch<IntegrationCredential>("/integrations/credentials/bitly", {
+      method: "POST",
+      body: JSON.stringify({ access_token: accessToken }),
+    }),
+  saveGoogleSheets: (serviceAccountJson: string, spreadsheetId: string) =>
+    apiFetch<IntegrationCredential>("/integrations/credentials/google-sheets", {
+      method: "POST",
+      body: JSON.stringify({ service_account_json: serviceAccountJson, spreadsheet_id: spreadsheetId }),
+    }),
+  saveZapier: (outboundWebhookUrl: string | null) =>
+    apiFetch<ZapierSaveResult>("/integrations/credentials/zapier", {
+      method: "POST",
+      body: JSON.stringify({ outbound_webhook_url: outboundWebhookUrl }),
+    }),
+  regenerateZapierSecret: () =>
+    apiFetch<{ inbound_secret: string }>("/integrations/credentials/zapier/regenerate-secret", {
+      method: "POST",
+    }),
+  remove: (provider: string) =>
+    apiFetch<void>(`/integrations/credentials/${provider}`, { method: "DELETE" }),
+  shortenLink: (url: string) =>
+    apiFetch<{ short_url: string }>("/integrations/bitly/shorten", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
+  pushContactsToNotion: (brandId?: string | null) =>
+    apiFetch<{ pushed: number }>(
+      `/integrations/notion/push-contacts${brandId ? `?brand_id=${brandId}` : ""}`,
+      { method: "POST" },
+    ),
+  pushContactsToSheets: (brandId?: string | null) =>
+    apiFetch<{ pushed: number }>(
+      `/integrations/google-sheets/push-contacts${brandId ? `?brand_id=${brandId}` : ""}`,
+      { method: "POST" },
+    ),
+};
+
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),

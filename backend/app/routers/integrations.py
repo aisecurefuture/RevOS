@@ -13,7 +13,12 @@ from app.core.exceptions import AuthError, NotFoundError, RevOSError
 from app.core.rate_limit import rate_limit
 from app.deps import DbSession, require_admin, require_authenticated
 from app.models.user import AdminUser
-from app.services import integrations_service, offer_service, stripe_service
+from app.services import (
+    integration_credentials_service,
+    integrations_service,
+    offer_service,
+    stripe_service,
+)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -42,21 +47,24 @@ async def export(
         headers={"Content-Disposition": f"attachment; filename=contacts.{ext}"})
 
 
-@router.post("/inbound/contact")
+@router.post("/inbound/contact/{account_id}")
 async def inbound_contact(
-    request: Request, db: DbSession, _rl: None = Depends(_inbound_limit)
+    account_id: uuid.UUID, request: Request, db: DbSession, _rl: None = Depends(_inbound_limit)
 ) -> dict:
-    """Zapier/Make inbound: create a CRM contact. HMAC-signed (X-Signature)."""
+    """Zapier/Make inbound: create a CRM contact. HMAC-signed (X-Signature) with
+    the account's own inbound secret, generated when Zapier is configured under
+    Settings → Integrations."""
     raw = await request.body()
+    secret = await integration_credentials_service.get_zapier_inbound_secret(db, account_id)
     if not integrations_service.verify_inbound_signature(
-        raw, request.headers.get("x-signature"), request.headers.get("x-timestamp")
+        raw, request.headers.get("x-signature"), request.headers.get("x-timestamp"), secret,
     ):
         raise AuthError("Invalid or expired webhook signature.")
     try:
         data = json.loads(raw.decode())
     except (ValueError, UnicodeDecodeError) as exc:
         raise RevOSError("Malformed payload.") from exc
-    return await integrations_service.handle_inbound_contact(db, data)
+    return await integrations_service.handle_inbound_contact(db, account_id, data)
 
 
 @router.get("/checkout/{offer_id}")

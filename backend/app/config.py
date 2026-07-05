@@ -160,12 +160,9 @@ class Settings(BaseSettings):
     tiktok_client_secret: str = ""
     tiktok_redirect_uri: str = ""  # e.g. https://api.revos360.com/api/social/tiktok/callback
 
-    # --- Low-cost integrations ----------------------------------------------
-    calendly_api_key: str = ""
-    bitly_access_token: str = ""
-    google_sheets_credentials_json: str = ""
-    notion_api_key: str = ""
-    zapier_webhook_secret: str = ""
+    # Low-cost integrations (Calendly, Notion, Bitly, Zapier, Google Sheets) are
+    # configured per-account from Settings → Integrations (see
+    # IntegrationCredential / integration_credentials_service), not via env vars.
 
     # Hard ceiling on any request body (bytes). Above the media upload cap so
     # that route's own limit applies first; this is the global DoS backstop.
@@ -266,9 +263,6 @@ class Settings(BaseSettings):
             "meta": bool(self.meta_page_access_token),
             "twitter": bool(self.twitter_bearer_token),
             "youtube": bool(self.youtube_api_key),
-            "calendly": bool(self.calendly_api_key),
-            "bitly": bool(self.bitly_access_token),
-            "notion": bool(self.notion_api_key),
         }
 
 
