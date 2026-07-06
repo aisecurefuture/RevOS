@@ -99,26 +99,26 @@ services:
     command: >
       celery -A app.workers.celery_app.celery_app beat --loglevel=info
 
-  # Avatar video generation worker (P3-M3) — opt-in, heavy ML image, CPU-only.
-  # Uncomment to enable; see deploy/avatar/README.md. Requires the Wav2Lip
-  # checkpoint bind-mounted and AVATAR_WAV2LIP_CHECKPOINT pointed at it.
-  # avatar-worker:
-  #   build:
-  #     context: .
-  #     dockerfile: deploy/avatar/Dockerfile.avatar
-  #   restart: unless-stopped
-  #   env_file: .env
-  #   environment:
-  #     DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://revos:revos@db:5432/revos}
-  #     REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-  #     AVATAR_BACKEND: local
-  #     AVATAR_WAV2LIP_CHECKPOINT: /ckpt/wav2lip.pt
-  #   depends_on:
-  #     db: { condition: service_healthy }
-  #     redis: { condition: service_healthy }
-  #   volumes:
-  #     - storage-data:/app/storage
-  #     - /opt/revos/wav2lip.pt:/ckpt/wav2lip.pt:ro
+  # Avatar video generation worker (P3-M3) — heavy ML image, CPU-only.
+  # See deploy/avatar/README.md. Requires the Wav2Lip checkpoint bind-mounted
+  # and AVATAR_WAV2LIP_CHECKPOINT pointed at it.
+  avatar-worker:
+    build:
+      context: .
+      dockerfile: deploy/avatar/Dockerfile.avatar
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://revos:revos@db:5432/revos}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      AVATAR_BACKEND: local
+      AVATAR_WAV2LIP_CHECKPOINT: /ckpt/wav2lip.pt
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - storage-data:/app/storage
+      - /opt/revos/wav2lip.pt:/ckpt/wav2lip.pt:ro
 
   frontend:
     build:
