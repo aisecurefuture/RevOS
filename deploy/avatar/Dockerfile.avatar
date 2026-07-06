@@ -79,7 +79,13 @@ ENV AVATAR_BACKEND=local \
     AVATAR_WAV2LIP_CHECKPOINT=/opt/Wav2Lip/checkpoints/wav2lip.pt \
     COQUI_TOS_AGREED=1
 
-RUN useradd --create-home --uid 10002 avatar \
+# uid 10001 to MATCH the main API image's `revos` user (backend/Dockerfile) —
+# both containers share the storage-data volume, and that volume's top-level
+# directory is owned by whichever container first created it (the API's uid
+# 10001). A mismatched uid here can create files but can't create new
+# subdirectories under someone else's uid — hence "Permission denied:
+# 'storage/avatars'" the first time this worker tried to write output.
+RUN useradd --create-home --uid 10001 avatar \
     && mkdir -p /app/storage /home/avatar/.local/share/tts \
     && chown -R avatar:avatar /app /opt/Wav2Lip /opt/xtts /opt/wav2lip /home/avatar/.local
 # The XTTS model cache dir must exist with the right ownership BEFORE the
