@@ -65,7 +65,11 @@ async def async_session_factory():
     )
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    # autoflush=False to match production (app/database.py) — a query-before-flush
+    # ordering bug (e.g. adding a row then immediately querying for it) would
+    # otherwise be masked here by SQLAlchemy's default autoflush and slip
+    # through tests that pass against the real deployment's session config.
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
     yield factory
     await engine.dispose()
 

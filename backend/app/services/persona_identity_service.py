@@ -236,6 +236,9 @@ async def grant_consent(
         granted_by=user.id, granted_at=utcnow(), is_active=True,
     )
     db.add(consent)
+    # The session is autoflush=False — _recompute_status queries for active
+    # consent, so the insert above must be flushed first or it won't see it.
+    await db.flush()
     await _recompute_status(db, identity)
     await db.flush()
     await db.refresh(consent)

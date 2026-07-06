@@ -69,11 +69,15 @@ RUN python /opt/patch_wav2lip.py /opt/Wav2Lip/inference.py \
 COPY backend/ .
 
 # Paths the LocalCpuBackend reads (overridable via env / compose).
+# COQUI_TOS_AGREED=1 pre-accepts the XTTS-v2 CPML license: coqui-tts otherwise
+# calls input() to prompt for it on first model download, which crashes with
+# EOFError in a headless Celery worker (no stdin) — this is required, not optional.
 ENV AVATAR_BACKEND=local \
     AVATAR_XTTS_PYTHON=/opt/xtts/bin/python \
     AVATAR_WAV2LIP_PYTHON=/opt/wav2lip/bin/python \
     AVATAR_WAV2LIP_DIR=/opt/Wav2Lip \
-    AVATAR_WAV2LIP_CHECKPOINT=/opt/Wav2Lip/checkpoints/wav2lip.pt
+    AVATAR_WAV2LIP_CHECKPOINT=/opt/Wav2Lip/checkpoints/wav2lip.pt \
+    COQUI_TOS_AGREED=1
 
 RUN useradd --create-home --uid 10002 avatar \
     && mkdir -p /app/storage \

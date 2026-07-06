@@ -119,6 +119,9 @@ services:
     volumes:
       - storage-data:/app/storage
       - /opt/revos/wav2lip.pt:/ckpt/wav2lip.pt:ro
+      # XTTS-v2 model (~1.8GB) is downloaded on first use — persist it so
+      # container recreates don't silently re-download it every time.
+      - xtts-models:/home/avatar/.local/share/tts
 
   frontend:
     build:
@@ -156,3 +159,4 @@ volumes:
   postgres-data:
   redis-data:
   storage-data:
+  xtts-models:
