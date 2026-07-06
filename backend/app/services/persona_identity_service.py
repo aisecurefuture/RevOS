@@ -11,8 +11,13 @@ state of media + consent, so it can never drift out of sync with reality.
 from __future__ import annotations
 
 import hashlib
+import logging
+import shutil
+import subprocess
+import tempfile
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,12 +28,43 @@ from app.models.persona_identity import PersonaConsent, PersonaIdentity, Persona
 from app.models.user import AdminUser
 from app.services.storage_service import get_storage
 
+logger = logging.getLogger("revos.persona_identity")
+
 CURRENT_POLICY_VERSION = "2026-07-05"
 
 _MAX_VIDEO_BYTES = 500 * 1024 * 1024   # 500 MB training video
 _MAX_AUDIO_BYTES = 50 * 1024 * 1024    # 50 MB voice sample
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _MAX_REFERENCE_IMAGES = 10
+
+
+def _normalize_voice_sample(data: bytes) -> bytes:
+    """Transcode the uploaded clip to clean mono 24kHz PCM WAV via ffmpeg.
+
+    XTTS-v2 is sensitive to compressed/VBR containers (e.g. a phone-recorded
+    .m4a) — a bad sample-rate/duration read during decoding can corrupt both
+    the pitch/speed and the cloned voice identity of the output. Falls back to
+    the original bytes if ffmpeg is unavailable or the conversion fails —
+    voice cloning is best-effort, so this shouldn't hard-block an upload.
+    """
+    if not shutil.which("ffmpeg"):
+        return data
+    with tempfile.NamedTemporaryFile(suffix=".src") as src, \
+            tempfile.NamedTemporaryFile(suffix=".wav") as dst:
+        src.write(data)
+        src.flush()
+        result = subprocess.run(  # noqa: S603
+            ["ffmpeg", "-y", "-i", src.name, "-ac", "1", "-ar", "24000",  # noqa: S607
+             "-sample_fmt", "s16", dst.name],
+            capture_output=True, timeout=60, check=False,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "Voice sample normalization failed, storing the original upload as-is: %s",
+                result.stderr.decode(errors="replace")[-500:],
+            )
+            return data
+        return Path(dst.name).read_bytes()
 
 
 def _has_media(identity: PersonaIdentity) -> bool:
@@ -159,7 +195,8 @@ async def upload_voice_sample(
         raise RevOSError("Expected an audio file.", code="invalid_mime", status_code=400)
 
     storage = get_storage()
-    key = f"personas/{identity.id}/voice/{filename}"
+    data = _normalize_voice_sample(data)
+    key = f"personas/{identity.id}/voice/sample.wav"
     storage.save(key, data)
     identity.voice_sample_path = key
     await _recompute_status(db, identity)

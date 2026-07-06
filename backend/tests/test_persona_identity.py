@@ -211,3 +211,60 @@ async def test_cross_account_identity_is_404(api, make_client):
     })
     oh = {"X-CSRF-Token": r2.json()["csrf_token"]}
     assert (await other.get(f"/api/personas/{pid}", headers=oh)).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Voice sample normalization (pitch/speed bug fix)
+# ---------------------------------------------------------------------------
+
+def _tiny_wav(sample_rate: int) -> bytes:
+    import io
+    import struct
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(struct.pack("<8h", *range(8)))
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_voice_sample_is_normalized_to_24khz_mono_wav(api, async_session_factory):
+    """Regression: XTTS is sensitive to non-standard sample rates/containers —
+    every uploaded voice sample should be transcoded to a clean 24kHz mono WAV
+    regardless of what was uploaded, so pitch/speed can't get corrupted."""
+    import wave
+
+    h = await _register_owner(api)
+    pid = await _create_identity(api, h)
+    up = await api.post(
+        f"/api/personas/{pid}/voice-sample", headers=_upload_headers(h),
+        files={"file": ("weird.wav", _tiny_wav(8000), "audio/wav")},
+    )
+    assert up.status_code == 200, up.text
+    path = up.json()["voice_sample_path"]
+    assert path.endswith(".wav")
+
+    from app.services.storage_service import get_storage
+    data = get_storage().read(path)
+    assert data[:4] == b"RIFF"
+    with wave.open(__import__("io").BytesIO(data)) as w:
+        assert w.getframerate() == 24000
+        assert w.getnchannels() == 1
+
+
+@pytest.mark.asyncio
+async def test_voice_sample_upload_survives_unrecognizable_audio(api):
+    """ffmpeg normalization must fail OPEN (keep the original bytes) rather
+    than block the upload — voice cloning is best-effort, not a hard gate."""
+    h = await _register_owner(api)
+    pid = await _create_identity(api, h)
+    up = await api.post(
+        f"/api/personas/{pid}/voice-sample", headers=_upload_headers(h),
+        files={"file": ("garbage.wav", b"not a real audio file", "audio/wav")},
+    )
+    assert up.status_code == 200, up.text
+    assert up.json()["voice_sample_path"]
