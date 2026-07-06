@@ -163,6 +163,37 @@ async def test_grounding_warns_when_no_claims(api):
     assert g["approved_claims"] == []
 
 
+@pytest.mark.asyncio
+async def test_narrative_fields_round_trip_and_ground(api):
+    """Vision, anti-audience, core values, brand story, archetype, and voice
+    spectrum all persist and flow into the grounding prompt context."""
+    h = await _register_owner(api)
+    bid = await _brand(api, h)
+    r = await api.patch(f"/api/brand-book/{bid}", headers=h, json={
+        "vision": "A world where every tattoo artist has a thriving, ethical practice.",
+        "audience_exclusions": "Artists with harassment allegations.",
+        "core_values": [
+            {"value": "Presence", "statement": "I focus on my next rep.", "example": "Daily gratitude posts."},
+        ],
+        "brand_story": "This is about a kid who got a bad tattoo from a stranger...",
+        "brand_archetype": "caregiver",
+        "voice_spectrum": {"humor": 2, "energy": 4, "formality": 5, "convention": 3},
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["brand_archetype"] == "caregiver"
+    assert body["core_values"][0]["value"] == "Presence"
+
+    g = (await api.get(f"/api/brand-book/{bid}/grounding", headers=h)).json()
+    ctx = g["prompt_context"]
+    assert "thriving, ethical practice" in ctx
+    assert "Artists with harassment allegations." in ctx
+    assert "Presence" in ctx and "Daily gratitude posts." in ctx
+    assert "a bad tattoo from a stranger" in ctx
+    assert "Brand archetype: caregiver" in ctx
+    assert "humor=2/5" in ctx
+
+
 # ---------------------------------------------------------------------------
 # CRUD + permissions + isolation
 # ---------------------------------------------------------------------------

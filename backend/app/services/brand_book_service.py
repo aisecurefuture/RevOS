@@ -246,6 +246,8 @@ async def assemble_grounding_context(db: AsyncSession, brand_id: uuid.UUID) -> G
     if book:
         if book.mission:
             lines.append(f"\n## Mission\n{book.mission}")
+        if book.vision:
+            lines.append(f"\n## Vision (long-term outcome if the mission succeeds)\n{book.vision}")
         if book.positioning:
             lines.append(f"\n## Positioning\n{book.positioning}")
         if book.elevator_pitch:
@@ -254,20 +256,49 @@ async def assemble_grounding_context(db: AsyncSession, brand_id: uuid.UUID) -> G
             lines.append("\n## Key messages\n" + "\n".join(f"- {m}" for m in book.key_messages))
         if book.target_summary:
             lines.append(f"\n## Target customer\n{book.target_summary}")
+        if book.audience_exclusions:
+            lines.append(f"\n## Who this is NOT for\n{book.audience_exclusions}")
+        if book.core_values:
+            cv_lines = []
+            for cv in book.core_values:
+                bit = f"- **{cv.get('value')}**"
+                if cv.get("statement"):
+                    bit += f": {cv['statement']}"
+                if cv.get("example"):
+                    bit += f" (e.g. {cv['example']})"
+                cv_lines.append(bit)
+            lines.append("\n## Core values\n" + "\n".join(cv_lines))
+        if book.brand_story:
+            lines.append(f"\n## Brand story (draw on this for authentic, personal narrative content)\n{book.brand_story}")
 
-    if voice:
+    if voice or (book and (book.brand_archetype or book.voice_spectrum)):
         v: list[str] = []
-        if voice.tone:
+        if voice and voice.tone:
             v.append(f"Tone: {voice.tone}")
-        if voice.style_notes:
+        if voice and voice.style_notes:
             v.append(f"Style: {voice.style_notes}")
-        if voice.value_props:
+        if book and book.brand_archetype:
+            v.append(f"Brand archetype: {book.brand_archetype}")
+        if book and book.voice_spectrum:
+            spectrum_labels = {
+                "humor": ("funny", "serious"),
+                "energy": ("matter-of-fact", "enthusiastic"),
+                "formality": ("formal", "casual"),
+                "convention": ("conventional", "quirky"),
+            }
+            s_bits = []
+            for key, (lo, hi) in spectrum_labels.items():
+                if key in book.voice_spectrum:
+                    s_bits.append(f"{key}={book.voice_spectrum[key]}/5 ({lo}→{hi})")
+            if s_bits:
+                v.append("Voice spectrum: " + ", ".join(s_bits))
+        if voice and voice.value_props:
             v.append("Value props: " + "; ".join(voice.value_props))
-        if voice.vocabulary:
+        if voice and voice.vocabulary:
             v.append("Preferred vocabulary: " + ", ".join(voice.vocabulary))
-        if voice.do_list:
+        if voice and voice.do_list:
             v.append("Do: " + "; ".join(voice.do_list))
-        if voice.dont_list:
+        if voice and voice.dont_list:
             v.append("Don't: " + "; ".join(voice.dont_list))
         if v:
             lines.append("\n## Voice & style\n" + "\n".join(v))

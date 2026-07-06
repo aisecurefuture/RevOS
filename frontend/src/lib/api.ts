@@ -327,14 +327,38 @@ export const publicSchedulerApi = {
 };
 
 // --- Brand Book -------------------------------------------------------------
+export interface CoreValue {
+  value: string;
+  statement?: string | null;
+  example?: string | null;
+}
+
+export interface VoiceSpectrum {
+  humor?: number;      // 1 funny .. 5 serious
+  energy?: number;      // 1 matter-of-fact .. 5 enthusiastic
+  formality?: number;   // 1 formal .. 5 casual
+  convention?: number;  // 1 conventional .. 5 quirky
+}
+
+export const BRAND_ARCHETYPES = [
+  "innocent", "explorer", "sage", "hero", "outlaw", "magician",
+  "regular_guy", "lover", "jester", "caregiver", "ruler", "creator",
+];
+
 export interface BrandBook {
   id: string;
   brand_id: string;
   mission: string | null;
+  vision: string | null;
   positioning: string | null;
   elevator_pitch: string | null;
   target_summary: string | null;
+  audience_exclusions: string | null;
   key_messages: string[];
+  core_values: CoreValue[];
+  brand_story: string | null;
+  brand_archetype: string | null;
+  voice_spectrum: VoiceSpectrum;
   banned_terms: string[];
   required_disclaimers: string[];
   compliance_notes: string | null;

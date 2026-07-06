@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import {
   ApiError,
   autopilotApi,
+  BRAND_ARCHETYPES,
   brandBookApi,
   type AutopilotConfig,
   type AutopilotRun,
@@ -16,6 +17,8 @@ import {
   type BrandClaim,
   type BrandFact,
   type ContentCheck,
+  type CoreValue,
+  type VoiceSpectrum,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
@@ -49,10 +52,13 @@ export default function BrandBookPage() {
 
   // Local editable copies of list fields (as newline text).
   const [form, setForm] = useState({
-    mission: "", positioning: "", elevator_pitch: "", target_summary: "",
-    compliance_notes: "", key_messages: "", competitors: "",
-    banned_terms: "", required_disclaimers: "",
+    mission: "", vision: "", positioning: "", elevator_pitch: "", target_summary: "",
+    audience_exclusions: "", compliance_notes: "", key_messages: "", competitors: "",
+    banned_terms: "", required_disclaimers: "", brand_story: "",
   });
+  const [coreValues, setCoreValues] = useState<CoreValue[]>([]);
+  const [archetype, setArchetype] = useState("");
+  const [spectrum, setSpectrum] = useState<VoiceSpectrum>({});
 
   useEffect(() => {
     setBrandId((cur) => cur ?? selectedBrandId ?? brands[0]?.id ?? null);
@@ -71,12 +77,17 @@ export default function BrandBookPage() {
       setClaims(c);
       setFacts(f);
       setForm({
-        mission: b.mission ?? "", positioning: b.positioning ?? "",
+        mission: b.mission ?? "", vision: b.vision ?? "", positioning: b.positioning ?? "",
         elevator_pitch: b.elevator_pitch ?? "", target_summary: b.target_summary ?? "",
+        audience_exclusions: b.audience_exclusions ?? "",
         compliance_notes: b.compliance_notes ?? "",
         key_messages: b.key_messages.join("\n"), competitors: b.competitors.join("\n"),
         banned_terms: b.banned_terms.join("\n"), required_disclaimers: b.required_disclaimers.join("\n"),
+        brand_story: b.brand_story ?? "",
       });
+      setCoreValues(b.core_values.length ? b.core_values : []);
+      setArchetype(b.brand_archetype ?? "");
+      setSpectrum(b.voice_spectrum ?? {});
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to load brand book");
     } finally {
@@ -94,14 +105,20 @@ export default function BrandBookPage() {
     try {
       const b = await brandBookApi.update(brandId, {
         mission: form.mission || null,
+        vision: form.vision || null,
         positioning: form.positioning || null,
         elevator_pitch: form.elevator_pitch || null,
         target_summary: form.target_summary || null,
+        audience_exclusions: form.audience_exclusions || null,
         compliance_notes: form.compliance_notes || null,
         key_messages: linesToArray(form.key_messages),
         competitors: linesToArray(form.competitors),
         banned_terms: linesToArray(form.banned_terms),
         required_disclaimers: linesToArray(form.required_disclaimers),
+        brand_story: form.brand_story || null,
+        core_values: coreValues.filter((cv) => cv.value.trim()),
+        brand_archetype: archetype || null,
+        voice_spectrum: spectrum,
       });
       setBook(b);
       setSavedAt(new Date().toLocaleTimeString());
@@ -166,9 +183,13 @@ export default function BrandBookPage() {
         <Card>
           <CardTitle>Positioning & messaging</CardTitle>
           <div className="space-y-3">
-            <Field label="Mission">
+            <Field label="Mission" hint="Your purpose, present tense. What do you do, for whom, and why?">
               <textarea rows={2} className={ta} value={form.mission}
                 onChange={(e) => setForm({ ...form, mission: e.target.value })} />
+            </Field>
+            <Field label="Vision" hint="The future. If you accomplish this mission every day, long-term — what's the outcome, for you AND for your audience?">
+              <textarea rows={2} className={ta} value={form.vision}
+                onChange={(e) => setForm({ ...form, vision: e.target.value })} />
             </Field>
             <Field label="Positioning" hint="What makes you different.">
               <textarea rows={2} className={ta} value={form.positioning}
@@ -178,9 +199,13 @@ export default function BrandBookPage() {
               <textarea rows={2} className={ta} value={form.elevator_pitch}
                 onChange={(e) => setForm({ ...form, elevator_pitch: e.target.value })} />
             </Field>
-            <Field label="Target customer" hint="One-paragraph ICP summary.">
+            <Field label="Target customer" hint="One-paragraph ICP summary — demographics and personas/situations.">
               <textarea rows={2} className={ta} value={form.target_summary}
                 onChange={(e) => setForm({ ...form, target_summary: e.target.value })} />
+            </Field>
+            <Field label="Who this is NOT for" hint="Knowing who you're for includes knowing who you aren't. Describe someone you're deliberately not making content for, and why.">
+              <textarea rows={2} className={ta} value={form.audience_exclusions}
+                onChange={(e) => setForm({ ...form, audience_exclusions: e.target.value })} />
             </Field>
             <Field label="Key messages" hint="One per line.">
               <textarea rows={3} className={ta} value={form.key_messages}
@@ -216,6 +241,57 @@ export default function BrandBookPage() {
         </Card>
       </div>
 
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardTitle>Core values</CardTitle>
+          <p className="mb-3 text-xs text-slate-400">
+            A value, what it means in practice, and how it shows up in your content. If a value has
+            no content example, that's a content opportunity — if content doesn't reflect any value,
+            it's probably off-brand.
+          </p>
+          <CoreValuesEditor values={coreValues} onChange={setCoreValues} />
+        </Card>
+
+        <Card>
+          <CardTitle>Voice anchors</CardTitle>
+          <p className="mb-3 text-xs text-slate-400">
+            Cheap, consistent shorthand for tone — faster to fill out than freeform style notes.
+          </p>
+          <div className="space-y-3">
+            <Field label="Brand archetype" hint="Which of the 12 Jungian archetypes resonates most?">
+              <select className={ta} value={archetype} onChange={(e) => setArchetype(e.target.value)}>
+                <option value="">— none —</option>
+                {BRAND_ARCHETYPES.map((a) => (
+                  <option key={a} value={a}>
+                    {a.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ")}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <VoiceSpectrumEditor spectrum={spectrum} onChange={setSpectrum} />
+          </div>
+        </Card>
+      </div>
+
+      <Card className="mt-4">
+        <CardTitle>Brand story</CardTitle>
+        <p className="mb-3 text-xs text-slate-400">
+          At the heart of content that resonates is storytelling. Use a condensed three-act
+          structure — who this is about, the inciting incident that disrupted normal life, the
+          obstacles faced, the lowest point, the climax, and the transformation/legacy. This is
+          exactly the kind of authentic material that makes short-form avatar video land.
+        </p>
+        <textarea
+          rows={8} className={ta} value={form.brand_story}
+          onChange={(e) => setForm({ ...form, brand_story: e.target.value })}
+          placeholder={
+            "Who is this about?\n\nWhat was the inciting incident?\n\nWhy and how did you decide to take action?\n\n" +
+            "What obstacles did you face?\n\nWhat was your lowest point after taking action?\n\n" +
+            "What's the climax — the highest-stakes confrontation?\n\nWhat's the transformation / legacy?"
+          }
+        />
+      </Card>
+
       <div className="mt-3">
         <Button onClick={() => void save()}>Save brand book</Button>
       </div>
@@ -230,6 +306,64 @@ export default function BrandBookPage() {
       {brandId ? <CheckerCard brandId={brandId} /> : null}
       {brandId ? <AutopilotCard brandId={brandId} /> : null}
     </>
+  );
+}
+
+function CoreValuesEditor({ values, onChange }: { values: CoreValue[]; onChange: (v: CoreValue[]) => void }) {
+  function update(i: number, patch: Partial<CoreValue>) {
+    onChange(values.map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
+  }
+  function remove(i: number) {
+    onChange(values.filter((_, idx) => idx !== i));
+  }
+  return (
+    <div className="space-y-3">
+      {values.map((v, i) => (
+        <div key={i} className="space-y-1 rounded-lg border border-slate-200 p-2">
+          <div className="flex gap-2">
+            <input className={`${ta} grow`} placeholder="Value (e.g. Presence)" value={v.value}
+              onChange={(e) => update(i, { value: e.target.value })} />
+            <button type="button" className="text-xs text-slate-400 hover:text-red-600" onClick={() => remove(i)}>
+              Remove
+            </button>
+          </div>
+          <input className={ta} placeholder="How you practice it in life" value={v.statement ?? ""}
+            onChange={(e) => update(i, { statement: e.target.value })} />
+          <input className={ta} placeholder="How it shows up in your content" value={v.example ?? ""}
+            onChange={(e) => update(i, { example: e.target.value })} />
+        </div>
+      ))}
+      <Button type="button" variant="secondary" onClick={() => onChange([...values, { value: "", statement: "", example: "" }])}>
+        + Add value
+      </Button>
+    </div>
+  );
+}
+
+const SPECTRUMS: { key: keyof VoiceSpectrum; lo: string; hi: string }[] = [
+  { key: "humor", lo: "Funny", hi: "Serious" },
+  { key: "energy", lo: "Matter-of-fact", hi: "Enthusiastic" },
+  { key: "formality", lo: "Formal", hi: "Casual" },
+  { key: "convention", lo: "Conventional", hi: "Quirky" },
+];
+
+function VoiceSpectrumEditor({ spectrum, onChange }: { spectrum: VoiceSpectrum; onChange: (s: VoiceSpectrum) => void }) {
+  return (
+    <div className="space-y-3">
+      {SPECTRUMS.map(({ key, lo, hi }) => (
+        <div key={key}>
+          <div className="flex justify-between text-xs text-slate-500">
+            <span>{lo}</span>
+            <span>{hi}</span>
+          </div>
+          <input
+            type="range" min={1} max={5} value={spectrum[key] ?? 3}
+            onChange={(e) => onChange({ ...spectrum, [key]: Number(e.target.value) })}
+            className="w-full"
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 
