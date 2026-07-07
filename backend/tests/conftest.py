@@ -145,9 +145,17 @@ async def make_user(async_session_factory):
     from app.services.auth_service import create_user
 
     async def _make(email: str, password: str, role):
+        from app.models.base import utcnow
+
         async with async_session_factory() as session:
-            await create_user(session, email=email, password=password,
+            user = await create_user(session, email=email, password=password,
                              full_name=email, role=role)
+            # This fixture represents an already-onboarded team member, not a
+            # fresh signup going through the real registration flow — verify
+            # so tests exercising role/permission logic don't also have to
+            # deal with the (unrelated) email-verification gate.
+            user.email_verified_at = utcnow()
+            session.add(user)
             await session.commit()
         return {"email": email, "password": password}
 

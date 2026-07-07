@@ -82,3 +82,83 @@ async def test_resend_verification(api):
     r = await api.post("/api/auth/verify-email/resend", headers=h)
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "sent"
+
+
+# ---------------------------------------------------------------------------
+# Verified-email gate on actions with external reach (P3)
+# ---------------------------------------------------------------------------
+
+async def _verify(api, async_session_factory, email):
+    from sqlmodel import select
+    from app.models.user import AdminUser
+
+    async with async_session_factory() as session:
+        res = await session.execute(select(AdminUser).where(AdminUser.email == email))
+        user = res.scalar_one()
+        token = make_verification_token(user)
+    r = await api.get(f"/api/auth/verify-email?token={token}")
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.asyncio
+async def test_unverified_user_blocked_from_inviting_a_teammate(api):
+    h, _ = await _register(api, "unverified-invite@profile.com")
+    team = (await api.post("/api/accounts", headers=h, json={"name": "Team"})).json()
+
+    r = await api.post(f"/api/accounts/{team['id']}/invitations", headers=h, json={
+        "email": "someone@example.com", "role": "editor",
+    })
+    assert r.status_code == 403, r.text
+    assert r.json()["error"]["code"] == "email_not_verified"
+
+
+@pytest.mark.asyncio
+async def test_verified_user_can_invite_a_teammate(api, async_session_factory):
+    h, _ = await _register(api, "verified-invite@profile.com")
+    await _verify(api, async_session_factory, "verified-invite@profile.com")
+
+    team = (await api.post("/api/accounts", headers=h, json={"name": "Team"})).json()
+    r = await api.post(f"/api/accounts/{team['id']}/invitations", headers=h, json={
+        "email": "someone@example.com", "role": "editor",
+    })
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_unverified_user_blocked_from_connect_url(api):
+    h, _ = await _register(api, "unverified-connect@profile.com")
+    r = await api.get("/api/social/connections/connect-url?platform=facebook", headers=h)
+    assert r.status_code == 403, r.text
+    assert r.json()["error"]["code"] == "email_not_verified"
+
+
+@pytest.mark.asyncio
+async def test_unverified_user_blocked_from_approving(api, async_session_factory):
+    """A pending approval must not be approvable (i.e. published) by an
+    unverified user, even one with the admin role otherwise required."""
+    from sqlmodel import select
+    from app.models.account import Account
+    from app.models.approval import ApprovalAction, ApprovalRequest, ApprovalStatus
+    from app.models.user import AdminUser
+
+    h, reg = await _register(api, "unverified-approve@profile.com")
+
+    async with async_session_factory() as s:
+        res = await s.execute(select(AdminUser).where(AdminUser.email == "unverified-approve@profile.com"))
+        user = res.scalar_one()
+        acct = (await s.execute(
+            select(Account).where(Account.owner_user_id == user.id)
+        )).scalars().first()
+        approval = ApprovalRequest(
+            account_id=acct.id, action_type=ApprovalAction.campaign_send,
+            entity_type="test", entity_id=user.id, title="Test",
+            requested_by_user_id=user.id, status=ApprovalStatus.pending,
+        )
+        s.add(approval)
+        await s.commit()
+        await s.refresh(approval)
+        approval_id = approval.id
+
+    r = await api.post(f"/api/approvals/{approval_id}/approve", headers=h)
+    assert r.status_code == 403, r.text
+    assert r.json()["error"]["code"] == "email_not_verified"

@@ -94,6 +94,18 @@ require_admin = require_role(Role.admin)
 require_owner = require_role(Role.owner)
 
 
+async def require_verified_email(user: CurrentUser) -> AdminUser:
+    """Gate for actions with real external/reach effects (connecting a social
+    account, inviting a teammate, publishing content) — not for the product
+    generally, which unverified users can otherwise use normally."""
+    if user.email_verified_at is None:
+        raise PermissionError_(
+            "Please verify your email address before doing this.",
+            code="email_not_verified",
+        )
+    return user
+
+
 async def verify_csrf(request: Request) -> None:
     """Double-submit CSRF check on state-changing requests."""
     if request.method in _SAFE_METHODS:

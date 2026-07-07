@@ -17,11 +17,20 @@ import pytest
 from app.models.base import utcnow
 
 
-async def _register_owner(api):
+async def _register_owner(api, async_session_factory):
     r = await api.post("/api/auth/register", json={
         "email": "owner@test.com", "password": "OwnerPass123", "full_name": "Owner",
     })
     assert r.status_code == 201, r.text
+    from app.models.base import utcnow
+    from app.models.user import AdminUser
+    from sqlalchemy import select
+
+    async with async_session_factory() as s:
+        user = (await s.execute(select(AdminUser).where(AdminUser.email == "owner@test.com"))).scalar_one()
+        user.email_verified_at = utcnow()
+        s.add(user)
+        await s.commit()
     return {"X-CSRF-Token": r.json()["csrf_token"]}
 
 
@@ -53,7 +62,7 @@ async def _seed(api, async_session_factory, headers, scheduled_at=None):
 
 @pytest.mark.asyncio
 async def test_approve_with_future_schedule_parks_as_scheduled(api, async_session_factory):
-    h = await _register_owner(api)
+    h = await _register_owner(api, async_session_factory)
     future = utcnow() + timedelta(hours=2)
     bid, post_id = await _seed(api, async_session_factory, h, scheduled_at=future)
 
@@ -74,7 +83,7 @@ async def test_approve_without_schedule_publishes_immediately(api, async_session
     """No scheduled_at (or one in the past) → publish now, same as before this feature."""
     from app.services.social import meta as meta_client
 
-    h = await _register_owner(api)
+    h = await _register_owner(api, async_session_factory)
     bid, post_id = await _seed(api, async_session_factory, h, scheduled_at=None)
 
     submit = await api.post(f"/api/social/posts/{post_id}/submit", headers=h)
@@ -101,7 +110,7 @@ async def test_sweep_publishes_scheduled_post_once_due(api, async_session_factor
     from app.services import social_connection_service
     from app.services.social import meta as meta_client
 
-    h = await _register_owner(api)
+    h = await _register_owner(api, async_session_factory)
     # Schedule 2 hours out, approve now (parks as scheduled)...
     future = utcnow() + timedelta(hours=2)
     bid, post_id = await _seed(api, async_session_factory, h, scheduled_at=future)
@@ -136,7 +145,7 @@ async def test_sweep_publishes_scheduled_post_once_due(api, async_session_factor
 async def test_sweep_ignores_not_yet_due_posts(api, async_session_factory):
     from app.services import social_connection_service
 
-    h = await _register_owner(api)
+    h = await _register_owner(api, async_session_factory)
     future = utcnow() + timedelta(hours=2)
     bid, post_id = await _seed(api, async_session_factory, h, scheduled_at=future)
     submit = await api.post(f"/api/social/posts/{post_id}/submit", headers=h)

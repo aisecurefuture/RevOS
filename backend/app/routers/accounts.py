@@ -16,7 +16,7 @@ from fastapi.responses import Response as PlainResponse
 from app.core.exceptions import PermissionError_
 from app.core.rbac import role_at_least
 from app.core.security import generate_csrf_token
-from app.deps import CurrentUser, DbSession, verify_csrf
+from app.deps import CurrentUser, DbSession, require_verified_email, verify_csrf
 from app.models.user import AdminUser, Role
 from app.routers.auth import _set_auth_cookies
 from app.schemas.account import (
@@ -161,6 +161,7 @@ async def invite_member(
     user: CurrentUser,
     db: DbSession,
     _c: None = Depends(verify_csrf),
+    _verified: AdminUser = Depends(require_verified_email),
 ) -> InvitationCreatedOut:
     await _admin_of(db, user, account_id)
     from app.config import settings as cfg

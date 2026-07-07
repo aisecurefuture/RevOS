@@ -107,6 +107,10 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
+  verifyEmail: (token: string) =>
+    apiFetch<{ status: string; email: string }>(`/auth/verify-email?token=${encodeURIComponent(token)}`),
+  resendVerification: () =>
+    apiFetch<{ status: string }>("/auth/verify-email/resend", { method: "POST" }),
 };
 
 // --- Accounts / team membership / invitations -------------------------------

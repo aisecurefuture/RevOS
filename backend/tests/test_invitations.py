@@ -11,11 +11,23 @@ import pytest
 
 # --- helpers ----------------------------------------------------------------
 
-async def _register(client, email, pw="PassWord1234", name="Test"):
+async def _register(client, email, async_session_factory, pw="PassWord1234", name="Test"):
     r = await client.post(
         "/api/auth/register", json={"email": email, "password": pw, "full_name": name}
     )
     assert r.status_code == 201, r.text
+    # Sending an invitation requires a verified email (Phase 2/3 gate on
+    # actions with external reach) — verify directly rather than round-trip
+    # the token-based email flow in every test.
+    from app.models.base import utcnow
+    from app.models.user import AdminUser
+    from sqlalchemy import select
+
+    async with async_session_factory() as s:
+        user = (await s.execute(select(AdminUser).where(AdminUser.email == email))).scalar_one()
+        user.email_verified_at = utcnow()
+        s.add(user)
+        await s.commit()
     return {"X-CSRF-Token": r.json()["csrf_token"]}
 
 
@@ -38,12 +50,12 @@ async def _invite(client, headers, account_id, email, role="viewer"):
 # --- tests ------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_invite_and_accept(make_client):
+async def test_invite_and_accept(make_client, async_session_factory):
     """Admin invites B by email; B registers with that email and accepts."""
     api_a = await make_client()
     api_b = await make_client()
 
-    h_a = await _register(api_a, "owner@inv.com", name="Owner A")
+    h_a = await _register(api_a, "owner@inv.com", async_session_factory, name="Owner A")
     team = await _create_team(api_a, h_a)
     account_id = team["id"]
 
@@ -53,7 +65,7 @@ async def test_invite_and_accept(make_client):
     token = inv["token"]
 
     # B registers with the same email
-    h_b = await _register(api_b, "invitee@inv.com", name="Invitee B")
+    h_b = await _register(api_b, "invitee@inv.com", async_session_factory, name="Invitee B")
 
     # B accepts the invitation
     accept = await api_b.post(
@@ -71,29 +83,29 @@ async def test_invite_and_accept(make_client):
 
 
 @pytest.mark.asyncio
-async def test_accept_wrong_email_rejected(make_client):
+async def test_accept_wrong_email_rejected(make_client, async_session_factory):
     """C tries to accept an invite sent to B — rejected because email doesn't match."""
     api_a = await make_client()
     api_c = await make_client()
 
-    h_a = await _register(api_a, "owner@wrongem.com")
+    h_a = await _register(api_a, "owner@wrongem.com", async_session_factory)
     team = await _create_team(api_a, h_a)
     inv = await _invite(api_a, h_a, team["id"], "b@wrongem.com")
     token = inv["token"]
 
     # C registers with a different email
-    h_c = await _register(api_c, "c@wrongem.com")
+    h_c = await _register(api_c, "c@wrongem.com", async_session_factory)
     r = await api_c.post("/api/auth/invitation/accept", json={"token": token}, headers=h_c)
     assert r.status_code in (403, 404, 422), r.text
 
 
 @pytest.mark.asyncio
-async def test_revoke_invite(make_client):
+async def test_revoke_invite(make_client, async_session_factory):
     """Revoking a pending invite invalidates the token."""
     api_a = await make_client()
     api_b = await make_client()
 
-    h_a = await _register(api_a, "owner@revoke.com")
+    h_a = await _register(api_a, "owner@revoke.com", async_session_factory)
     team = await _create_team(api_a, h_a)
     inv = await _invite(api_a, h_a, team["id"], "target@revoke.com")
     invite_id = inv["id"]
@@ -106,23 +118,23 @@ async def test_revoke_invite(make_client):
     assert r.status_code == 204, r.text
 
     # Register as invitee and try to accept
-    h_b = await _register(api_b, "target@revoke.com")
+    h_b = await _register(api_b, "target@revoke.com", async_session_factory)
     r = await api_b.post("/api/auth/invitation/accept", json={"token": token}, headers=h_b)
     assert r.status_code in (404, 403, 410), r.text
 
 
 @pytest.mark.asyncio
-async def test_remove_member(make_client):
+async def test_remove_member(make_client, async_session_factory):
     """Owner can remove a non-owner member from the account."""
     api_a = await make_client()
     api_b = await make_client()
 
-    h_a = await _register(api_a, "owner@remove.com")
+    h_a = await _register(api_a, "owner@remove.com", async_session_factory)
     team = await _create_team(api_a, h_a)
 
     # Invite + B accepts
     inv = await _invite(api_a, h_a, team["id"], "member@remove.com")
-    h_b = await _register(api_b, "member@remove.com")
+    h_b = await _register(api_b, "member@remove.com", async_session_factory)
     await api_b.post("/api/auth/invitation/accept", json={"token": inv["token"]}, headers=h_b)
 
     # Get B's user id from the member list
@@ -141,16 +153,16 @@ async def test_remove_member(make_client):
 
 
 @pytest.mark.asyncio
-async def test_change_member_role(make_client):
+async def test_change_member_role(make_client, async_session_factory):
     """Owner can change a member's role."""
     api_a = await make_client()
     api_b = await make_client()
 
-    h_a = await _register(api_a, "owner@rolechg.com")
+    h_a = await _register(api_a, "owner@rolechg.com", async_session_factory)
     team = await _create_team(api_a, h_a)
 
     inv = await _invite(api_a, h_a, team["id"], "editor@rolechg.com", role="viewer")
-    h_b = await _register(api_b, "editor@rolechg.com")
+    h_b = await _register(api_b, "editor@rolechg.com", async_session_factory)
     await api_b.post("/api/auth/invitation/accept", json={"token": inv["token"]}, headers=h_b)
 
     members = (await api_a.get(f"/api/accounts/{team['id']}/members", headers=h_a)).json()

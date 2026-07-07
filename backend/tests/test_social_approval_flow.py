@@ -13,11 +13,20 @@ import pytest
 from sqlalchemy import select
 
 
-async def _register_owner(api):
+async def _register_owner(api, async_session_factory):
     r = await api.post("/api/auth/register", json={
         "email": "owner@test.com", "password": "OwnerPass123", "full_name": "Owner",
     })
     assert r.status_code == 201, r.text
+    from app.models.base import utcnow
+    from app.models.user import AdminUser
+    from sqlalchemy import select
+
+    async with async_session_factory() as s:
+        user = (await s.execute(select(AdminUser).where(AdminUser.email == "owner@test.com"))).scalar_one()
+        user.email_verified_at = utcnow()
+        s.add(user)
+        await s.commit()
     return {"X-CSRF-Token": r.json()["csrf_token"]}
 
 
@@ -50,7 +59,7 @@ async def _seed(api, async_session_factory, headers, platform):
 
 @pytest.mark.asyncio
 async def test_submit_appears_in_approvals_then_publishes(api, async_session_factory):
-    h = await _register_owner(api)
+    h = await _register_owner(api, async_session_factory)
     bid, post_id = await _seed(api, async_session_factory, h, "facebook")
 
     # Submit for approval — no connection_id, auto-resolved from the platform.
@@ -90,7 +99,7 @@ async def test_submit_appears_in_approvals_then_publishes(api, async_session_fac
 async def test_submit_without_connection_is_rejected(api, async_session_factory):
     """With no connected account for the platform, submit fails with a clear error
     instead of silently creating an un-publishable approval."""
-    h = await _register_owner(api)
+    h = await _register_owner(api, async_session_factory)
     bid = (await api.post("/api/brands", headers=h, json={"name": "Brand"})).json()["id"]
     post = (await api.post("/api/social/posts", headers=h, json={
         "brand_id": bid, "platform": "linkedin", "caption": "Hi",
@@ -113,7 +122,7 @@ async def test_submit_with_explicit_connection_is_honored(api, async_session_fac
     from app.models.social import SocialPost
     from app.models.social_connection import SocialConnection, SocialConnectionStatus
 
-    h = await _register_owner(api)
+    h = await _register_owner(api, async_session_factory)
     me = (await api.get("/api/auth/me", headers=h)).json()
     user_id = uuid.UUID(me["id"])
     bid = (await api.post("/api/brands", headers=h, json={"name": "Brand"})).json()["id"]
@@ -150,7 +159,7 @@ async def test_submit_with_explicit_connection_is_honored(api, async_session_fac
 
 @pytest.mark.asyncio
 async def test_reject_returns_post_to_draft(api, async_session_factory):
-    h = await _register_owner(api)
+    h = await _register_owner(api, async_session_factory)
     bid, post_id = await _seed(api, async_session_factory, h, "facebook")
 
     await api.post(f"/api/social/posts/{post_id}/submit", headers=h)

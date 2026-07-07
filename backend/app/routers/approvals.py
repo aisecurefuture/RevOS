@@ -13,7 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.audit import write_audit
-from app.deps import DbSession, require_admin, require_authenticated, verify_csrf
+from app.deps import DbSession, require_admin, require_authenticated, require_verified_email, verify_csrf
 from app.models.approval import ApprovalAction, ApprovalRequest, ApprovalStatus
 from app.models.user import AdminUser
 from app.schemas.approval import ApprovalDecision, ApprovalOut, ApprovalResult
@@ -49,6 +49,7 @@ async def approve(
     db: DbSession,
     user: Annotated[AdminUser, Depends(require_admin)],
     _: None = Depends(verify_csrf),
+    _verified: Annotated[AdminUser, Depends(require_verified_email)] = None,
 ) -> ApprovalResult:
     approval = await approval_service.get_or_404(db, approval_id)
     if approval.status != ApprovalStatus.pending:

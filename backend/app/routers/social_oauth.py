@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import RedirectResponse
 
 from app.core.exceptions import RevOSError
-from app.deps import CurrentUser, DbSession, require_owner, verify_csrf
+from app.deps import CurrentUser, DbSession, require_owner, require_verified_email, verify_csrf
 from app.models.user import AdminUser
 from app.schemas.social_connection import (
     ConnectUrlOut,
@@ -112,6 +112,7 @@ async def get_connect_url(
     request: Request,
     platform: str,
     user: CurrentUser,
+    _verified: AdminUser = Depends(require_verified_email),
 ) -> ConnectUrlOut:
     """Return the Meta OAuth dialog URL. Frontend redirects the user there."""
     account_id = _account_id(request)
@@ -276,6 +277,7 @@ async def approve_and_publish(
     user: AdminUser = Depends(require_owner),
     db: DbSession = None,
     _csrf: None = Depends(verify_csrf),
+    _verified: AdminUser = Depends(require_verified_email),
 ) -> dict:
     """Approve an approval request and immediately publish the post.
 
