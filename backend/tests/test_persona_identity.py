@@ -312,3 +312,33 @@ async def test_long_voice_sample_has_no_warning(api):
     )
     assert up.status_code == 200, up.text
     assert up.json()["voice_sample_warning"] is None
+
+
+@pytest.mark.asyncio
+async def test_grant_consent_notifies_the_subject(api, monkeypatch):
+    """The named consent subject — not just whoever clicked 'grant' — gets a
+    receipt email with a dispute path, since an admin records consent on the
+    subject's behalf and could misrepresent it."""
+    sent = {}
+
+    def _capture(*, to_email, subject, html, text=""):
+        sent.update(to_email=to_email, subject=subject, html=html, text=text)
+
+    from app.services import persona_identity_service as svc
+    monkeypatch.setattr(svc, "send_transactional", _capture)
+
+    h = await _register_owner(api)
+    pid = await _create_identity(api, h)
+    await api.post(
+        f"/api/personas/{pid}/training-video", headers=_upload_headers(h),
+        files={"file": ("clip.mp4", b"video", "video/mp4")},
+    )
+    r = await api.post(f"/api/personas/{pid}/consent", headers=h, json={
+        "subject_name": "Jordan Smith", "subject_email": "jordan@example.com",
+        "consent_statement": "I, Jordan Smith, consent to RevOS creating an AI avatar of my likeness and voice.",
+    })
+    assert r.status_code == 201, r.text
+    assert sent["to_email"] == "jordan@example.com"
+    assert "did NOT authorize" in sent["html"]
+    assert "support@" in sent["html"]
+    assert "did NOT authorize" in sent["text"]

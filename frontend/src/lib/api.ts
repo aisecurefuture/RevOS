@@ -102,6 +102,69 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ current_password, new_password }),
     }),
+  acceptInvitation: (token: string) =>
+    apiFetch<{ account_id: string; role: string }>("/auth/invitation/accept", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+};
+
+// --- Accounts / team membership / invitations -------------------------------
+export interface AccountOut {
+  id: string;
+  type: string;
+  name: string;
+  slug: string;
+}
+
+export interface MembershipOut {
+  account: AccountOut;
+  role: string;
+  is_active: boolean;
+}
+
+export interface MemberOut {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+}
+
+export interface InvitationOut {
+  id: string;
+  email: string;
+  role: string;
+  created_at: string;
+}
+
+export interface InvitationCreatedOut extends InvitationOut {
+  token: string;
+  accept_url: string;
+}
+
+export const accountsApi = {
+  list: () => apiFetch<MembershipOut[]>("/accounts"),
+  createTeam: (name: string) =>
+    apiFetch<AccountOut>("/accounts", { method: "POST", body: JSON.stringify({ name }) }),
+  switchAccount: (account_id: string) =>
+    apiFetch<{ account_id: string; role: string; csrf_token: string }>("/accounts/switch", {
+      method: "POST", body: JSON.stringify({ account_id }),
+    }),
+  listMembers: (accountId: string) => apiFetch<MemberOut[]>(`/accounts/${accountId}/members`),
+  changeMemberRole: (accountId: string, userId: string, role: string) =>
+    apiFetch<MemberOut>(`/accounts/${accountId}/members/${userId}`, {
+      method: "PATCH", body: JSON.stringify({ role }),
+    }),
+  removeMember: (accountId: string, userId: string) =>
+    apiFetch<void>(`/accounts/${accountId}/members/${userId}`, { method: "DELETE" }),
+  listInvitations: (accountId: string) =>
+    apiFetch<InvitationOut[]>(`/accounts/${accountId}/invitations`),
+  inviteMember: (accountId: string, email: string, role: string) =>
+    apiFetch<InvitationCreatedOut>(`/accounts/${accountId}/invitations`, {
+      method: "POST", body: JSON.stringify({ email, role }),
+    }),
+  revokeInvitation: (accountId: string, inviteId: string) =>
+    apiFetch<void>(`/accounts/${accountId}/invitations/${inviteId}`, { method: "DELETE" }),
 };
 
 // --- Billing endpoints ------------------------------------------------------

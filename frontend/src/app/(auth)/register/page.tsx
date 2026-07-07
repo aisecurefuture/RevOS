@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
@@ -9,6 +9,8 @@ import { ApiError, authApi } from "@/lib/api";
 
 function RegisterForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const next = params.get("next");
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -22,7 +24,7 @@ function RegisterForm() {
     setSubmitting(true);
     try {
       await authApi.register(email, password, fullName);
-      router.replace("/subscribe");
+      router.replace(next || "/subscribe");
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Unable to create account. Try again.",

@@ -22,11 +22,14 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import ConflictError, NotFoundError, RevOSError
 from app.models.base import utcnow
+from app.models.brand import Brand
 from app.models.persona_identity import PersonaConsent, PersonaIdentity, PersonaIdentityStatus
 from app.models.user import AdminUser
 from app.services.storage_service import get_storage
+from app.services.transactional_email import send_transactional
 
 logger = logging.getLogger("revos.persona_identity")
 
@@ -310,7 +313,47 @@ async def grant_consent(
     await _recompute_status(db, identity)
     await db.flush()
     await db.refresh(consent)
+    await _send_consent_notification(db, identity, consent, granted_by=user)
     return consent
+
+
+async def _send_consent_notification(
+    db: AsyncSession, identity: PersonaIdentity, consent: PersonaConsent, *, granted_by: AdminUser,
+) -> None:
+    """Notify the consented person directly — not just whoever clicked
+    'grant' in the dashboard. Consent here is recorded by an admin on the
+    subject's behalf, so this is the one check against someone consenting for
+    a likeness/voice that isn't theirs to consent for: the actual subject gets
+    a receipt with a clear path to dispute it if it wasn't them."""
+    brand_name = None
+    if identity.brand_id:
+        brand = await db.get(Brand, identity.brand_id)
+        brand_name = brand.name if brand else None
+    context = f'an AI avatar persona ("{identity.name}")' + (f" for {brand_name}" if brand_name else "")
+    granted_by_label = granted_by.full_name or granted_by.email
+    support = settings.support_email
+
+    send_transactional(
+        to_email=consent.subject_email,
+        subject="Your consent was recorded for an AI avatar on RevOS",
+        html=(
+            f"<p>Hi {consent.subject_name},</p>"
+            f"<p><strong>{granted_by_label}</strong> just recorded your consent to create "
+            f"{context} using your likeness and voice, on RevOS.</p>"
+            f'<p>Consent statement on file: "{consent.consent_statement}"</p>'
+            f"<p>If this was you, no action is needed.</p>"
+            f"<p><strong>If you did NOT authorize this</strong>, please contact us immediately at "
+            f'<a href="mailto:{support}">{support}</a> so we can revoke it.</p>'
+        ),
+        text=(
+            f"Hi {consent.subject_name},\n\n"
+            f"{granted_by_label} just recorded your consent to create {context} using your "
+            f"likeness and voice, on RevOS.\n\n"
+            f'Consent statement on file: "{consent.consent_statement}"\n\n'
+            "If this was you, no action is needed.\n"
+            f"If you did NOT authorize this, contact us immediately at {support} so we can revoke it."
+        ),
+    )
 
 
 async def revoke_consent(

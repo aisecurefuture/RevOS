@@ -9,6 +9,7 @@ const TABS = [
   { label: "Social Connections", href: "/dashboard/settings/connections" },
   { label: "Connected Apps", href: "/dashboard/settings/connected-apps" },
   { label: "Automation", href: "/dashboard/settings/automation" },
+  { label: "Team", href: "/dashboard/settings/team" },
 ];
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {

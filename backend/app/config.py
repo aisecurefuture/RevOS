@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     email_test_mode: bool = True
     default_from_email: str = "no-reply@example.com"
     default_from_name: str = "RevOS"
+    support_email: str = "support@revos360.com"
 
     # --- AI -----------------------------------------------------------------
     ai_provider: Literal["anthropic", "openai", "local", "none"] = "none"
