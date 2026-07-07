@@ -67,6 +67,28 @@ def _normalize_voice_sample(data: bytes) -> bytes:
         return Path(dst.name).read_bytes()
 
 
+_MIN_RECOMMENDED_VOICE_SECONDS = 60.0
+
+
+def _probe_duration_seconds(data: bytes) -> float | None:
+    import json
+
+    if not shutil.which("ffprobe"):
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".audio") as tmp:
+        tmp.write(data)
+        tmp.flush()
+        result = subprocess.run(  # noqa: S603
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", tmp.name],  # noqa: S607
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        try:
+            info = json.loads(result.stdout or "{}")
+            return float(info["format"]["duration"])
+        except (KeyError, ValueError, TypeError):
+            return None
+
+
 def _has_media(identity: PersonaIdentity) -> bool:
     return bool(
         identity.training_video_path or identity.voice_sample_path or identity.reference_image_paths
@@ -183,7 +205,7 @@ async def upload_training_video(
 async def upload_voice_sample(
     db: AsyncSession, identity_id: uuid.UUID, account_id: uuid.UUID,
     filename: str, data: bytes, mime: str | None,
-) -> PersonaIdentity:
+) -> tuple[PersonaIdentity, str | None]:
     identity = await get_identity(db, identity_id, account_id)
     if identity.status == PersonaIdentityStatus.revoked:
         raise ConflictError("This identity's consent was revoked.")
@@ -202,7 +224,16 @@ async def upload_voice_sample(
     await _recompute_status(db, identity)
     await db.flush()
     await db.refresh(identity)
-    return identity
+
+    warning = None
+    duration = _probe_duration_seconds(data)
+    if duration is not None and duration < _MIN_RECOMMENDED_VOICE_SECONDS:
+        warning = (
+            f"This clip is ~{duration:.0f}s. Voice cloning quality improves noticeably with "
+            f"{_MIN_RECOMMENDED_VOICE_SECONDS:.0f}s+ of clean, continuous, single-speaker audio "
+            "— consider uploading a longer sample."
+        )
+    return identity, warning
 
 
 async def upload_reference_image(

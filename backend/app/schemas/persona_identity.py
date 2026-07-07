@@ -41,6 +41,8 @@ class PersonaIdentityOut(BaseModel):
     reference_image_paths: list
     voice_model_ref: str | None
     avatar_model_ref: str | None
+    # Ephemeral — only populated on the upload-voice-sample response, never persisted.
+    voice_sample_warning: str | None = None
 
 
 class ConsentGrantRequest(BaseModel):

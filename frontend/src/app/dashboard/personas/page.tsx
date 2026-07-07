@@ -183,18 +183,21 @@ function UploadRow({
   label, accept, hasFile, onUpload, disabled,
 }: {
   label: string; accept: string; hasFile: boolean;
-  onUpload: (file: File) => Promise<void>; disabled: boolean;
+  onUpload: (file: File) => Promise<string | null | void>; disabled: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setBusy(true);
     setError(null);
+    setWarning(null);
     try {
-      await onUpload(file);
+      const result = await onUpload(file);
+      if (result) setWarning(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Upload failed");
     } finally {
@@ -204,15 +207,18 @@ function UploadRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-sm text-slate-700">
-        {label} {hasFile ? <span className="text-green-600">✓ uploaded</span> : null}
-      </span>
-      <label className={`text-xs ${disabled ? "text-slate-300" : "cursor-pointer text-brand hover:underline"}`}>
-        {busy ? "Uploading…" : hasFile ? "Replace" : "Upload"}
-        <input type="file" accept={accept} className="hidden" disabled={disabled || busy} onChange={handleChange} />
-      </label>
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+    <div className="py-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-slate-700">
+          {label} {hasFile ? <span className="text-green-600">✓ uploaded</span> : null}
+        </span>
+        <label className={`text-xs ${disabled ? "text-slate-300" : "cursor-pointer text-brand hover:underline"}`}>
+          {busy ? "Uploading…" : hasFile ? "Replace" : "Upload"}
+          <input type="file" accept={accept} className="hidden" disabled={disabled || busy} onChange={handleChange} />
+        </label>
+        {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      </div>
+      {warning ? <p className="mt-1 text-xs text-amber-600">⚠ {warning}</p> : null}
     </div>
   );
 }
@@ -280,7 +286,10 @@ function PersonaDetail({
           <UploadRow
             label="Voice sample" accept="audio/*" hasFile={!!persona.voice_sample_path}
             disabled={!canEdit || revoked}
-            onUpload={(f) => personaApi.uploadVoiceSample(persona.id, f).then(onChange)}
+            onUpload={(f) => personaApi.uploadVoiceSample(persona.id, f).then((p) => {
+              onChange();
+              return p.voice_sample_warning ?? null;
+            })}
           />
         </div>
 

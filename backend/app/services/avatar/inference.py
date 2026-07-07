@@ -18,6 +18,7 @@ loop (the avatar worker calls them from a thread).
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -32,6 +33,34 @@ logger = logging.getLogger("revos.avatar.inference")
 class BackendError(RevOSError):
     code = "avatar_backend_error"
     status_code = 502
+
+
+def _post_process_voice(path: str) -> None:
+    """Slight presence lift + loudness normalization on the raw XTTS output.
+
+    XTTS-v2's native output measures somewhat more attenuated in the 3-5kHz
+    range than typical recorded reference speech; a small high-shelf boost
+    plus consistent loudness makes the clone read less muffled and more
+    uniform across generations. Fails open (leaves the raw file untouched) if
+    ffmpeg is unavailable or the filter errors — this is a quality polish, not
+    a correctness gate.
+    """
+    if not shutil.which("ffmpeg"):
+        return
+    fixed = f"{path}.fixed.wav"
+    result = subprocess.run(  # noqa: S603
+        ["ffmpeg", "-y", "-i", path, "-af",  # noqa: S607
+         "highshelf=f=3000:g=2.5,loudnorm=I=-16:TP=-1.5:LRA=11", fixed],
+        capture_output=True, timeout=120, check=False,
+    )
+    if result.returncode == 0 and Path(fixed).exists():
+        Path(fixed).replace(path)
+    else:
+        logger.warning(
+            "Voice post-process failed, using raw XTTS output as-is: %s",
+            result.stderr.decode(errors="replace")[-500:],
+        )
+        Path(fixed).unlink(missing_ok=True)
 
 
 class InferenceBackend(Protocol):
@@ -92,6 +121,7 @@ class LocalCpuBackend:
             )
         if not Path(out_path).exists():
             raise BackendError("Voice generation produced no output.")
+        _post_process_voice(out_path)
 
     def lip_sync(self, *, face_video_path: str, audio_path: str, out_path: str) -> None:
         self._run(

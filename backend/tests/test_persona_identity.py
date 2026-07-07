@@ -268,3 +268,47 @@ async def test_voice_sample_upload_survives_unrecognizable_audio(api):
     )
     assert up.status_code == 200, up.text
     assert up.json()["voice_sample_path"]
+
+
+@pytest.mark.asyncio
+async def test_short_voice_sample_warns_to_upload_longer(api):
+    """A clip under the recommended ~60s should surface a warning so the user
+    knows more reference audio improves cloning quality — but must not block
+    the upload."""
+    h = await _register_owner(api)
+    pid = await _create_identity(api, h)
+    up = await api.post(
+        f"/api/personas/{pid}/voice-sample", headers=_upload_headers(h),
+        files={"file": ("short.wav", _tiny_wav(24000), "audio/wav")},
+    )
+    assert up.status_code == 200, up.text
+    body = up.json()
+    assert body["voice_sample_path"]
+    assert body["voice_sample_warning"] is not None
+    assert "60" in body["voice_sample_warning"]
+
+
+@pytest.mark.asyncio
+async def test_long_voice_sample_has_no_warning(api):
+    import io
+    import struct
+    import wave
+
+    h = await _register_owner(api)
+    pid = await _create_identity(api, h)
+
+    buf = io.BytesIO()
+    sr = 8000
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        n = sr * 65  # 65 seconds — over the 60s recommendation
+        w.writeframes(struct.pack(f"<{n}h", *([0] * n)))
+
+    up = await api.post(
+        f"/api/personas/{pid}/voice-sample", headers=_upload_headers(h),
+        files={"file": ("long.wav", buf.getvalue(), "audio/wav")},
+    )
+    assert up.status_code == 200, up.text
+    assert up.json()["voice_sample_warning"] is None

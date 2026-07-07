@@ -455,6 +455,8 @@ export interface PersonaIdentity {
   reference_image_paths: string[];
   voice_model_ref: string | null;
   avatar_model_ref: string | null;
+  // Ephemeral — only present on the upload-voice-sample response.
+  voice_sample_warning?: string | null;
 }
 
 export interface PersonaConsent {

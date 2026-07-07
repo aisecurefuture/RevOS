@@ -104,10 +104,12 @@ async def upload_voice_sample(
     user: AdminUser = Depends(require_editor), _: None = Depends(verify_csrf),
 ) -> PersonaIdentityOut:
     data = await file.read()
-    identity = await svc.upload_voice_sample(
+    identity, warning = await svc.upload_voice_sample(
         db, identity_id, _account_id(request), file.filename or "voice.mp3", data, file.content_type,
     )
-    return PersonaIdentityOut.model_validate(identity)
+    out = PersonaIdentityOut.model_validate(identity)
+    out.voice_sample_warning = warning
+    return out
 
 
 @router.post("/{identity_id}/reference-images", response_model=PersonaIdentityOut)
