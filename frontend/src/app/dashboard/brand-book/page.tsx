@@ -524,14 +524,18 @@ function ClaimsCard({ brandId, claims, onChange }: { brandId: string; claims: Br
   const [proof, setProof] = useState("");
   const [category, setCategory] = useState("metric");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function add() {
     if (!claim.trim()) return;
     setBusy(true);
+    setError(null);
     try {
       await brandBookApi.addClaim(brandId, { claim, proof: proof || undefined, category });
       setClaim(""); setProof("");
       onChange();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not add claim");
     } finally {
       setBusy(false);
     }
@@ -556,6 +560,7 @@ function ClaimsCard({ brandId, claims, onChange }: { brandId: string; claims: Br
           </select>
           <Button onClick={() => void add()} disabled={busy}>Add</Button>
         </div>
+        {error ? <p className="text-xs text-red-600">{error}</p> : null}
       </div>
       <ul className="divide-y divide-slate-100">
         {claims.length === 0 ? <li className="py-2 text-sm text-slate-400">No claims yet.</li> : null}
@@ -579,14 +584,18 @@ function FactsCard({ brandId, facts, onChange }: { brandId: string; facts: Brand
   const [topic, setTopic] = useState("");
   const [content, setContent] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function add() {
     if (!topic.trim() || !content.trim()) return;
     setBusy(true);
+    setError(null);
     try {
       await brandBookApi.addFact(brandId, { topic, content });
       setTopic(""); setContent("");
       onChange();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not add fact");
     } finally {
       setBusy(false);
     }
@@ -604,6 +613,7 @@ function FactsCard({ brandId, facts, onChange }: { brandId: string; facts: Brand
             onChange={(e) => setContent(e.target.value)} />
           <Button onClick={() => void add()} disabled={busy}>Add</Button>
         </div>
+        {error ? <p className="text-xs text-red-600">{error}</p> : null}
       </div>
       <ul className="divide-y divide-slate-100">
         {facts.length === 0 ? <li className="py-2 text-sm text-slate-400">No facts yet.</li> : null}
