@@ -57,6 +57,7 @@ function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [billingLoading, setBillingLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -93,11 +94,11 @@ function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar />
+        <Topbar onMenuClick={() => setSidebarOpen(true)} />
         {!user.email_verified ? <VerifyEmailBanner /> : null}
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );
