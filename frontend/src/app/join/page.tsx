@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import { accountsApi, ApiError, authApi } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { AuthProvider, useAuth } from "@/lib/auth";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -96,10 +96,12 @@ function JoinForm() {
 
 export default function JoinPage() {
   return (
-    <Shell>
-      <Suspense fallback={<p className="text-sm text-slate-500">Loading…</p>}>
-        <JoinForm />
-      </Suspense>
-    </Shell>
+    <AuthProvider>
+      <Shell>
+        <Suspense fallback={<p className="text-sm text-slate-500">Loading…</p>}>
+          <JoinForm />
+        </Suspense>
+      </Shell>
+    </AuthProvider>
   );
 }
