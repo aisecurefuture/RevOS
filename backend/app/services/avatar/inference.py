@@ -1,10 +1,18 @@
-"""Avatar inference backends (Phase 3 M3).
+"""Avatar inference backends (Phase 3 M3, extended in Pitch Video Studio).
 
-An ``InferenceBackend`` turns (script, voice sample, face video) into a
-lip-synced talking-head video, in two stages:
+An ``InferenceBackend`` turns (script, voice, face video) into a lip-synced
+talking-head video, in two stages:
 
-    generate_voice(script, voice_sample) -> audio.wav      (XTTS-v2, cloned)
-    lip_sync(face_video, audio)          -> talking.mp4     (Wav2Lip)
+    generate_voice(script, voice) -> audio.wav      (XTTS-v2)
+    lip_sync(face_video, audio)   -> talking.mp4     (Wav2Lip)
+
+``generate_voice`` takes its voice one of two ways — exactly one must be given:
+  * ``voice_sample_path`` — zero-shot CLONING of a real person's recorded
+    sample. This is consent-gated at the caller (Avatar Personas requires an
+    active PersonaConsent before this path is ever reached).
+  * ``speaker_name`` — one of XTTS-v2's built-in stock speakers, bundled with
+    the model. No cloning, no consent surface — used for Pitch Video Studio's
+    brand-narrator voice, where there's no consented persona to clone.
 
 ``LocalCpuBackend`` runs the exact stack validated on the CPU box, driving two
 isolated virtualenvs via subprocess (they have conflicting deps — librosa/numpy
@@ -69,7 +77,10 @@ class InferenceBackend(Protocol):
     @property
     def available(self) -> bool: ...
 
-    def generate_voice(self, *, script: str, voice_sample_path: str, out_path: str) -> None: ...
+    def generate_voice(
+        self, *, script: str, out_path: str,
+        voice_sample_path: str | None = None, speaker_name: str | None = None,
+    ) -> None: ...
 
     def lip_sync(self, *, face_video_path: str, audio_path: str, out_path: str) -> None: ...
 
@@ -80,17 +91,39 @@ class InferenceBackend(Protocol):
 
 # Standalone script run by the XTTS venv's python. Kept as a string so the
 # backend is self-contained (no extra file to ship/track); written to a temp
-# file per call. Reads text/speaker/out from argv.
+# file per call. Takes text/out paths plus EITHER --speaker-wav (cloning) OR
+# --speaker-name (a built-in stock voice, no cloning).
 _XTTS_RUNNER = r'''
-import sys
+import argparse
 from TTS.api import TTS
 
-text_path, speaker_wav, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(text_path, "r", encoding="utf-8") as f:
+p = argparse.ArgumentParser()
+p.add_argument("text_path")
+p.add_argument("out_path")
+p.add_argument("--speaker-wav", default=None)
+p.add_argument("--speaker-name", default=None)
+args = p.parse_args()
+
+with open(args.text_path, "r", encoding="utf-8") as f:
     text = f.read().strip()
 
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False).to("cpu")
-tts.tts_to_file(text=text, speaker_wav=speaker_wav, language="en", file_path=out_path)
+if args.speaker_wav:
+    tts.tts_to_file(text=text, speaker_wav=args.speaker_wav, language="en", file_path=args.out_path)
+else:
+    tts.tts_to_file(text=text, speaker=args.speaker_name, language="en", file_path=args.out_path)
+'''
+
+# Diagnostic script — lists the model's built-in stock speaker names. Run this
+# on the server (see deploy/pitch-video/README.md) to get the REAL list before
+# picking PITCH_VIDEO_DEFAULT_VOICE; XTTS-v2's bundled speaker set isn't
+# guaranteed stable across model versions, so nothing here hardcodes a name.
+_XTTS_LIST_SPEAKERS = r'''
+from TTS.api import TTS
+
+tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False).to("cpu")
+for name in (tts.speakers or []):
+    print(name)
 '''
 
 
@@ -109,19 +142,37 @@ class LocalCpuBackend:
         paths = [self.xtts_python, self.wav2lip_python, self.wav2lip_dir, self.checkpoint]
         return all(paths) and all(Path(p).exists() for p in paths)
 
-    def generate_voice(self, *, script: str, voice_sample_path: str, out_path: str) -> None:
+    def generate_voice(
+        self, *, script: str, out_path: str,
+        voice_sample_path: str | None = None, speaker_name: str | None = None,
+    ) -> None:
+        if bool(voice_sample_path) == bool(speaker_name):
+            raise BackendError("generate_voice needs exactly one of voice_sample_path or speaker_name.")
         with tempfile.TemporaryDirectory() as tmp:
             runner = Path(tmp) / "xtts_runner.py"
             runner.write_text(_XTTS_RUNNER, encoding="utf-8")
             text_file = Path(tmp) / "script.txt"
             text_file.write_text(script, encoding="utf-8")
-            self._run(
-                [self.xtts_python, str(runner), str(text_file), voice_sample_path, out_path],
-                context="voice",
-            )
+            cmd = [self.xtts_python, str(runner), str(text_file), out_path]
+            cmd += ["--speaker-wav", voice_sample_path] if voice_sample_path else ["--speaker-name", speaker_name]
+            self._run(cmd, context="voice")
         if not Path(out_path).exists():
             raise BackendError("Voice generation produced no output.")
         _post_process_voice(out_path)
+
+    def list_stock_speakers(self) -> list[str]:
+        """Diagnostic: enumerate XTTS-v2's built-in stock speaker names on
+        this box. Not used by generation itself — run once to pick a value
+        for PITCH_VIDEO_DEFAULT_VOICE."""
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = Path(tmp) / "list_speakers.py"
+            runner.write_text(_XTTS_LIST_SPEAKERS, encoding="utf-8")
+            proc = subprocess.run(
+                [self.xtts_python, str(runner)], capture_output=True, text=True, timeout=self.timeout,
+            )
+        if proc.returncode != 0:
+            raise BackendError(f"Could not list speakers: {(proc.stderr or proc.stdout)[-1500:]}")
+        return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
     def lip_sync(self, *, face_video_path: str, audio_path: str, out_path: str) -> None:
         self._run(
@@ -160,9 +211,26 @@ class StubBackend:
     name = "stub"
     available = True
 
-    def generate_voice(self, *, script: str, voice_sample_path: str, out_path: str) -> None:
-        # Minimal valid-ish WAV header + silence marker; enough to exercise the flow.
-        Path(out_path).write_bytes(b"RIFF\x00\x00\x00\x00WAVEstub-audio")
+    def generate_voice(
+        self, *, script: str, out_path: str,
+        voice_sample_path: str | None = None, speaker_name: str | None = None,
+    ) -> None:
+        # A real (if tiny) valid WAV — silence, roughly 1s per 20 chars of
+        # script — so anything that probes duration (e.g. Pitch Video Studio's
+        # frame timing) gets a real, ffprobe-readable file, not just bytes
+        # that happen to satisfy "the file exists".
+        import wave
+
+        seconds = max(1.0, len(script) / 20.0)
+        framerate = 24000
+        with wave.open(out_path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(framerate)
+            w.writeframes(b"\x00\x00" * int(framerate * seconds))
+
+    def list_stock_speakers(self) -> list[str]:
+        return ["stub-speaker-1", "stub-speaker-2"]
 
     def lip_sync(self, *, face_video_path: str, audio_path: str, out_path: str) -> None:
         Path(out_path).write_bytes(b"\x00\x00\x00\x18ftypmp42stub-video")
