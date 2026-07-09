@@ -16,7 +16,7 @@ celery_app = Celery(
     "revos",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.workers.tasks", "app.workers.avatar_tasks"],
+    include=["app.workers.tasks", "app.workers.avatar_tasks", "app.workers.pitch_video_tasks"],
 )
 
 celery_app.conf.update(
@@ -32,8 +32,14 @@ celery_app.conf.update(
     result_expires=60 * 60 * 24,         # keep results 24h
     beat_schedule=BEAT_SCHEDULE,
     # Avatar generation is minutes-to-hours and runs on a dedicated worker/queue
-    # so it never blocks the fast email/social workers.
-    task_routes={"avatar.generate": {"queue": "avatar"}},
+    # so it never blocks the fast email/social workers. Pitch Video Studio's
+    # audio stage reuses that SAME queue/worker (it's the same XTTS backend);
+    # only its render stage gets its own queue/worker (Node + Remotion).
+    task_routes={
+        "avatar.generate": {"queue": "avatar"},
+        "pitch_video.generate_audio": {"queue": "avatar"},
+        "pitch_video.render": {"queue": "pitch_video"},
+    },
     # A generation can exceed the default 1h visibility timeout; extend it so the
     # broker doesn't redeliver a job that's legitimately still running.
     broker_transport_options={"visibility_timeout": 4 * 60 * 60},
