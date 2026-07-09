@@ -215,3 +215,132 @@ async def test_cross_account_job_is_404(api, make_client, monkeypatch):
     })
     oh = {"X-CSRF-Token": r2.json()["csrf_token"]}
     assert (await other.get(f"/api/pitch-videos/{job_id}", headers=oh)).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# PPTX import
+# ---------------------------------------------------------------------------
+
+def _tiny_pptx(slides: list[tuple[str, list[str]]]) -> bytes:
+    """Build a minimal .pptx: one title shape + one body shape per slide."""
+    import io
+    import zipfile
+
+    def slide_xml(title: str, bullets: list[str]) -> str:
+        bullet_paras = "".join(
+            f"<a:p><a:r><a:t>{b}</a:t></a:r></a:p>" for b in bullets
+        )
+        return (
+            '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+            "<p:cSld><p:spTree>"
+            "<p:sp><p:nvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr>"
+            f"<p:txBody><a:p><a:r><a:t>{title}</a:t></a:r></a:p></p:txBody></p:sp>"
+            "<p:sp><p:nvSpPr><p:nvPr><p:ph type=\"body\"/></p:nvPr></p:nvSpPr>"
+            f"<p:txBody>{bullet_paras}</p:txBody></p:sp>"
+            "</p:spTree></p:cSld></p:sld>"
+        )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        for i, (title, bullets) in enumerate(slides, start=1):
+            z.writestr(f"ppt/slides/slide{i}.xml", slide_xml(title, bullets))
+    return buf.getvalue()
+
+
+def test_pptx_extract_slides_titles_and_bodies():
+    from app.services import pptx_import_service as pptx
+
+    data = _tiny_pptx([
+        ("Opening Title", ["First point", "Second point"]),
+        ("Second Slide", ["Only bullet"]),
+    ])
+    slides = pptx.extract_slides(data)
+    assert len(slides) == 2
+    assert slides[0]["title"] == "Opening Title"
+    assert slides[0]["body"] == ["First point", "Second point"]
+    assert slides[1]["title"] == "Second Slide"
+
+
+def test_pptx_extract_rejects_garbage():
+    from app.core.exceptions import RevOSError
+    from app.services import pptx_import_service as pptx
+
+    with pytest.raises(RevOSError):
+        pptx.extract_slides(b"not a zip at all")
+
+
+@pytest.mark.asyncio
+async def test_pptx_deterministic_draft_is_schema_valid(monkeypatch):
+    from app.services import ai_service
+    from app.services import pptx_import_service as pptx
+
+    monkeypatch.setattr(ai_service, "ai_available", lambda: False)
+    slides = pptx.extract_slides(_tiny_pptx([
+        ("Big Opener", ["A supporting line"]),
+        ("Middle Idea", ["Point one", "Point two"]),
+        ("Get In Touch", ["hello@example.com"]),
+    ]))
+    draft, ai_drafted = await pptx.draft_deck_spec(slides, "acme")
+    assert ai_drafted is False
+    assert [s["layout"] for s in draft["scenes"]] == ["hero", "statement", "close"]
+    deck = svc.validate_deck_spec({**draft, "voice": "x"})
+    assert deck.scenes[0].content.headline == "Big Opener"
+
+
+@pytest.mark.asyncio
+async def test_pptx_ai_draft_used_when_valid_and_falls_back_when_not(monkeypatch):
+    from app.services import ai_service
+    from app.services import pptx_import_service as pptx
+
+    slides = pptx.extract_slides(_tiny_pptx([("Title", ["Body"]), ("End", [])]))
+    good_draft = {
+        "brandId": "IGNORED — server overrides this", "title": "AI Draft", "aspectRatio": "16:9",
+        "voice": "", "scenes": [
+            {"id": "s1", "layout": "hero", "variant": "dark",
+             "content": {"headline": "AI wrote this."}, "narration": "A-I narration."},
+        ],
+    }
+    import json
+    monkeypatch.setattr(ai_service, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_service, "generate", lambda **kw: json.dumps(good_draft))
+    draft, ai_drafted = await pptx.draft_deck_spec(slides, "acme")
+    assert ai_drafted is True
+    assert draft["title"] == "AI Draft"
+    assert draft["brandId"] == "acme"  # tenant routing never comes from the model
+
+    # Unparseable AI output → deterministic fallback, not an error.
+    monkeypatch.setattr(ai_service, "generate", lambda **kw: "sorry, no json here")
+    draft2, ai_drafted2 = await pptx.draft_deck_spec(slides, "acme")
+    assert ai_drafted2 is False
+    assert draft2["scenes"][0]["layout"] == "hero"
+
+
+@pytest.mark.asyncio
+async def test_import_pptx_endpoint(api, monkeypatch):
+    from app.services import ai_service
+
+    _enable(monkeypatch)
+    monkeypatch.setattr(ai_service, "ai_available", lambda: False)
+    h = await _register_owner(api)
+    await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
+
+    r = await api.post(
+        "/api/pitch-videos/import-pptx", headers=h,
+        files={"file": ("deck.pptx", _tiny_pptx([("Hello", ["World"]), ("Bye", [])]),
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+        data={"brand_slug": "acme"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["slides_found"] == 2
+    assert body["ai_drafted"] is False
+    assert body["deck_spec"]["brandId"] == "acme"
+
+    missing = await api.post(
+        "/api/pitch-videos/import-pptx", headers=h,
+        files={"file": ("deck.pptx", _tiny_pptx([("Hello", [])]), "application/octet-stream")},
+        data={"brand_slug": "not-a-brand"},
+    )
+    assert missing.status_code == 404
