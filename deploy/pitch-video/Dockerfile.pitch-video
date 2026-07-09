@@ -1,0 +1,65 @@
+# RevOS pitch-video-worker image (Pitch Video Studio) — Node + Remotion +
+# Chromium for server-side MP4 rendering, plus Python/Celery to run the
+# render task and talk to Postgres/Redis.
+#
+# Deliberately a THIRD, separate image — not merged into avatar-worker (torch/
+# coqui ML deps) or the main api image. Three very different runtime
+# profiles; mixing them bloats every image and couples unrelated failure
+# domains. This image carries NO ML deps at all.
+#
+# Remotion license: free for individuals/non-profits and companies with <=3
+# employees; 4+ employees need a paid company license. Confirmed <=3
+# employees for this org as of 2026-07-07 — see remotion/README.md. If that
+# changes, re-confirm license status before rebuilding this image.
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    NODE_ENV=production
+
+WORKDIR /app
+
+# System deps: build tools + libpq (RevOS deps), ffmpeg (Remotion's audio/
+# video muxing), and the Chromium runtime libraries Remotion's headless
+# renderer needs. This list follows Remotion's documented Docker requirements
+# as of this writing — if a render fails with a missing shared-library error
+# after a Remotion version bump, check
+# https://www.remotion.dev/docs/miscellaneous/docker for the current list.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential libpq-dev curl gnupg ffmpeg \
+       libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+       libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
+       libpango-1.0-0 libpangocairo-1.0-0 libcairo2 fonts-liberation \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- RevOS backend deps (for the Celery task / models / db) ------------------
+COPY backend/requirements.txt .
+RUN pip install -r requirements.txt
+
+# --- Remotion project ---------------------------------------------------------
+COPY remotion/package.json remotion/package-lock.json* /app/remotion/
+RUN cd /app/remotion && npm ci
+COPY remotion/ /app/remotion/
+
+# --- RevOS application source -------------------------------------------------
+COPY backend/ .
+
+ENV PITCH_VIDEO_REMOTION_DIR=/app/remotion
+
+# uid 10001 to MATCH the main API image's `revos` user (backend/Dockerfile) —
+# this worker shares the storage-data volume with the API/avatar-worker, and
+# a mismatched uid can write files but can't create new subdirectories owned
+# by a different uid (see deploy/avatar's Dockerfile for the exact bug this
+# avoids repeating).
+RUN useradd --create-home --uid 10001 revos \
+    && mkdir -p /app/storage \
+    && chown -R revos:revos /app
+USER revos
+
+CMD ["celery", "-A", "app.workers.celery_app.celery_app", "worker", \
+     "-Q", "pitch_video", "--concurrency=1", "--loglevel=info"]

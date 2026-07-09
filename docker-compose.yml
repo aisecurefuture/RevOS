@@ -123,6 +123,24 @@ services:
       # container recreates don't silently re-download it every time.
       - xtts-models:/home/avatar/.local/share/tts
 
+  # Pitch Video Studio render worker — Node + Remotion + Chromium, no ML
+  # deps. Opt-in: uncomment once PITCH_VIDEO_STUDIO_ENABLED=true and Remotion
+  # licensing is confirmed for your org size (see remotion/README.md).
+  # pitch-video-worker:
+  #   build:
+  #     context: .
+  #     dockerfile: deploy/pitch-video/Dockerfile.pitch-video
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   environment:
+  #     DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://revos:revos@db:5432/revos}
+  #     REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  #   depends_on:
+  #     db: { condition: service_healthy }
+  #     redis: { condition: service_healthy }
+  #   volumes:
+  #     - storage-data:/app/storage
+
   frontend:
     build:
       context: ./frontend
