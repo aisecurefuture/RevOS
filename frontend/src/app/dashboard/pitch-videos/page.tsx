@@ -11,6 +11,9 @@ import { useBrand } from "@/lib/brand";
 
 const ta = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono";
 
+// One scene of every layout, in a sensible pitch order — doubles as living
+// documentation of each layout's content shape. Kept aligned with the backend
+// schema (app/schemas/pitch_video.py) and remotion/src/types.ts.
 function starterDeck(brandSlug: string): string {
   return JSON.stringify(
     {
@@ -20,18 +23,100 @@ function starterDeck(brandSlug: string): string {
       voice: "",
       scenes: [
         {
-          id: "hero",
+          id: "hook",
           layout: "hero",
           variant: "dark",
-          content: { eyebrow: "", headline: "Your headline here.", sub: "A supporting line." },
-          narration: "Spoken voiceover text for this scene.",
+          content: { eyebrow: "Small label above", headline: "Your headline here.", sub: "A supporting line." },
+          narration: "Spoken voiceover for this scene. Its length sets the scene's duration.",
         },
         {
-          id: "close",
+          id: "stats",
+          layout: "stat-trio",
+          variant: "dark",
+          content: {
+            stats: [
+              { value: "3×", label: "First stat" },
+              { value: "$10M", label: "Second stat" },
+              { value: "#1", label: "Third stat" },
+            ],
+          },
+          narration: "Two to four big numbers with labels.",
+        },
+        {
+          id: "big-idea",
+          layout: "statement",
+          variant: "light",
+          content: { text: "One bold sentence, centered." },
+          narration: "A statement scene. Add an optional equation list for an A plus B equals C beat.",
+        },
+        {
+          id: "compare",
+          layout: "two-column",
+          variant: "light",
+          content: {
+            left: { heading: "Old way", body: "What's wrong with it." },
+            right: { heading: "New way", body: "Why yours wins." },
+          },
+          narration: "Two panes side by side.",
+        },
+        {
+          id: "how-it-works",
+          layout: "architecture",
+          variant: "light",
+          content: {
+            bands: [
+              { label: "Step one", description: "Optional description." },
+              { label: "Step two", description: "Optional description." },
+              { label: "Step three" },
+            ],
+          },
+          narration: "Stacked layers connected top to bottom.",
+        },
+        {
+          id: "growth",
+          layout: "bar-chart",
+          variant: "light",
+          content: {
+            bars: [
+              { category: "2026", segments: [{ label: "Product", value: 2 }] },
+              { category: "2027", segments: [{ label: "Product", value: 5 }, { label: "Services", value: 2 }] },
+              { category: "2028", segments: [{ label: "Product", value: 12 }, { label: "Services", value: 4 }] },
+            ],
+            note: "Optional on-screen caption, e.g. 'Illustrative model — not a forecast.'",
+          },
+          narration: "A stacked bar chart. Segments stack per category.",
+        },
+        {
+          id: "roadmap",
+          layout: "timeline",
+          variant: "light",
+          content: {
+            steps: [
+              { label: "Q1", description: "Optional" },
+              { label: "Q2" },
+              { label: "Q3" },
+            ],
+          },
+          narration: "Dots on a line, two to ten steps.",
+        },
+        {
+          id: "team",
+          layout: "team",
+          variant: "light",
+          content: {
+            members: [
+              { name: "Full Name", role: "Title", bio: "Optional one-liner." },
+              { name: "Full Name", role: "Title" },
+            ],
+          },
+          narration: "The people behind it.",
+        },
+        {
+          id: "cta",
           layout: "close",
           variant: "dark",
-          content: { headline: "Let's talk.", sub: "yourcompany.com" },
-          narration: "Closing line, spoken.",
+          content: { headline: "Let's talk.", sub: "you@yourcompany.com · yourcompany.com" },
+          narration: "Closing line. The brand wordmark appears automatically if set.",
         },
       ],
     },
@@ -39,6 +124,19 @@ function starterDeck(brandSlug: string): string {
     2,
   );
 }
+
+// Quick-reference rows for the format help panel.
+const FORMAT_ROWS: { field: string; desc: string }[] = [
+  { field: "brandId", desc: "Your brand's slug (auto-filled by the template button) — colors, fonts, and wordmark come from that brand's design tokens." },
+  { field: "title", desc: "Job title shown in the list below; not rendered in the video." },
+  { field: "aspectRatio", desc: '"16:9" (default), "9:16", or "1:1".' },
+  { field: "voice", desc: "A stock narrator name (ask an admin for the list, e.g. \"Ana Florence\" or \"Damien Black\"). Leave \"\" to use the account default." },
+  { field: "scenes[].id", desc: "Any unique name per scene." },
+  { field: "scenes[].layout", desc: "hero · statement · stat-trio · two-column · architecture · bar-chart · timeline · team · close — the starter template shows one of each with its exact content shape." },
+  { field: "scenes[].variant", desc: '"light" or "dark" background, per scene.' },
+  { field: "scenes[].content", desc: "Layout-specific — copy the shape from the matching scene in the starter template." },
+  { field: "scenes[].narration", desc: "The spoken voiceover. Each scene lasts exactly as long as its narration audio. Tip: write initialisms phonetically for the voice (\"A-I\", \"U-R-L\", \"CyberArmor dot A-I\") — on-screen text can keep normal spelling." },
+];
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "Queued",
@@ -138,10 +236,31 @@ export default function PitchVideoStudioPage() {
       <Card>
         <CardTitle>New pitch video</CardTitle>
         <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-          The Deck Spec carries its own <code>brandId</code> (a brand&apos;s slug) — the video is themed
-          entirely from that brand&apos;s design tokens. Narration voice comes from the Deck Spec&apos;s{" "}
-          <code>voice</code> field, or your account&apos;s default if omitted.
+          A pitch video is defined by a <strong>Deck Spec</strong> — a JSON document listing your
+          scenes and their voiceover. Start from the template below (it contains one example of
+          every scene layout), edit the text and narration, delete the scenes you don&apos;t need,
+          and submit. The video is themed entirely from the brand&apos;s design tokens; each scene
+          lasts exactly as long as its narration audio.
         </div>
+
+        <details className="mb-3 rounded-lg border border-slate-200">
+          <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+            📖 Deck Spec format reference
+          </summary>
+          <div className="border-t border-slate-100 px-3 py-2">
+            <table className="w-full text-xs">
+              <tbody>
+                {FORMAT_ROWS.map((r) => (
+                  <tr key={r.field} className="border-b border-slate-100 last:border-0 align-top">
+                    <td className="whitespace-nowrap py-1.5 pr-3 font-mono text-slate-700">{r.field}</td>
+                    <td className="py-1.5 text-slate-500">{r.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+
         <form onSubmit={submit} className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="secondary" onClick={loadStarterTemplate}>
@@ -157,7 +276,7 @@ export default function PitchVideoStudioPage() {
           </div>
           <textarea
             required rows={16} value={deckText} onChange={(e) => setDeckText(e.target.value)}
-            placeholder="Paste your Deck Spec JSON here…"
+            placeholder='Paste your Deck Spec JSON here — or click "Load starter template" above to see the full format with one example of every scene layout.'
             className={ta}
           />
           {error ? <p className="text-xs text-red-600">{error}</p> : null}
