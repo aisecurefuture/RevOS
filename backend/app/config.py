@@ -186,6 +186,21 @@ class Settings(BaseSettings):
     avatar_est_seconds_per_frame: float = 1.7
     avatar_job_timeout_seconds: int = 3 * 60 * 60  # 3h hard cap per generation
 
+    # --- Pitch Video Studio ---------------------------------------------------
+    # Off by default — flip on once Remotion licensing is confirmed for your
+    # org size (see remotion/README.md). Narration reuses the same XTTS-v2
+    # backend as Avatar Personas, via a built-in STOCK speaker (no cloning, no
+    # consent surface — there's no persona to clone for a brand narrator).
+    pitch_video_studio_enabled: bool = False
+    # A name from LocalCpuBackend.list_stock_speakers() — run that once on the
+    # box to get the real list; nothing here hardcodes a guessed name.
+    pitch_video_default_voice: str = ""
+    pitch_video_max_scenes: int = 20
+    pitch_video_remotion_dir: str = ""    # path to the remotion/ project, in the render worker image
+    pitch_video_node_bin: str = "npx"
+    pitch_video_render_timeout_seconds: int = 30 * 60  # 30 min hard cap per render
+    pitch_video_render_concurrency: int = 1  # Remotion's own worker concurrency, not job concurrency
+
     # Hard ceiling on any request body (bytes). Above the media upload cap so
     # that route's own limit applies first; this is the global DoS backstop.
     max_request_bytes: int = 256 * 1024 * 1024

@@ -76,6 +76,7 @@ from app.models.lead import (
 )
 from app.models.media import MediaAsset, MediaKind, MediaStatus, MediaVariant
 from app.models.offer import Offer, OfferStatus, OfferType
+from app.models.pitch_video import PitchVideoJob, PitchVideoJobStatus, PitchVideoVoiceMode
 from app.models.persona_identity import (
     PersonaConsent,
     PersonaIdentity,
@@ -122,6 +123,8 @@ __all__ = [
     "Brand", "BrandType", "BrandVoice", "Audience", "BuyerPersona",
     # offer
     "Offer", "OfferType", "OfferStatus",
+    # pitch video
+    "PitchVideoJob", "PitchVideoJobStatus", "PitchVideoVoiceMode",
     # crm
     "Company", "Contact", "PipelineStage", "Deal", "DealStatus", "Note",
     "Task", "TaskStatus", "LifecycleStage",

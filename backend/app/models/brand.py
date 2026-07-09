@@ -38,6 +38,18 @@ class Brand(TenantModel, table=True):
     # Per-brand funnel/CTA/automation config. `automation_enabled=False` here is
     # the brand-level kill switch for all outbound automation.
     settings: dict = Field(default_factory=dict, sa_type=JSON)
+    # Full design system for brand-themed generated media (Pitch Video Studio
+    # scenes, etc). Deliberately a flexible blob, not fixed columns — token
+    # needs vary a lot per use case. Expected shape (all optional, renderers
+    # must handle missing keys with sane fallbacks):
+    #   {"colors": {"bg_dark": "#...", "bg_light": "#...", "surface": "#...",
+    #               "card": "#...", "text": "#...", "muted": "#...",
+    #               "muted_on_dark": "#...", "hairline": "#...",
+    #               "hairline_on_dark": "#...", "accent": "#...",
+    #               "chart_ramp": ["#...", ...]},
+    #    "fonts": {"heading": "...", "body": "..."},
+    #    "wordmark": "...", "pillars": ["...", ...]}
+    design_tokens: dict = Field(default_factory=dict, sa_type=JSON)
 
 
 class BrandVoice(TenantModel, table=True):
