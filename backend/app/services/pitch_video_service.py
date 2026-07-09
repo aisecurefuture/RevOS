@@ -329,6 +329,9 @@ async def run_render(db: AsyncSession, job: PitchVideoJob) -> None:
                 scenes_props.append({
                     "id": scene.id, "layout": scene.layout, "variant": scene.variant,
                     "content": scene.content.model_dump(),
+                    "chapter": scene.chapter.model_dump() if scene.chapter else None,
+                    "emphasis": scene.emphasis,
+                    "motif": scene.motif,
                     # Filename only — Remotion resolves this via staticFile()
                     # against REMOTION_PUBLIC_DIR (set below), not a raw path.
                     "audioPath": local_audio.name,
@@ -337,6 +340,7 @@ async def run_render(db: AsyncSession, job: PitchVideoJob) -> None:
 
             props = {
                 "title": deck.title,
+                "style": deck.style,
                 "fps": FPS, "width": width, "height": height,
                 "designTokens": brand.design_tokens,
                 "scenes": scenes_props,

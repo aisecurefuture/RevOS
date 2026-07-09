@@ -22,6 +22,16 @@ export interface ResolvedTheme {
   fontBody: string;
   wordmark: string | null;
   pillars: string[];
+  // Schematic style ("precision schematic" language). Defaults are the
+  // reference animatic's palette; brands can override any of them.
+  panel: string;
+  panel2: string;
+  stroke: string;
+  glow: string;
+  good: string;
+  warn: string;
+  bad: string;
+  fontDisplay: string;
 }
 
 const SYSTEM_SANS =
@@ -52,5 +62,13 @@ export function resolveTheme(tokens: DesignTokens | null | undefined): ResolvedT
     fontBody: f.body || SYSTEM_SANS,
     wordmark: tokens?.wordmark ?? null,
     pillars: tokens?.pillars ?? [],
+    panel: c.panel ?? "#12243C",
+    panel2: c.panel2 ?? "#16314F",
+    stroke: c.stroke ?? "#23436B",
+    glow: c.glow ?? "#67C2FB",
+    good: c.good ?? "#3DD68C",
+    warn: c.warn ?? "#E8B84B",
+    bad: c.bad ?? "#E06666",
+    fontDisplay: f.display || 'Georgia, "Times New Roman", serif',
   };
 }

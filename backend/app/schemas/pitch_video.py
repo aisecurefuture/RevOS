@@ -37,7 +37,9 @@ class StatItem(BaseModel):
 
 
 class StatTrioContent(BaseModel):
-    stats: list[StatItem] = Field(min_length=2, max_length=4)
+    # 1 stat renders as the drawn risk-curve + stat-card composition in the
+    # schematic style; 2-4 render as a row of stat cards.
+    stats: list[StatItem] = Field(min_length=1, max_length=4)
 
 
 class TwoColumnPane(BaseModel):
@@ -101,14 +103,90 @@ class CloseContent(BaseModel):
     sub: str | None = Field(default=None, max_length=500)
 
 
+# --- Schematic-native layouts (added for the "precision schematic" style) ----
+
+class RevealLine(BaseModel):
+    text: str = Field(max_length=300)  # "" renders as a skeleton bar (fake page)
+    highlight: bool = False            # glow/pulse treatment (e.g. hostile payload)
+
+
+class RevealPane(BaseModel):
+    label: str = Field(min_length=1, max_length=100)   # eyebrow, e.g. "WHAT A HUMAN SEES"
+    lines: list[RevealLine] = Field(min_length=1, max_length=10)
+
+
+class SplitRevealContent(BaseModel):
+    """Two schematic cards side by side (human-vs-AI page, inspect chamber…)."""
+    left: RevealPane
+    right: RevealPane
+    caption: str | None = Field(default=None, max_length=300)  # statement line beneath
+
+
+class VerdictLanesContent(BaseModel):
+    """Stacked verdict lanes (ALLOW/WARN/REDACT/BLOCK), each with a seal."""
+    lanes: list[str] = Field(min_length=2, max_length=6)
+    caption: str | None = Field(default=None, max_length=300)
+
+
+class GridCard(BaseModel):
+    title: str = Field(min_length=1, max_length=150)
+    value: str = Field(min_length=1, max_length=60)
+    open: bool = False  # the dashed "unclaimed" slot treatment
+
+
+class CardGridContent(BaseModel):
+    """A dealt-in grid of value cards (acquisition comps…)."""
+    cards: list[GridCard] = Field(min_length=2, max_length=9)
+    caption: str | None = Field(default=None, max_length=300)
+    note: str | None = Field(default=None, max_length=300)
+
+
+class StackBlock(BaseModel):
+    label: str = Field(min_length=1, max_length=150)
+    value: str = Field(min_length=1, max_length=60)
+
+
+class StackSummaryContent(BaseModel):
+    """Revenue blocks stacking up beside a summary card (the blueprint scene).
+
+    ``note`` is rendered in the SAME frame window as the summary — the
+    storyboard's compliance rule for return-adjacent numbers."""
+    blocks: list[StackBlock] = Field(min_length=1, max_length=6)
+    summary_label: str = Field(min_length=1, max_length=100)
+    summary_big: str = Field(min_length=1, max_length=120)
+    capline: str | None = Field(default=None, max_length=150)
+    note: str | None = Field(default=None, max_length=300)
+
+
+class TermsContent(BaseModel):
+    """A centered terms card + milestone chips (the ask scene)."""
+    label: str = Field(min_length=1, max_length=100)
+    big: str = Field(min_length=1, max_length=120)
+    sub: str | None = Field(default=None, max_length=200)
+    chips: list[str] = Field(default_factory=list, max_length=5)
+
+
 # ---------------------------------------------------------------------------
 # Scene — discriminated union on `layout`
 # ---------------------------------------------------------------------------
+
+class Chapter(BaseModel):
+    num: str = Field(min_length=1, max_length=4)     # the ghost numeral, e.g. "1"
+    label: str = Field(min_length=1, max_length=60)  # eyebrow, e.g. "THE STAKES"
+
 
 class _SceneBase(BaseModel):
     id: str = Field(min_length=1, max_length=80)
     variant: Literal["light", "dark"] = "light"
     narration: str = Field(min_length=1, max_length=2000)
+    # Schematic-style extras (ignored by the minimal style):
+    chapter: Chapter | None = None
+    # Exact substring of the scene's headline/caption that gets the luminous
+    # underline sweep. One per scene, per the storyboard's emphasis discipline.
+    emphasis: str | None = Field(default=None, max_length=150)
+    # Hero background motif: content-card stream, stream passing a glowing
+    # gate, or none.
+    motif: Literal["stream", "gate", "none"] = "none"
 
 
 class HeroScene(_SceneBase):
@@ -156,10 +234,36 @@ class CloseScene(_SceneBase):
     content: CloseContent
 
 
+class SplitRevealScene(_SceneBase):
+    layout: Literal["split-reveal"]
+    content: SplitRevealContent
+
+
+class VerdictLanesScene(_SceneBase):
+    layout: Literal["verdict-lanes"]
+    content: VerdictLanesContent
+
+
+class CardGridScene(_SceneBase):
+    layout: Literal["card-grid"]
+    content: CardGridContent
+
+
+class StackSummaryScene(_SceneBase):
+    layout: Literal["stack-summary"]
+    content: StackSummaryContent
+
+
+class TermsScene(_SceneBase):
+    layout: Literal["terms"]
+    content: TermsContent
+
+
 Scene = Annotated[
     Union[
         HeroScene, StatementScene, StatTrioScene, TwoColumnScene,
         ArchitectureScene, BarChartScene, TimelineScene, TeamScene, CloseScene,
+        SplitRevealScene, VerdictLanesScene, CardGridScene, StackSummaryScene, TermsScene,
     ],
     Field(discriminator="layout"),
 ]
@@ -175,6 +279,10 @@ class DeckSpec(BaseModel):
     brand_id: str = Field(alias="brandId", min_length=1, max_length=120)  # Brand.slug
     title: str = Field(min_length=1, max_length=300)
     aspect_ratio: Literal["16:9", "9:16", "1:1"] = Field(default="16:9", alias="aspectRatio")
+    # Visual language: "minimal" (flat, editorial) or "schematic" (the
+    # animated precision-schematic look: glow accents, staged entrances,
+    # chapter chrome, scene motifs).
+    style: Literal["minimal", "schematic"] = "minimal"
     # Free text: a stock speaker name (voice_mode=stock) or a persona identity
     # id/name (voice_mode=clone). Omit to use the brand/account default.
     voice: str | None = None
