@@ -456,6 +456,9 @@ export interface ContentCheck {
   banned_hits: string[];
   missing_disclaimers: string[];
   unverified_numbers: string[];
+  llm_checked: boolean;
+  unsupported_claims: string[];
+  llm_error: string | null;
 }
 
 export const brandBookApi = {
@@ -605,6 +608,34 @@ export const avatarApi = {
     apiFetch<{ post_id: string; approval_request_id: string; platform: string }>(
       `/avatar/jobs/${id}/publish`, { method: "POST", body: JSON.stringify(data) },
     ),
+};
+
+// --- Pitch Video Studio ------------------------------------------------------
+export interface PitchVideoJob {
+  id: string;
+  brand_id: string;
+  title: string;
+  aspect_ratio: string;
+  voice_mode: string;
+  speaker_name: string | null;
+  status: "queued" | "generating_audio" | "rendering" | "succeeded" | "failed" | "cancelled";
+  progress_note: string | null;
+  estimated_seconds: number | null;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  has_output: boolean;
+}
+
+export const pitchVideoApi = {
+  status: () => apiFetch<{ enabled: boolean }>("/pitch-videos/status"),
+  stockSpeakers: () => apiFetch<{ speakers: string[] }>("/pitch-videos/stock-speakers"),
+  listJobs: () => apiFetch<PitchVideoJob[]>("/pitch-videos"),
+  createJob: (deckSpec: object) =>
+    apiFetch<PitchVideoJob>("/pitch-videos", { method: "POST", body: JSON.stringify({ deck_spec: deckSpec }) }),
+  getJob: (id: string) => apiFetch<PitchVideoJob>(`/pitch-videos/${id}`),
+  videoUrl: (id: string) => `/api/pitch-videos/${id}/video`,
 };
 
 // --- Video script engine ----------------------------------------------------

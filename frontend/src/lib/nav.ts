@@ -24,6 +24,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Sequences", href: "/dashboard/sequences", icon: "🔁" },
   { label: "Content", href: "/dashboard/content", icon: "📝" },
   { label: "Media", href: "/dashboard/media", icon: "🎬" },
+  { label: "Pitch Videos", href: "/dashboard/pitch-videos", icon: "🎥", minRole: "editor" },
   { label: "Social", href: "/dashboard/social", icon: "📣" },
   { label: "Scheduler", href: "/dashboard/scheduler", icon: "📅" },
   { label: "Analytics", href: "/dashboard/analytics", icon: "📈" },
