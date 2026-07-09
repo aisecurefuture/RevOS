@@ -103,45 +103,52 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def deterministic_draft(slides: list[dict], brand_slug: str) -> dict:
+def deterministic_scene(slide: dict, position: int, last: int) -> dict:
+    """The always-valid mechanical scene for one slide (also the per-scene
+    fallback when AI drafting fails for that slide alone)."""
+    title = slide["title"] or (slide["body"][0] if slide["body"] else f"Slide {slide['index']}")
+    body = [b for b in slide["body"] if b != title]
+    # Join fragments with sentence enders — slide bullets carry no
+    # punctuation, and TTS needs split points (XTTS hard-fails on one
+    # long unbreakable chunk). Cap at ~600 chars (~40s spoken): a scene,
+    # not a lecture — the user edits the draft anyway.
+    narration = _clip(
+        " ".join(f"{part.rstrip('.!?…')}." for part in [title, *body] if part.strip()) or f"{title}.",
+        600,
+    )
+    if position == 0:
+        return {
+            "id": f"slide-{slide['index']}", "layout": "hero", "variant": "dark",
+            "content": {"headline": _clip(title, 290), "sub": _clip(body[0], 490) if body else None},
+            "narration": narration,
+        }
+    if position == last:
+        return {
+            "id": f"slide-{slide['index']}", "layout": "close", "variant": "dark",
+            "content": {"headline": _clip(title, 290), "sub": _clip(body[0], 490) if body else None},
+            "narration": narration,
+        }
+    return {
+        "id": f"slide-{slide['index']}", "layout": "statement", "variant": "light",
+        "content": {"text": _clip(title, 490)},
+        "narration": narration,
+    }
+
+
+def _capped(slides: list[dict]) -> list[dict]:
     from app.config import settings
 
     # Respect the deck-size cap: keep the first N-1 slides + the closing slide.
     cap = settings.pitch_video_max_scenes
     if len(slides) > cap:
-        slides = slides[: cap - 1] + [slides[-1]]
+        return slides[: cap - 1] + [slides[-1]]
+    return slides
 
-    scenes = []
+
+def deterministic_draft(slides: list[dict], brand_slug: str) -> dict:
+    slides = _capped(slides)
     last = len(slides) - 1
-    for i, slide in enumerate(slides):
-        title = slide["title"] or (slide["body"][0] if slide["body"] else f"Slide {slide['index']}")
-        body = [b for b in slide["body"] if b != title]
-        # Join fragments with sentence enders — slide bullets carry no
-        # punctuation, and TTS needs split points (XTTS hard-fails on one
-        # long unbreakable chunk). Cap at ~600 chars (~40s spoken): a scene,
-        # not a lecture — the user edits the draft anyway.
-        narration = _clip(
-            " ".join(f"{part.rstrip('.!?…')}." for part in [title, *body] if part.strip()) or f"{title}.",
-            600,
-        )
-        if i == 0:
-            scenes.append({
-                "id": f"slide-{slide['index']}", "layout": "hero", "variant": "dark",
-                "content": {"headline": _clip(title, 290), "sub": _clip(body[0], 490) if body else None},
-                "narration": narration,
-            })
-        elif i == last and i > 0:
-            scenes.append({
-                "id": f"slide-{slide['index']}", "layout": "close", "variant": "dark",
-                "content": {"headline": _clip(title, 290), "sub": _clip(body[0], 490) if body else None},
-                "narration": narration,
-            })
-        else:
-            scenes.append({
-                "id": f"slide-{slide['index']}", "layout": "statement", "variant": "light",
-                "content": {"text": _clip(title, 490)},
-                "narration": narration,
-            })
+    scenes = [deterministic_scene(s, i, last) for i, s in enumerate(slides)]
     return {
         "brandId": brand_slug,
         "title": slides[0]["title"] or "Imported deck",
@@ -210,49 +217,154 @@ Rules:
 
 
 def _parse_draft(raw: str) -> dict | None:
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not match:
-        return None
-    try:
-        data = json.loads(match.group(0))
-    except (ValueError, TypeError):
-        return None
-    return data if isinstance(data, dict) else None
+    """Extract the first complete JSON object from model output.
+
+    Local models decorate JSON with reasoning blocks, markdown fences, and
+    trailing chatter — and sometimes truncate mid-object. Strip the noise,
+    then raw_decode from the first '{' (immune to anything after the object,
+    unlike a greedy first-{…last-} regex). Truncated JSON still returns None
+    — the caller falls back."""
+    cleaned = re.sub(r"<think>.*?(?:</think>|$)", "", raw, flags=re.DOTALL)
+    cleaned = cleaned.replace("```json", "```")
+    start = cleaned.find("{")
+    while start != -1:
+        try:
+            data, _ = json.JSONDecoder().raw_decode(cleaned[start:])
+        except ValueError:
+            start = cleaned.find("{", start + 1)
+            continue
+        return data if isinstance(data, dict) else None
+    return None
+
+
+# Per-scene prompt for the fallback path: ONE slide → ONE scene object.
+# Small local models fail one-shot whole-deck JSON far more often than a
+# single small object; this path trades one big call for N small ones.
+_DRAFT_SCENE_SYSTEM = """You convert ONE slide's text into ONE scene JSON object for a narrated pitch video.
+
+Output ONLY the JSON object — no markdown fences, no commentary, no reasoning:
+{"id": "<slug>", "layout": "<layout>", "variant": "light"|"dark",
+ "content": {...}, "narration": "<spoken text>"}
+
+Pick the best layout for this slide and use its exact content shape:
+- hero: {"eyebrow"?: str, "headline": str, "sub"?: str}
+- statement: {"text": str}
+- stat-trio: {"stats": [{"value": str, "label": str}]} (1-4 stats)
+- two-column: {"left": {"heading","body"}, "right": {"heading","body"}}
+- architecture: {"bands": [{"label", "description"?}]}
+- bar-chart: {"bars": [{"category", "segments": [{"label","value":number}]}], "note"?: str}
+- timeline: {"steps": [{"label", "description"?}]}
+- team: {"members": [{"name","role","bio"?}]}
+- card-grid: {"cards": [{"title","value"}], "caption"?, "note"?}
+- terms: {"label", "big", "sub"?, "chips": [str]}
+- close: {"headline", "sub"?}
+
+Rules:
+- Condense on-screen text hard; narration is 30-45 conversational spoken words,
+  written PHONETICALLY for text-to-speech ("A-I" not "AI", "example dot com",
+  numbers spelled out).
+- Keep any illustrative/disclaimer language from financial slides in both the
+  note and the narration."""
+
+
+def _slide_block(s: dict) -> str:
+    return f"SLIDE {s['index']}: {s['title'] or '(no title)'}\n" + "\n".join(f"- {b}" for b in s["body"])
+
+
+async def _draft_scene_by_scene(
+    slides: list[dict], style: str,
+) -> tuple[list[dict], list[bool]]:
+    """One small AI call per slide; any slide that fails gets its
+    deterministic scene. Returns (scenes, per-scene ai flags)."""
+    last = len(slides) - 1
+    scenes: list[dict] = []
+    ai_flags: list[bool] = []
+    for i, slide in enumerate(slides):
+        fallback = deterministic_scene(slide, i, last)
+        position = "the opening slide" if i == 0 else ("the closing slide" if i == last else f"slide {i + 1} of {last + 1}")
+        raw = await asyncio.to_thread(
+            ai_service.generate, system=_DRAFT_SCENE_SYSTEM,
+            context=f"style: {style} · this is {position}\n\n{_slide_block(slide)}",
+            max_tokens=1200, use_case="social",
+        )
+        scene = _parse_draft(raw) if raw else None
+        if scene is None or "layout" not in scene or "narration" not in scene:
+            scenes.append(fallback)
+            ai_flags.append(False)
+            continue
+        scene["id"] = fallback["id"]  # stable, unique ids from slide numbers
+        scene.setdefault("variant", "dark" if style == "schematic" else fallback["variant"])
+        scene.setdefault("content", {})
+        scenes.append(scene)
+        ai_flags.append(True)
+    return scenes, ai_flags
 
 
 async def draft_deck_spec(
     slides: list[dict], brand_slug: str, style: str = "minimal",
 ) -> tuple[dict, bool]:
-    """Returns (draft, ai_drafted). Always yields a schema-valid draft —
-    the AI path falls back to deterministic on any failure."""
+    """Returns (draft, ai_drafted). Always yields a schema-valid draft.
+
+    Strategy ladder: one-shot whole-deck AI draft → scene-by-scene AI drafting
+    (small models produce one valid small object far more reliably than one
+    big document; failed scenes degrade individually) → fully deterministic."""
     from app.services.pitch_video_service import validate_deck_spec
 
+    slides = _capped(slides)
     deterministic = {**deterministic_draft(slides, brand_slug), "style": style}
     validate_deck_spec({**deterministic, "voice": "x"})  # invariant: fallback is always valid
 
     if not ai_service.ai_available():
         return deterministic, False
 
-    slide_text = "\n\n".join(
-        f"SLIDE {s['index']}: {s['title'] or '(no title)'}\n" + "\n".join(f"- {b}" for b in s["body"])
-        for s in slides
-    )
+    slide_text = "\n\n".join(_slide_block(s) for s in slides)
     context = f"brandId to use: {brand_slug}\nstyle to use: {style}\n\n{slide_text}"
     raw = await asyncio.to_thread(
         ai_service.generate, system=_DRAFT_SYSTEM, context=context,
-        max_tokens=6000, use_case="social",
+        max_tokens=8000, use_case="social",
     )
-    if not raw:
-        return deterministic, False
-    draft = _parse_draft(raw)
+    draft = _parse_draft(raw) if raw else None
     if draft is None:
-        logger.warning("PPTX AI draft was unparseable; using deterministic draft.")
-        return deterministic, False
+        logger.warning(
+            "PPTX one-shot AI draft unparseable (head: %r); trying scene-by-scene.",
+            (raw or "")[:300],
+        )
+        return await _try_scene_by_scene(slides, brand_slug, style, deterministic)
     draft["brandId"] = brand_slug  # never trust the model with tenant routing
     draft["style"] = style          # the user's choice, not the model's
     try:
         validate_deck_spec({**draft, "voice": draft.get("voice") or "x"})
     except RevOSError as exc:
-        logger.warning("PPTX AI draft failed schema validation (%s); using deterministic draft.", exc.message)
-        return deterministic, False
+        logger.warning(
+            "PPTX one-shot AI draft failed schema validation (%s); trying scene-by-scene.",
+            exc.message,
+        )
+        return await _try_scene_by_scene(slides, brand_slug, style, deterministic)
     return draft, True
+
+
+async def _try_scene_by_scene(
+    slides: list[dict], brand_slug: str, style: str, deterministic: dict,
+) -> tuple[dict, bool]:
+    from app.services.pitch_video_service import validate_deck_spec
+
+    scenes, ai_flags = await _draft_scene_by_scene(slides, style)
+    draft = {**deterministic, "scenes": scenes}
+    # Validate each AI scene; swap any invalid one for its deterministic twin
+    # rather than discarding the whole draft.
+    for i, scene in enumerate(scenes):
+        if not ai_flags[i]:
+            continue
+        try:
+            validate_deck_spec({**draft, "voice": "x", "scenes": [scene]})
+        except RevOSError:
+            scenes[i] = deterministic_scene(slides[i], i, len(slides) - 1)
+            ai_flags[i] = False
+    validate_deck_spec({**draft, "voice": "x"})  # belt-and-braces on the assembly
+    ai_count = sum(ai_flags)
+    ai_drafted = ai_count > 0
+    if ai_drafted:
+        logger.info("PPTX scene-by-scene drafting: %d/%d scenes AI-drafted.", ai_count, len(scenes))
+    else:
+        logger.warning("PPTX scene-by-scene drafting produced nothing usable; deterministic draft.")
+    return draft, ai_drafted

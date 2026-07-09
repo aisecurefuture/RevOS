@@ -446,3 +446,104 @@ async def test_deterministic_narration_is_punctuated_and_capped(monkeypatch):
     narration = draft["scenes"][0]["narration"]
     assert len(narration) <= 600
     assert "no punctuation." in narration  # fragments got sentence enders
+
+
+# ---------------------------------------------------------------------------
+# Local-model robustness: parsing + scene-by-scene fallback
+# ---------------------------------------------------------------------------
+
+def test_parse_draft_strips_think_blocks_and_trailing_chatter():
+    from app.services.pptx_import_service import _parse_draft
+
+    raw = '<think>burning tokens {not json}</think>Sure! ```\n{"a": 1}\n``` hope that helps {'
+    assert _parse_draft(raw) == {"a": 1}
+
+
+def test_parse_draft_survives_unclosed_think_block_and_truncation():
+    from app.services.pptx_import_service import _parse_draft
+
+    # Truncated JSON (the Qwen failure mode) → None, not a crash.
+    assert _parse_draft('<think>still thinking {"x": ') is None
+    assert _parse_draft('{"scenes": [{"id": "a", "layo') is None
+
+
+def test_parse_draft_skips_decoy_objects_in_prose():
+    from app.services.pptx_import_service import _parse_draft
+
+    raw = 'like {this broken one and then the real {"scenes": []}'
+    assert _parse_draft(raw) == {"scenes": []}
+
+
+@pytest.mark.asyncio
+async def test_scene_by_scene_fallback_when_one_shot_unparseable(monkeypatch):
+    """One-shot draft fails to parse → each slide gets its own small AI call;
+    a slide whose scene call also fails degrades to deterministic alone."""
+    import json as _json
+
+    from app.services import ai_service
+    from app.services import pptx_import_service as pptx
+
+    slides = [
+        {"index": 1, "title": "Opener", "body": ["hello"]},
+        {"index": 2, "title": "Numbers", "body": ["big ones"]},
+        {"index": 3, "title": "Bye", "body": []},
+    ]
+    scene_json = _json.dumps({
+        "id": "ignored", "layout": "stat-trio", "variant": "dark",
+        "content": {"stats": [{"value": "42", "label": "answer"}]},
+        "narration": "Forty-two.",
+    })
+    calls = {"n": 0}
+
+    def fake_generate(**kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return "<think>hmm</think> not json at all"   # one-shot fails
+        if calls["n"] == 3:
+            return scene_json                              # slide 2 succeeds
+        return "still not json"                            # slides 1+3 fail
+
+    monkeypatch.setattr(ai_service, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_service, "generate", fake_generate)
+
+    draft, ai_drafted = await pptx.draft_deck_spec(slides, "acme", style="schematic")
+    assert ai_drafted is True
+    assert calls["n"] == 4  # 1 one-shot + 3 per-scene
+    layouts = [s["layout"] for s in draft["scenes"]]
+    assert layouts == ["hero", "stat-trio", "close"]  # deterministic, AI, deterministic
+    assert draft["scenes"][1]["id"] == "slide-2"      # id always slide-derived
+    assert draft["style"] == "schematic"
+    svc.validate_deck_spec({**draft, "voice": "x"})
+
+
+@pytest.mark.asyncio
+async def test_scene_by_scene_swaps_invalid_ai_scene_for_deterministic(monkeypatch):
+    """A per-scene AI result that parses but fails schema validation is
+    replaced by that slide's deterministic scene — the draft still ships."""
+    import json as _json
+
+    from app.services import ai_service
+    from app.services import pptx_import_service as pptx
+
+    slides = [
+        {"index": 1, "title": "Opener", "body": []},
+        {"index": 2, "title": "Bye", "body": []},
+    ]
+    bad_scene = _json.dumps({
+        "id": "x", "layout": "stat-trio", "variant": "dark",
+        "content": {"stats": []},  # parses fine, fails schema (min 1 stat)
+        "narration": "Broken.",
+    })
+    calls = {"n": 0}
+
+    def fake_generate(**kw):
+        calls["n"] += 1
+        return "no json" if calls["n"] == 1 else bad_scene
+
+    monkeypatch.setattr(ai_service, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_service, "generate", fake_generate)
+
+    draft, ai_drafted = await pptx.draft_deck_spec(slides, "acme")
+    assert ai_drafted is False  # every AI scene got swapped out
+    assert [s["layout"] for s in draft["scenes"]] == ["hero", "close"]
+    svc.validate_deck_spec({**draft, "voice": "x"})
