@@ -156,12 +156,10 @@ async def check(
     brand_id: uuid.UUID, body: CheckRequest, request: Request, db: DbSession,
     user: AdminUser = Depends(require_editor), _: None = Depends(verify_csrf),
 ) -> CheckOut:
-    """Run the guardrail gate against a piece of text (banned terms, missing
-    disclaimers, ungrounded numeric claims). The same gate the autopilot uses."""
+    """Run the same combined gate real generation goes through — deterministic
+    (banned terms, missing disclaimers, ungrounded numeric claims) plus the
+    optional LLM claim-verification layer — so this preview tool can't pass
+    something that would actually get flagged/blocked in production."""
     await _brand_in_account(db, brand_id, _account_id(request))
-    result = await svc.check_content(db, brand_id, body.text, require_disclaimers=body.require_disclaimers)
-    return CheckOut(
-        passed=result.passed, blocked=result.blocked,
-        banned_hits=result.banned_hits, missing_disclaimers=result.missing_disclaimers,
-        unverified_numbers=result.unverified_numbers,
-    )
+    result = await svc.verify_content(db, brand_id, body.text, require_disclaimers=body.require_disclaimers)
+    return CheckOut(**result.to_dict())

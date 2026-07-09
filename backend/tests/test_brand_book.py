@@ -164,6 +164,29 @@ async def test_grounding_warns_when_no_claims(api):
 
 
 @pytest.mark.asyncio
+async def test_check_endpoint_uses_the_llm_layer_when_enabled(api, monkeypatch):
+    """The Brand Book page's 'Accuracy check' tool must run the SAME combined
+    gate real generation goes through — not just the deterministic layer —
+    or it can pass content that would actually get flagged in production."""
+    from app.config import settings as app_settings
+    from app.services import ai_service
+
+    h = await _register_owner(api)
+    bid = await _brand(api, h)
+    monkeypatch.setattr(app_settings, "llm_claim_verification", True)
+    monkeypatch.setattr(ai_service, "ai_available", lambda: True)
+    monkeypatch.setattr(ai_service, "analyze",
+                        lambda **kw: '{"unsupported_claims": ["Patrick doesn\'t know AI"]}')
+
+    r = (await api.post(f"/api/brand-book/{bid}/check", headers=h, json={
+        "text": "Patrick doesn't know AI.",
+    })).json()
+    assert r["llm_checked"] is True
+    assert r["passed"] is False
+    assert "Patrick doesn't know AI" in r["unsupported_claims"]
+
+
+@pytest.mark.asyncio
 async def test_narrative_fields_round_trip_and_ground(api):
     """Vision, anti-audience, core values, brand story, archetype, and voice
     spectrum all persist and flow into the grounding prompt context."""

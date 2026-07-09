@@ -636,11 +636,15 @@ function CheckerCard({ brandId }: { brandId: string }) {
   const [text, setText] = useState("");
   const [result, setResult] = useState<ContentCheck | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function run() {
     setBusy(true);
+    setError(null);
     try {
       setResult(await brandBookApi.check(brandId, text));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Check failed");
     } finally {
       setBusy(false);
     }
@@ -650,13 +654,16 @@ function CheckerCard({ brandId }: { brandId: string }) {
     <Card className="mt-4">
       <CardTitle>Accuracy check</CardTitle>
       <p className="mb-3 text-xs text-slate-400">
-        Paste any content to run the same guardrail gate the autopilot uses.
+        Paste any content to run the same combined gate real generation goes through —
+        banned terms, missing disclaimers, ungrounded numbers, and (if enabled) LLM claim
+        verification against your approved claims and facts.
       </p>
       <textarea rows={3} className={ta} value={text} onChange={(e) => setText(e.target.value)}
         placeholder="Paste a caption, script, or email…" />
       <Button className="mt-2" onClick={() => void run()} disabled={busy || !text.trim()}>
         {busy ? "Checking…" : "Check content"}
       </Button>
+      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
       {result ? (
         <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
           result.blocked ? "border-red-200 bg-red-50"
@@ -675,6 +682,17 @@ function CheckerCard({ brandId }: { brandId: string }) {
           ) : null}
           {result.missing_disclaimers.length ? (
             <p className="mt-1 text-xs text-amber-700">Missing disclaimers: {result.missing_disclaimers.join(", ")}</p>
+          ) : null}
+          {result.unsupported_claims.length ? (
+            <p className="mt-1 text-xs text-amber-700">
+              Unsupported claims (not backed by your Brand Book): {result.unsupported_claims.join("; ")}
+            </p>
+          ) : null}
+          {result.llm_error ? (
+            <p className="mt-1 text-xs text-amber-700">⚠ Couldn&apos;t fully verify: {result.llm_error}</p>
+          ) : null}
+          {result.llm_checked ? (
+            <p className="mt-1 text-xs text-slate-400">✓ AI-verified against your approved claims.</p>
           ) : null}
         </div>
       ) : null}

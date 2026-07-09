@@ -106,6 +106,9 @@ class CheckOut(BaseModel):
     banned_hits: list[str]
     missing_disclaimers: list[str]
     unverified_numbers: list[str]
+    llm_checked: bool = False
+    unsupported_claims: list[str] = Field(default_factory=list)
+    llm_error: str | None = None
 
 
 class GroundingOut(BaseModel):
