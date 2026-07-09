@@ -65,6 +65,20 @@ def test_valid_deck_spec_parses():
     assert deck.scenes[1].variant == "dark"
 
 
+def test_deck_spec_unwraps_seed_output_wrapper():
+    """Pasting the seed script's whole output ({"deck_spec": {...}}) must work."""
+    deck = svc.validate_deck_spec({"brand_id": "x", "brand_slug": "acme", "deck_spec": _valid_deck()})
+    assert len(deck.scenes) == 2
+
+
+def test_deck_spec_error_names_the_field():
+    bad = _valid_deck()
+    del bad["scenes"][0]["narration"]
+    with pytest.raises(RevOSError) as exc_info:
+        svc.validate_deck_spec(bad)
+    assert "narration" in str(exc_info.value.message)
+
+
 def test_deck_spec_rejects_unknown_layout():
     bad = _valid_deck()
     bad["scenes"][0]["layout"] = "not-a-real-layout"

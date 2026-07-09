@@ -285,13 +285,15 @@ async def _run() -> None:
         await db.commit()
 
     import json
-    print(json.dumps(result, indent=2))
+
+    logger.info("Seeded brand '%s' (id=%s).", result["brand_slug"], result["brand_id"])
     logger.info(
-        "Seeded brand '%s' (id=%s). Deck Spec printed above — paste it into "
-        "Pitch Video Studio (set a real 'voice' first — see stock-speakers "
-        "endpoint), or POST it directly to /api/pitch-videos.",
-        result["brand_slug"], result["brand_id"],
+        "The Deck Spec follows on stdout — paste it into Pitch Video Studio "
+        "as-is (leave 'voice' empty to use PITCH_VIDEO_DEFAULT_VOICE)."
     )
+    # ONLY the deck spec on stdout — exactly what the studio textarea expects,
+    # so a whole-output copy/paste just works (logs go to stderr).
+    print(json.dumps(result["deck_spec"], indent=2))
     await async_engine.dispose()
 
 

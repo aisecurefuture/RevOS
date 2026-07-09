@@ -74,11 +74,20 @@ def seconds_to_frames(seconds: float, fps: int = FPS) -> int:
 
 
 def validate_deck_spec(raw: dict) -> DeckSpec:
+    # Tolerate pasting the seed script's whole output (or an API echo), where
+    # the actual spec sits under a "deck_spec" key.
+    if isinstance(raw, dict) and "scenes" not in raw and isinstance(raw.get("deck_spec"), dict):
+        raw = raw["deck_spec"]
     try:
         deck = DeckSpec.model_validate(raw)
     except ValidationError as exc:
+        # Field path + message ("scenes -> 2 -> narration: Field required") —
+        # a bare "Field required" gives the user nothing to fix.
+        first = exc.errors()[0]
+        loc = " -> ".join(str(part) for part in first.get("loc", ()))
+        detail = f"{loc}: {first['msg']}" if loc else first["msg"]
         raise RevOSError(
-            f"Invalid Deck Spec: {exc.errors()[0]['msg']}", code="invalid_deck_spec", status_code=400,
+            f"Invalid Deck Spec: {detail}", code="invalid_deck_spec", status_code=400,
         ) from exc
     if len(deck.scenes) > settings.pitch_video_max_scenes:
         raise RevOSError(
