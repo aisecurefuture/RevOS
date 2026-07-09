@@ -195,6 +195,9 @@ class Settings(BaseSettings):
     # A name from LocalCpuBackend.list_stock_speakers() — run that once on the
     # box to get the real list; nothing here hardcodes a guessed name.
     pitch_video_default_voice: str = ""
+    # Optional comma-separated allowlist for the voice dropdown. Empty = ask
+    # the avatar-worker for the model's real bundled list (cached in-process).
+    pitch_video_voices: str = ""
     pitch_video_max_scenes: int = 20
     pitch_video_remotion_dir: str = ""    # path to the remotion/ project, in the render worker image
     pitch_video_node_bin: str = "npx"

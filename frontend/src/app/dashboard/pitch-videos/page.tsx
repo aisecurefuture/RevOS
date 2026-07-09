@@ -154,7 +154,12 @@ export default function PitchVideoStudioPage() {
   const [jobs, setJobs] = useState<PitchVideoJob[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [speakers, setSpeakers] = useState<string[]>([]);
+  const [voice, setVoice] = useState("");  // "" = use the deck's own voice / account default
+  const [importing, setImporting] = useState(false);
+  const [importNote, setImportNote] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pptxInputRef = useRef<HTMLInputElement>(null);
 
   const selectedBrand = brands.find((b) => b.id === selectedBrandId) ?? brands[0] ?? null;
 
@@ -168,6 +173,7 @@ export default function PitchVideoStudioPage() {
 
   useEffect(() => {
     pitchVideoApi.status().then((s) => setEnabled(s.enabled)).catch(() => setEnabled(false));
+    pitchVideoApi.stockSpeakers().then((s) => setSpeakers(s.speakers)).catch(() => setSpeakers([]));
     void loadJobs();
   }, [loadJobs]);
 
@@ -190,12 +196,40 @@ export default function PitchVideoStudioPage() {
     reader.readAsText(file);
   }
 
+  async function handlePptxImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";  // allow re-selecting the same file
+    if (!file) return;
+    if (!selectedBrand) {
+      setError("Select a brand first — the imported deck needs a brand to theme from.");
+      return;
+    }
+    setImporting(true);
+    setError(null);
+    setImportNote(null);
+    try {
+      const res = await pitchVideoApi.importPptx(file, selectedBrand.slug);
+      setDeckText(JSON.stringify(res.deck_spec, null, 2));
+      setImportNote(
+        res.ai_drafted
+          ? `Drafted ${res.slides_found} slides with AI — review the scenes and narration below, edit freely, then generate.`
+          : `Imported ${res.slides_found} slides (no AI provider configured, so this is a plain-text draft — expect to edit the layouts and narration).`,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not import that PowerPoint");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
       const deckSpec = JSON.parse(deckText);
+      // A dropdown choice overrides the deck's own voice field.
+      if (voice) deckSpec.voice = voice;
       await pitchVideoApi.createJob(deckSpec);
       await loadJobs();
     } catch (err) {
@@ -273,12 +307,43 @@ export default function PitchVideoStudioPage() {
               ref={fileInputRef} type="file" accept="application/json" className="hidden"
               onChange={handleFileUpload}
             />
+            <Button type="button" variant="secondary" disabled={importing} onClick={() => pptxInputRef.current?.click()}>
+              {importing ? "Importing…" : "Import PowerPoint (.pptx)"}
+            </Button>
+            <input
+              ref={pptxInputRef} type="file"
+              accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+              className="hidden" onChange={(e) => void handlePptxImport(e)}
+            />
           </div>
+          {importNote ? (
+            <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+              {importNote}
+            </p>
+          ) : null}
           <textarea
             required rows={16} value={deckText} onChange={(e) => setDeckText(e.target.value)}
             placeholder='Paste your Deck Spec JSON here — or click "Load starter template" above to see the full format with one example of every scene layout.'
             className={ta}
           />
+          <div className="flex items-center gap-2 text-sm">
+            <label className="font-medium text-slate-700">Narration voice</label>
+            {speakers.length ? (
+              <select
+                value={voice} onChange={(e) => setVoice(e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Deck Spec / account default</option>
+                {speakers.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <input
+                value={voice} onChange={(e) => setVoice(e.target.value)}
+                placeholder='Optional — e.g. "Ana Florence" (voice list unavailable)'
+                className="w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            )}
+          </div>
           {error ? <p className="text-xs text-red-600">{error}</p> : null}
           <Button type="submit" disabled={busy || !deckText.trim()}>
             {busy ? "Starting…" : "Generate video"}

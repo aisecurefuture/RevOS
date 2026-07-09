@@ -69,6 +69,20 @@ def generate_audio(job_id: str) -> dict:
     return asyncio.run(_run_stage(job_id, pitch_video_service.run_audio_generation))
 
 
+@celery_app.task(name="pitch_video.list_speakers")
+def list_speakers() -> list[str]:
+    """Enumerate the XTTS model's bundled stock speakers. Routed to the
+    ``avatar`` queue because only that worker carries the XTTS venv; the API
+    dispatches this on demand to populate the voice dropdown (and caches it —
+    the list is static per model version)."""
+    from app.services.avatar.inference import get_backend
+
+    backend = get_backend()
+    if backend is None or not hasattr(backend, "list_stock_speakers"):
+        return []
+    return backend.list_stock_speakers()
+
+
 @celery_app.task(name="pitch_video.render", acks_late=True)
 def render(job_id: str) -> dict:
     """Stage 2: the actual Remotion MP4 render."""

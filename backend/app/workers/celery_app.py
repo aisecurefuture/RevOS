@@ -38,6 +38,7 @@ celery_app.conf.update(
     task_routes={
         "avatar.generate": {"queue": "avatar"},
         "pitch_video.generate_audio": {"queue": "avatar"},
+        "pitch_video.list_speakers": {"queue": "avatar"},
         "pitch_video.render": {"queue": "pitch_video"},
     },
     # A generation can exceed the default 1h visibility timeout; extend it so the

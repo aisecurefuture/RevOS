@@ -13,12 +13,14 @@ import uuid
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import Response
+from sqlalchemy import select
 
 from app.config import settings
 from app.core.exceptions import NotFoundError, RevOSError
 from app.deps import DbSession, require_authenticated, require_editor, verify_csrf
+from app.models.brand import Brand
 from app.models.pitch_video import PitchVideoJobStatus
 from app.models.user import AdminUser
 from app.schemas.pitch_video import (
@@ -27,6 +29,7 @@ from app.schemas.pitch_video import (
     StockSpeakersOut,
 )
 from app.services import pitch_video_service as svc
+from app.services import pptx_import_service
 from app.services.avatar.inference import get_backend
 from app.services.storage_service import get_storage
 
@@ -51,14 +54,75 @@ async def status(_user: Annotated[AdminUser, Depends(require_authenticated)]) ->
     return {"enabled": settings.pitch_video_studio_enabled}
 
 
+# Speaker list is static per XTTS model version — fetch once per process.
+_speakers_cache: list[str] | None = None
+
+
 @router.get("/stock-speakers", response_model=StockSpeakersOut)
 async def stock_speakers(_user: Annotated[AdminUser, Depends(require_editor)]) -> StockSpeakersOut:
-    """Enumerate the built-in XTTS stock voices available on the avatar-worker."""
+    """The stock voices available for narration, for the voice dropdown.
+
+    Resolution order: PITCH_VIDEO_VOICES env allowlist → a backend in THIS
+    process (dev/tests with the stub) → a round-trip to the avatar-worker
+    (the only image with the XTTS venv), cached for the process lifetime.
+    Returns an empty list rather than erroring when nothing is reachable —
+    the UI degrades to a free-text field.
+    """
+    global _speakers_cache
     _require_enabled()
+
+    if settings.pitch_video_voices:
+        return StockSpeakersOut(speakers=[v.strip() for v in settings.pitch_video_voices.split(",") if v.strip()])
+    if _speakers_cache is not None:
+        return StockSpeakersOut(speakers=_speakers_cache)
+
     backend = get_backend()
-    if backend is None or not backend.available or not hasattr(backend, "list_stock_speakers"):
-        raise RevOSError("Voice backend is not available on this deployment.", code="backend_unavailable", status_code=502)
-    return StockSpeakersOut(speakers=backend.list_stock_speakers())
+    if backend is not None and backend.available and hasattr(backend, "list_stock_speakers"):
+        _speakers_cache = backend.list_stock_speakers()
+        return StockSpeakersOut(speakers=_speakers_cache)
+
+    import asyncio
+
+    def _ask_worker() -> list[str]:
+        from app.workers.celery_app import celery_app
+        return celery_app.send_task("pitch_video.list_speakers").get(timeout=30)
+
+    try:
+        speakers = await asyncio.to_thread(_ask_worker)
+    except Exception:  # noqa: BLE001 — worker down/slow: degrade, don't 500
+        return StockSpeakersOut(speakers=[])
+    if speakers:
+        _speakers_cache = speakers
+    return StockSpeakersOut(speakers=speakers or [])
+
+
+@router.post("/import-pptx")
+async def import_pptx(
+    request: Request, db: DbSession,
+    file: UploadFile = File(...),
+    brand_slug: str = Form(...),
+    user: AdminUser = Depends(require_editor), _: None = Depends(verify_csrf),
+) -> dict:
+    """Turn an uploaded .pptx into a DRAFT Deck Spec for the studio textarea.
+
+    Always returns a draft for human review — never creates a job directly.
+    ``ai_drafted`` tells the UI whether an AI pass shaped it (vs the
+    deterministic fallback the user should expect to edit more heavily).
+    """
+    _require_enabled()
+    account_id = _account_id(request)
+    brand_result = await db.execute(
+        select(Brand).where(
+            Brand.slug == brand_slug, Brand.account_id == account_id, Brand.deleted_at.is_(None),
+        )
+    )
+    if brand_result.scalar_one_or_none() is None:
+        raise NotFoundError(f"No brand with slug '{brand_slug}' in this account.")
+
+    data = await file.read()
+    slides = pptx_import_service.extract_slides(data)
+    draft, ai_drafted = await pptx_import_service.draft_deck_spec(slides, brand_slug)
+    return {"deck_spec": draft, "ai_drafted": ai_drafted, "slides_found": len(slides)}
 
 
 @router.get("", response_model=list[PitchVideoOut])
