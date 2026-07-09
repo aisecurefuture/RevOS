@@ -147,19 +147,41 @@ _DRAFT_SYSTEM = """You convert slide-deck text into a Deck Spec JSON for a narra
 
 Output ONLY a JSON object, no markdown fences or commentary, with this shape:
 {"brandId": "<given>", "title": "<deck title>", "aspectRatio": "16:9", "voice": "",
+ "style": "<given>",
  "scenes": [{"id": "<unique-slug>", "layout": "<layout>", "variant": "light"|"dark",
              "content": {...}, "narration": "<spoken text>"}]}
 
 Layouts and their exact content shapes:
 - hero: {"eyebrow"?: str, "headline": str, "sub"?: str} — openers
 - statement: {"text": str, "equation"?: [str, ...]} — one bold idea
-- stat-trio: {"stats": [{"value": str, "label": str}]} — 2-4 big numbers
+- stat-trio: {"stats": [{"value": str, "label": str}]} — 1 stat renders as a
+  drawn risk-curve composition, 2-4 as big-number cards
 - two-column: {"left": {"heading","body"}, "right": {"heading","body"}} — contrast
 - architecture: {"bands": [{"label", "description"?}]} — layered how-it-works
 - bar-chart: {"bars": [{"category", "segments": [{"label","value":number}]}], "note"?: str} — trends/financials
 - timeline: {"steps": [{"label", "description"?}]} — phases/roadmap
 - team: {"members": [{"name","role","bio"?}]} — people
 - close: {"headline", "sub"?} — final CTA
+- split-reveal: {"left": {"label", "lines": [{"text","highlight"?:bool}]},
+  "right": {...same}, "caption"?: str} — two schematic cards side by side
+  (before/after, seen-vs-hidden, checklist-vs-score; "" text = skeleton bar)
+- verdict-lanes: {"lanes": [str, ...], "caption"?: str} — 2-6 outcome lanes
+- card-grid: {"cards": [{"title","value","open"?:bool}], "caption"?, "note"?} —
+  a dealt grid of value cards; open=true = the dashed "unclaimed" slot
+- stack-summary: {"blocks": [{"label","value"}], "summary_label", "summary_big",
+  "capline"?, "note"?} — building blocks + a summary card (business models,
+  revenue plans). If the summary shows a projection/valuation, "note" MUST
+  carry the slide's illustrative/disclaimer language — it renders in the same
+  frame as the figure.
+- terms: {"label", "big", "sub"?, "chips": [str]} — a deal/ask card + milestone chips
+
+Optional per-scene fields (use them when style is "schematic"):
+- "chapter": {"num": "1", "label": "THE STAKES"} — group scenes into 3-5
+  chapters after the cold-open; the label is 1-3 words, uppercase.
+- "emphasis": exact substring of the headline/caption that deserves the
+  luminous underline (ONE per scene, the single most quotable phrase).
+- "motif": "stream" or "gate" on hero scenes only — adds an animated
+  content-stream / scanning-gate backdrop.
 
 Rules:
 - One scene per meaningful slide; merge thin slides, skip agenda/blank ones. 6-14 scenes.
@@ -169,7 +191,10 @@ Rules:
   "example dot com" for domains, numbers spelled out ("fifteen million dollars").
 - If a slide shows financial projections, keep any illustrative/disclaimer
   framing from the slide in both the content note and the narration.
-- Use dark variant for openers/stats/closers, light for explanatory scenes."""
+- style "minimal": use dark variant for openers/stats/closers, light for
+  explanatory scenes. style "schematic": prefer dark everywhere, open on a
+  hero (motif "stream" if the deck is about data/content flows), and shape
+  the arc hook → stakes → fix → proof → ask → close."""
 
 
 def _parse_draft(raw: str) -> dict | None:
@@ -183,12 +208,14 @@ def _parse_draft(raw: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-async def draft_deck_spec(slides: list[dict], brand_slug: str) -> tuple[dict, bool]:
+async def draft_deck_spec(
+    slides: list[dict], brand_slug: str, style: str = "minimal",
+) -> tuple[dict, bool]:
     """Returns (draft, ai_drafted). Always yields a schema-valid draft —
     the AI path falls back to deterministic on any failure."""
     from app.services.pitch_video_service import validate_deck_spec
 
-    deterministic = deterministic_draft(slides, brand_slug)
+    deterministic = {**deterministic_draft(slides, brand_slug), "style": style}
     validate_deck_spec({**deterministic, "voice": "x"})  # invariant: fallback is always valid
 
     if not ai_service.ai_available():
@@ -198,7 +225,7 @@ async def draft_deck_spec(slides: list[dict], brand_slug: str) -> tuple[dict, bo
         f"SLIDE {s['index']}: {s['title'] or '(no title)'}\n" + "\n".join(f"- {b}" for b in s["body"])
         for s in slides
     )
-    context = f"brandId to use: {brand_slug}\n\n{slide_text}"
+    context = f"brandId to use: {brand_slug}\nstyle to use: {style}\n\n{slide_text}"
     raw = await asyncio.to_thread(
         ai_service.generate, system=_DRAFT_SYSTEM, context=context,
         max_tokens=6000, use_case="social",
@@ -210,6 +237,7 @@ async def draft_deck_spec(slides: list[dict], brand_slug: str) -> tuple[dict, bo
         logger.warning("PPTX AI draft was unparseable; using deterministic draft.")
         return deterministic, False
     draft["brandId"] = brand_slug  # never trust the model with tenant routing
+    draft["style"] = style          # the user's choice, not the model's
     try:
         validate_deck_spec({**draft, "voice": draft.get("voice") or "x"})
     except RevOSError as exc:

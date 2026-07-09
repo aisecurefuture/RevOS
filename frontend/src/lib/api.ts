@@ -631,10 +631,11 @@ export interface PitchVideoJob {
 export const pitchVideoApi = {
   status: () => apiFetch<{ enabled: boolean }>("/pitch-videos/status"),
   stockSpeakers: () => apiFetch<{ speakers: string[] }>("/pitch-videos/stock-speakers"),
-  importPptx: (file: File, brandSlug: string) => {
+  importPptx: (file: File, brandSlug: string, style: "minimal" | "schematic" = "schematic") => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("brand_slug", brandSlug);
+    fd.append("style", style);
     return apiUpload<{ deck_spec: object; ai_drafted: boolean; slides_found: number }>(
       "/pitch-videos/import-pptx", fd,
     );

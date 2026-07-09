@@ -160,6 +160,7 @@ export default function PitchVideoStudioPage() {
   const [voice, setVoice] = useState("");  // "" = use the deck's own voice / account default
   const [importing, setImporting] = useState(false);
   const [importNote, setImportNote] = useState<string | null>(null);
+  const [importStyle, setImportStyle] = useState<"minimal" | "schematic">("schematic");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pptxInputRef = useRef<HTMLInputElement>(null);
 
@@ -210,7 +211,7 @@ export default function PitchVideoStudioPage() {
     setError(null);
     setImportNote(null);
     try {
-      const res = await pitchVideoApi.importPptx(file, selectedBrand.slug);
+      const res = await pitchVideoApi.importPptx(file, selectedBrand.slug, importStyle);
       setDeckText(JSON.stringify(res.deck_spec, null, 2));
       setImportNote(
         res.ai_drafted
@@ -312,6 +313,14 @@ export default function PitchVideoStudioPage() {
             <Button type="button" variant="secondary" disabled={importing} onClick={() => pptxInputRef.current?.click()}>
               {importing ? "Importing…" : "Import PowerPoint (.pptx)"}
             </Button>
+            <select
+              value={importStyle} onChange={(e) => setImportStyle(e.target.value as "minimal" | "schematic")}
+              className="rounded-lg border border-slate-300 px-2 py-2 text-xs text-slate-600"
+              title="Visual style for the imported draft"
+            >
+              <option value="schematic">as schematic (animated)</option>
+              <option value="minimal">as minimal (flat)</option>
+            </select>
             <input
               ref={pptxInputRef} type="file"
               accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"

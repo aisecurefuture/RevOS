@@ -305,16 +305,18 @@ async def test_pptx_ai_draft_used_when_valid_and_falls_back_when_not(monkeypatch
     import json
     monkeypatch.setattr(ai_service, "ai_available", lambda: True)
     monkeypatch.setattr(ai_service, "generate", lambda **kw: json.dumps(good_draft))
-    draft, ai_drafted = await pptx.draft_deck_spec(slides, "acme")
+    draft, ai_drafted = await pptx.draft_deck_spec(slides, "acme", style="schematic")
     assert ai_drafted is True
     assert draft["title"] == "AI Draft"
     assert draft["brandId"] == "acme"  # tenant routing never comes from the model
+    assert draft["style"] == "schematic"  # the user's choice, not the model's
 
     # Unparseable AI output → deterministic fallback, not an error.
     monkeypatch.setattr(ai_service, "generate", lambda **kw: "sorry, no json here")
-    draft2, ai_drafted2 = await pptx.draft_deck_spec(slides, "acme")
+    draft2, ai_drafted2 = await pptx.draft_deck_spec(slides, "acme", style="schematic")
     assert ai_drafted2 is False
     assert draft2["scenes"][0]["layout"] == "hero"
+    assert draft2["style"] == "schematic"  # fallback carries the style too
 
 
 @pytest.mark.asyncio

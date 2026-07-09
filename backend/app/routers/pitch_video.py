@@ -101,6 +101,7 @@ async def import_pptx(
     request: Request, db: DbSession,
     file: UploadFile = File(...),
     brand_slug: str = Form(...),
+    style: str = Form("minimal"),
     user: AdminUser = Depends(require_editor), _: None = Depends(verify_csrf),
 ) -> dict:
     """Turn an uploaded .pptx into a DRAFT Deck Spec for the studio textarea.
@@ -121,7 +122,9 @@ async def import_pptx(
 
     data = await file.read()
     slides = pptx_import_service.extract_slides(data)
-    draft, ai_drafted = await pptx_import_service.draft_deck_spec(slides, brand_slug)
+    if style not in ("minimal", "schematic"):
+        raise RevOSError("style must be 'minimal' or 'schematic'.", code="invalid_style", status_code=400)
+    draft, ai_drafted = await pptx_import_service.draft_deck_spec(slides, brand_slug, style=style)
     return {"deck_spec": draft, "ai_drafted": ai_drafted, "slides_found": len(slides)}
 
 
