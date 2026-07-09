@@ -89,12 +89,53 @@ class InferenceBackend(Protocol):
 # Local CPU backend — the validated XTTS + Wav2Lip subprocess pipeline
 # ---------------------------------------------------------------------------
 
+def chunk_narration(text: str, max_chars: int = 220) -> list[str]:
+    """Split narration into chunks XTTS can always synthesize.
+
+    XTTS hard-fails past 400 tokens per generation. Its own sentence splitter
+    handles normal prose, but text with no sentence punctuation (e.g. a
+    deterministic PPTX draft of slide bullets) arrives as one giant chunk and
+    crashes. Split on sentence enders first, then hard-wrap any still-long
+    piece at word boundaries. ~220 chars stays comfortably under the token
+    limit for English.
+
+    NOTE: the same algorithm is inlined in _XTTS_RUNNER below (the runner
+    executes in the isolated XTTS venv and can't import app code) — keep the
+    two in sync.
+    """
+    import re as _re
+
+    sentences = [s.strip() for s in _re.split(r"(?<=[.!?…])\s+", text.strip()) if s.strip()]
+    chunks: list[str] = []
+    for sentence in sentences:
+        if len(sentence) <= max_chars:
+            if chunks and len(chunks[-1]) + 1 + len(sentence) <= max_chars:
+                chunks[-1] = f"{chunks[-1]} {sentence}"
+            else:
+                chunks.append(sentence)
+            continue
+        words, current = sentence.split(), ""
+        for word in words:
+            if current and len(current) + 1 + len(word) > max_chars:
+                chunks.append(current)
+                current = word
+            else:
+                current = f"{current} {word}".strip()
+        if current:
+            chunks.append(current)
+    return chunks or [text[:max_chars]]
+
+
 # Standalone script run by the XTTS venv's python. Kept as a string so the
 # backend is self-contained (no extra file to ship/track); written to a temp
 # file per call. Takes text/out paths plus EITHER --speaker-wav (cloning) OR
-# --speaker-name (a built-in stock voice, no cloning).
+# --speaker-name (a built-in stock voice, no cloning). Long text is chunked
+# (same algorithm as chunk_narration above) and the WAVs are concatenated —
+# XTTS crashes outright past 400 tokens in a single unbreakable chunk.
 _XTTS_RUNNER = r'''
 import argparse
+import re
+import wave
 from TTS.api import TTS
 
 p = argparse.ArgumentParser()
@@ -107,11 +148,52 @@ args = p.parse_args()
 with open(args.text_path, "r", encoding="utf-8") as f:
     text = f.read().strip()
 
+MAX_CHARS = 220  # keep in sync with inference.chunk_narration
+
+def chunk_narration(text, max_chars=MAX_CHARS):
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", text.strip()) if s.strip()]
+    chunks = []
+    for sentence in sentences:
+        if len(sentence) <= max_chars:
+            if chunks and len(chunks[-1]) + 1 + len(sentence) <= max_chars:
+                chunks[-1] = chunks[-1] + " " + sentence
+            else:
+                chunks.append(sentence)
+            continue
+        words, current = sentence.split(), ""
+        for word in words:
+            if current and len(current) + 1 + len(word) > max_chars:
+                chunks.append(current)
+                current = word
+            else:
+                current = (current + " " + word).strip()
+        if current:
+            chunks.append(current)
+    return chunks or [text[:max_chars]]
+
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False).to("cpu")
-if args.speaker_wav:
-    tts.tts_to_file(text=text, speaker_wav=args.speaker_wav, language="en", file_path=args.out_path)
+
+def synth(chunk_text, path):
+    if args.speaker_wav:
+        tts.tts_to_file(text=chunk_text, speaker_wav=args.speaker_wav, language="en", file_path=path)
+    else:
+        tts.tts_to_file(text=chunk_text, speaker=args.speaker_name, language="en", file_path=path)
+
+chunks = chunk_narration(text)
+if len(chunks) == 1:
+    synth(chunks[0], args.out_path)
 else:
-    tts.tts_to_file(text=text, speaker=args.speaker_name, language="en", file_path=args.out_path)
+    parts = []
+    for i, chunk in enumerate(chunks):
+        part = f"{args.out_path}.part{i}.wav"
+        synth(chunk, part)
+        parts.append(part)
+    with wave.open(args.out_path, "wb") as out:
+        for i, part in enumerate(parts):
+            with wave.open(part, "rb") as src:
+                if i == 0:
+                    out.setparams(src.getparams())
+                out.writeframes(src.readframes(src.getnframes()))
 '''
 
 # Diagnostic script — lists the model's built-in stock speaker names. Run this

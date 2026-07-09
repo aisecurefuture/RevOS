@@ -70,6 +70,11 @@ def extract_slides(data: bytes) -> list[dict]:
         body_parts: list[str] = []
         for shape in root.iter(f"{{{_NS['p']}}}sp"):
             ph = shape.find(f".//{{{_NS['p']}}}ph")
+            # Slide-number / footer / date placeholders are chrome, not content
+            # — leaking them into narration produces junk like
+            # "acme · confidential · 2" being read aloud.
+            if ph is not None and ph.get("type") in ("sldNum", "ftr", "dt"):
+                continue
             is_title = ph is not None and ph.get("type") in ("title", "ctrTitle")
             # One string per paragraph, joining that paragraph's text runs.
             for para in shape.iter(f"{{{_NS['a']}}}p"):
@@ -111,7 +116,14 @@ def deterministic_draft(slides: list[dict], brand_slug: str) -> dict:
     for i, slide in enumerate(slides):
         title = slide["title"] or (slide["body"][0] if slide["body"] else f"Slide {slide['index']}")
         body = [b for b in slide["body"] if b != title]
-        narration = _clip(" ".join([title, *body]) or title, 1900)
+        # Join fragments with sentence enders — slide bullets carry no
+        # punctuation, and TTS needs split points (XTTS hard-fails on one
+        # long unbreakable chunk). Cap at ~600 chars (~40s spoken): a scene,
+        # not a lecture — the user edits the draft anyway.
+        narration = _clip(
+            " ".join(f"{part.rstrip('.!?…')}." for part in [title, *body] if part.strip()) or f"{title}.",
+            600,
+        )
         if i == 0:
             scenes.append({
                 "id": f"slide-{slide['index']}", "layout": "hero", "variant": "dark",

@@ -346,3 +346,103 @@ async def test_import_pptx_endpoint(api, monkeypatch):
         data={"brand_slug": "not-a-brand"},
     )
     assert missing.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# XTTS 400-token guard: narration chunking
+# ---------------------------------------------------------------------------
+
+def test_chunk_narration_passes_short_text_through():
+    from app.services.avatar.inference import chunk_narration
+
+    assert chunk_narration("Hello world.") == ["Hello world."]
+
+
+def test_chunk_narration_splits_unpunctuated_wall_of_text():
+    """The crash case: slide-bullet narration with NO sentence punctuation —
+    XTTS's own splitter can't break it and hard-fails past 400 tokens."""
+    from app.services.avatar.inference import chunk_narration
+
+    wall = " ".join(["market"] * 300)  # ~2000 chars, zero sentence enders
+    chunks = chunk_narration(wall)
+    assert len(chunks) > 1
+    assert all(len(c) <= 220 for c in chunks)
+    assert " ".join(chunks) == wall  # no words lost
+
+
+def test_chunk_narration_packs_sentences_and_respects_boundaries():
+    from app.services.avatar.inference import chunk_narration
+
+    text = "First sentence. " * 30  # many short sentences
+    chunks = chunk_narration(text.strip())
+    assert all(len(c) <= 220 for c in chunks)
+    # sentences are never split mid-word
+    assert all(c.endswith(".") for c in chunks)
+
+
+def test_runner_script_chunking_matches_module_function():
+    """The runner inlines a copy of chunk_narration (it can't import app
+    code inside the XTTS venv). Execute the inlined copy and pin that the two
+    implementations agree — the sync comment is a promise, this enforces it."""
+    import re
+
+    from app.services.avatar import inference
+
+    match = re.search(r"def chunk_narration\(text, max_chars=MAX_CHARS\):.*?return chunks or \[text\[:max_chars\]\]",
+                      inference._XTTS_RUNNER, re.DOTALL)
+    assert match, "runner no longer inlines chunk_narration"
+    namespace: dict = {"re": re, "MAX_CHARS": 220}
+    exec(match.group(0), namespace)  # noqa: S102 — our own embedded source, in-test
+    runner_chunk = namespace["chunk_narration"]
+
+    samples = [
+        "Short one.",
+        " ".join(["word"] * 300),
+        ("A sentence. " * 40).strip(),
+        "revos360 · confidential · 2 the market verified " * 20,
+    ]
+    for sample in samples:
+        assert runner_chunk(sample) == inference.chunk_narration(sample)
+
+
+def test_pptx_skips_footer_and_slide_number_placeholders():
+    from app.services import pptx_import_service as pptx
+
+    import io
+    import zipfile
+
+    slide = (
+        '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+        "<p:cSld><p:spTree>"
+        '<p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>'
+        "<p:txBody><a:p><a:r><a:t>Real Title</a:t></a:r></a:p></p:txBody></p:sp>"
+        '<p:sp><p:nvSpPr><p:nvPr><p:ph type="ftr"/></p:nvPr></p:nvSpPr>'
+        "<p:txBody><a:p><a:r><a:t>acme · confidential</a:t></a:r></a:p></p:txBody></p:sp>"
+        '<p:sp><p:nvSpPr><p:nvPr><p:ph type="sldNum"/></p:nvPr></p:nvSpPr>'
+        "<p:txBody><a:p><a:r><a:t>2</a:t></a:r></a:p></p:txBody></p:sp>"
+        "</p:spTree></p:cSld></p:sld>"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("ppt/slides/slide1.xml", slide)
+    slides = pptx.extract_slides(buf.getvalue())
+    assert slides[0]["title"] == "Real Title"
+    assert slides[0]["body"] == []  # footer + slide number filtered out
+
+
+@pytest.mark.asyncio
+async def test_deterministic_narration_is_punctuated_and_capped(monkeypatch):
+    from app.services import ai_service
+    from app.services import pptx_import_service as pptx
+
+    monkeypatch.setattr(ai_service, "ai_available", lambda: False)
+    slides = [
+        {"index": 1, "title": "Big Opener", "body": ["bullet one no punctuation"] * 40},
+        {"index": 2, "title": "End", "body": []},
+    ]
+    draft, _ = await pptx.draft_deck_spec(slides, "acme")
+    narration = draft["scenes"][0]["narration"]
+    assert len(narration) <= 600
+    assert "no punctuation." in narration  # fragments got sentence enders
