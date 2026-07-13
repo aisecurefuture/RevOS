@@ -48,6 +48,10 @@ header {
 .nav-links { display: flex; gap: 28px; align-items: center; }
 .nav-links a { color: var(--slate); font-size: 15px; font-weight: 500; }
 .nav-links a:hover { color: var(--ink); }
+/* Buttons keep their own text color inside the nav (specificity fix). */
+.nav-links a.btn-primary { color: #fff; }
+.nav-links a.btn-primary:hover { color: #fff; }
+.nav-links a.btn-ghost { color: var(--ink); }
 .logo img { height: 30px; display: block; }
 
 /* Hero */
@@ -105,6 +109,9 @@ section.block { padding: 72px 0; }
 .cta-band h2 { color: #fff; font-size: 32px; letter-spacing: -.6px; }
 .cta-band p { color: #dfe3ff; margin-top: 12px; font-size: 17px; }
 .cta-band .cta-row { margin-top: 28px; }
+/* Light-outline secondary for use on the indigo CTA band. */
+.btn-band-ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
+.btn-band-ghost:hover { background: rgba(255,255,255,.12); border-color: #fff; }
 
 /* Footer */
 footer { background: #0b1120; color: #cbd5e1; padding: 48px 0 36px; margin-top: 72px; }
