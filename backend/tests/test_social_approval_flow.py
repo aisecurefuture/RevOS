@@ -172,3 +172,26 @@ async def test_reject_returns_post_to_draft(api, async_session_factory):
     # Post is back to draft so it can be edited and resubmitted.
     posts = (await api.get(f"/api/social/posts?brand_id={bid}", headers=h)).json()
     assert posts[0]["state"] == "draft"
+
+
+@pytest.mark.asyncio
+async def test_pending_count_endpoint_tracks_queue_and_tenancy(api, async_session_factory, make_client):
+    """/approvals/count powers the nav badge: exact, cheap, tenant-scoped."""
+    h = await _register_owner(api, async_session_factory)
+
+    zero = (await api.get("/api/approvals/count", headers=h)).json()
+    assert zero == {"pending": 0}
+
+    _bid, post_id = await _seed(api, async_session_factory, h, "facebook")
+    await api.post(f"/api/social/posts/{post_id}/submit", headers=h)
+
+    one = (await api.get("/api/approvals/count", headers=h)).json()
+    assert one == {"pending": 1}
+
+    # A different account must not see this tenant's pending approval.
+    other = await make_client()
+    r = await other.post("/api/auth/register", json={
+        "email": "other@test.com", "password": "OwnerPass123", "full_name": "Other",
+    })
+    oh = {"X-CSRF-Token": r.json()["csrf_token"]}
+    assert (await other.get("/api/approvals/count", headers=oh)).json() == {"pending": 0}

@@ -4,9 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { usePendingApprovals } from "@/lib/approvals";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
 import {
+  APPROVALS_ITEM,
   NAV_GROUPS,
   OVERVIEW_ITEM,
   UTILITY_ITEMS,
@@ -112,6 +114,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {itemLink(OVERVIEW_ITEM)}
+          <ApprovalsPin active={isActive(APPROVALS_ITEM.href)} />
 
           {NAV_GROUPS.map((group) => {
             const items = group.items.filter(visible);
@@ -165,3 +168,32 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
+
+// The wedge: Approvals pinned directly under Overview with its own visual
+// weight — accent-bordered, badge-carrying. Deliberately NOT alert styling
+// (brand accent, not red); this reads "the important surface", not
+// "something is wrong". Approvals also stays listed in Govern — same route,
+// two entry points, one mental model.
+function ApprovalsPin({ active }: { active: boolean }) {
+  const { pendingCount } = usePendingApprovals();
+  return (
+    <Link
+      href={APPROVALS_ITEM.href}
+      className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+        active
+          ? "border-brand bg-brand/10 text-brand"
+          : "border-brand/40 bg-brand/5 text-slate-700 hover:border-brand hover:bg-brand/10"
+      }`}
+    >
+      <span className="flex items-center gap-3">
+        <span aria-hidden>{APPROVALS_ITEM.icon}</span>
+        {APPROVALS_ITEM.label}
+      </span>
+      {pendingCount > 0 ? (
+        <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-bold text-white">
+          {pendingCount > 99 ? "99+" : pendingCount}
+        </span>
+      ) : null}
+    </Link>
+  );
+}

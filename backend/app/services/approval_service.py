@@ -49,6 +49,25 @@ async def list_pending(
     return await list_active(db, ApprovalRequest, filters=filters, limit=limit, offset=offset)
 
 
+async def count_pending(db: AsyncSession, *, brand_id: uuid.UUID | None = None) -> int:
+    """Tenant-scoped pending count (the nav badge). Raw selects bypass the
+    crud chokepoints' tenant filtering, so scope explicitly."""
+    from sqlalchemy import func, select
+
+    from app.core.tenancy import get_active_account, is_tenant_scoped, scope_stmt
+
+    stmt = select(func.count()).select_from(ApprovalRequest).where(
+        ApprovalRequest.status == ApprovalStatus.pending,
+        ApprovalRequest.deleted_at.is_(None),
+    )
+    account_id = get_active_account()
+    if account_id is not None and is_tenant_scoped(ApprovalRequest):
+        stmt = scope_stmt(stmt, ApprovalRequest, account_id)
+    if brand_id:
+        stmt = stmt.where(ApprovalRequest.brand_id == brand_id)
+    return int((await db.execute(stmt)).scalar_one())
+
+
 async def get_or_404(db: AsyncSession, approval_id: uuid.UUID) -> ApprovalRequest:
     return await get_active(db, ApprovalRequest, approval_id)
 

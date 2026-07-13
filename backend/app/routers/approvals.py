@@ -33,6 +33,19 @@ async def list_approvals(
     return await approval_service.list_pending(db, brand_id=brand_id, limit=limit, offset=offset)
 
 
+@router.get("/count")
+async def pending_count(
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+    brand_id: uuid.UUID | None = None,
+) -> dict:
+    """Exact pending count for the nav badge — cheap COUNT, no row payload.
+
+    NOTE: must be declared before /{approval_id} or "count" would be parsed
+    as an approval UUID."""
+    return {"pending": await approval_service.count_pending(db, brand_id=brand_id)}
+
+
 @router.get("/{approval_id}", response_model=ApprovalOut)
 async def get_approval(
     approval_id: uuid.UUID,

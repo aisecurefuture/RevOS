@@ -113,6 +113,7 @@ export const campaignSendApi = {
 
 export const approvalsApi = {
   list: () => apiFetch<Approval[]>("/approvals"),
+  pendingCount: () => apiFetch<{ pending: number }>("/approvals/count"),
   approve: (id: string) =>
     apiFetch<{ status: string; sent?: number }>(`/approvals/${id}/approve`, { method: "POST" }),
   reject: (id: string, reason?: string) =>
