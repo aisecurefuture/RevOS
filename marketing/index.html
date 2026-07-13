@@ -18,7 +18,10 @@
   <header>
     <div class="wrap nav">
       <a class="logo" href="/" aria-label="revos360 home"><img src="/assets/logo.svg" alt="revos360" /></a>
-      <nav class="nav-links">
+      <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="nav-links" id="navLinks">
         <a href="#features">Features</a>
         <a href="#how">How it works</a>
         <a href="#security">Security</a>
@@ -180,5 +183,28 @@
       </div>
     </div>
   </footer>
+
+  <script>
+    // Mobile nav toggle. Progressive enhancement — links work without JS;
+    // this only adds the open/close behavior below the 880px breakpoint.
+    (function () {
+      var toggle = document.getElementById("navToggle");
+      var links = document.getElementById("navLinks");
+      if (!toggle || !links) return;
+      function setOpen(open) {
+        links.classList.toggle("open", open);
+        toggle.classList.toggle("is-open", open);
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+      }
+      toggle.addEventListener("click", function () {
+        setOpen(!links.classList.contains("open"));
+      });
+      // Close after tapping any link (in-page anchors + auth links).
+      links.addEventListener("click", function (e) {
+        if (e.target.tagName === "A") setOpen(false);
+      });
+    })();
+  </script>
 </body>
 </html>

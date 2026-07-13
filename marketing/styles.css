@@ -54,6 +54,21 @@ header {
 .nav-links a.btn-ghost { color: var(--ink); }
 .logo img { height: 30px; display: block; }
 
+/* Hamburger — hidden on desktop, shown at the mobile breakpoint below. */
+.nav-toggle {
+  display: none; background: none; border: 0; cursor: pointer;
+  width: 40px; height: 40px; padding: 8px; border-radius: 10px;
+}
+.nav-toggle:hover { background: var(--bg-soft); }
+.nav-toggle span {
+  display: block; height: 2px; width: 100%; background: var(--ink);
+  border-radius: 2px; transition: transform .2s ease, opacity .2s ease;
+}
+.nav-toggle span + span { margin-top: 5px; }
+.nav-toggle.is-open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-toggle.is-open span:nth-child(2) { opacity: 0; }
+.nav-toggle.is-open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
 /* Hero */
 .hero { padding: 84px 0 56px; text-align: center; background:
   radial-gradient(900px 380px at 50% -10%, #eef2ff 0%, rgba(238,242,255,0) 70%); }
@@ -127,5 +142,17 @@ footer .bottom { border-top: 1px solid #1e293b; margin-top: 32px; padding-top: 2
 @media (max-width: 880px) {
   .hero h1 { font-size: 38px; }
   .grid, .steps, .secure .grid4 { grid-template-columns: 1fr; }
-  .nav-links { display: none; }
+
+  .nav-toggle { display: block; }
+  /* Nav collapses into a dropdown panel under the header; toggled by JS. */
+  .nav-links {
+    display: none;
+    position: absolute; left: 0; right: 0; top: 68px;
+    flex-direction: column; align-items: stretch; gap: 4px;
+    background: #fff; border-bottom: 1px solid var(--border);
+    padding: 12px 24px 20px; box-shadow: 0 12px 24px rgba(15,23,42,.08);
+  }
+  .nav-links.open { display: flex; }
+  .nav-links a { padding: 10px 4px; font-size: 16px; }
+  .nav-links a.btn-primary { justify-content: center; margin-top: 6px; padding: 12px 20px; }
 }
