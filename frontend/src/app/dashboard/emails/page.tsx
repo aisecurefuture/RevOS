@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { NoBrandCta } from "@/components/NoBrandCta";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
@@ -25,7 +26,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function EmailsPage() {
   const { user } = useAuth();
-  const { selectedBrandId } = useBrand();
+  const { selectedBrandId, brands } = useBrand();
   const isAdmin = user?.role === "admin" || user?.role === "owner";
 
   const [messages, setMessages] = useState<EmailMessage[]>([]);
@@ -124,7 +125,11 @@ export default function EmailsPage() {
               </Button>
             </form>
           ) : (
-            <p className="text-sm text-slate-500">Select a brand in the top bar to send a test.</p>
+            brands.length === 0 ? (
+              <NoBrandCta feature="Email sending" />
+            ) : (
+              <p className="text-sm text-slate-500">Select a brand in the top bar to send a test.</p>
+            )
           )}
         </Card>
       ) : null}

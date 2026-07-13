@@ -115,3 +115,27 @@ async def test_analytics_export_csv(api, make_user):
     assert export.status_code == 200
     assert export.headers["content-type"].startswith("text/csv")
     assert "source" in export.text
+
+
+@pytest.mark.asyncio
+async def test_ui_event_recorded_to_audit_log(api, make_user, async_session_factory):
+    """Onboarding funnel telemetry: allowlisted events land in the audit log;
+    unknown event names are rejected."""
+    from sqlalchemy import select
+
+    from app.models.user import AuditLog
+
+    creds = await make_user("uievents@test.com", "OwnerPass123", Role.admin)
+    h = await _login(api, creds["email"], creds["password"])
+
+    ok = await api.post("/api/analytics/ui-events?event=onboarding_shown", headers=h)
+    assert ok.status_code == 204, ok.text
+
+    bad = await api.post("/api/analytics/ui-events?event=not_a_real_event", headers=h)
+    assert bad.status_code == 400
+
+    async with async_session_factory() as s:
+        rows = (await s.execute(
+            select(AuditLog).where(AuditLog.action == "ui.onboarding_shown")
+        )).scalars().all()
+        assert len(rows) == 1

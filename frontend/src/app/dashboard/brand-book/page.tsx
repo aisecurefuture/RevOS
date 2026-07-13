@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { NoBrandCta } from "@/components/NoBrandCta";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
@@ -138,7 +139,7 @@ export default function BrandBookPage() {
       <>
         <PageHeader title="Brand Book" description="The source of truth that grounds all AI content." />
         {brands.length === 0 ? (
-          <Card><p className="text-sm text-slate-400">Create a brand first.</p></Card>
+          <NoBrandCta feature="The Brand Book" />
         ) : (
           <Spinner />
         )}

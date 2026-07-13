@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import { BrandOnboarding } from "@/components/BrandOnboarding";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { Spinner } from "@/components/ui/Spinner";
@@ -100,6 +101,7 @@ function Shell({ children }: { children: ReactNode }) {
         {!user.email_verified ? <VerifyEmailBanner /> : null}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
       </div>
+      <BrandOnboarding />
     </div>
   );
 }

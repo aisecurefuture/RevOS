@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { NoBrandCta } from "@/components/NoBrandCta";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -16,7 +17,7 @@ const PLATFORMS = ["instagram", "tiktok", "youtube", "facebook", "twitter", "lin
 
 export default function MediaPage() {
   const { user } = useAuth();
-  const { selectedBrandId } = useBrand();
+  const { selectedBrandId, brands } = useBrand();
   const canEdit = user ? user.role !== "viewer" : false;
 
   const [assets, setAssets] = useState<MediaAsset[]>([]);
@@ -116,7 +117,11 @@ export default function MediaPage() {
               </label>
             </div>
           ) : (
-            <p className="text-sm text-slate-500">Select a brand in the top bar to upload media.</p>
+            brands.length === 0 ? (
+              <NoBrandCta feature="The media pipeline" />
+            ) : (
+              <p className="text-sm text-slate-500">Select a brand in the top bar to upload media.</p>
+            )
           )}
         </Card>
       ) : null}

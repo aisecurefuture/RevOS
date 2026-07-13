@@ -22,6 +22,8 @@ interface BrandState {
   selectedBrandId: string | null; // null = all brands
   setSelectedBrandId: (id: string | null) => void;
   loading: boolean;
+  /** Re-fetch the brand list (e.g. after creating a brand from onboarding). */
+  refresh: () => Promise<void>;
 }
 
 const BrandContext = createContext<BrandState | null>(null);
@@ -31,15 +33,23 @@ export function BrandProvider({ children }: { children: ReactNode }) {
   const [selectedBrandId, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const refresh = async () => {
+    try {
+      const data = await apiFetch<Brand[]>("/brands");
+      setBrands(Array.isArray(data) ? data : []);
+    } catch {
+      setBrands([]); // endpoint not available yet -> graceful
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const stored =
       typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
     if (stored) setSelected(stored);
-
-    apiFetch<Brand[]>("/brands")
-      .then((data) => setBrands(Array.isArray(data) ? data : []))
-      .catch(() => setBrands([])) // endpoint not available yet -> graceful
-      .finally(() => setLoading(false));
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setSelectedBrandId = (id: string | null) => {
@@ -52,7 +62,7 @@ export function BrandProvider({ children }: { children: ReactNode }) {
 
   return (
     <BrandContext.Provider
-      value={{ brands, selectedBrandId, setSelectedBrandId, loading }}
+      value={{ brands, selectedBrandId, setSelectedBrandId, loading, refresh }}
     >
       {children}
     </BrandContext.Provider>

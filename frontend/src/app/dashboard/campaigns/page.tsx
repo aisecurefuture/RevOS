@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { NoBrandCta } from "@/components/NoBrandCta";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -101,10 +102,13 @@ export default function CampaignsPage() {
               </Button>
             </form>
           ) : (
-            <p className="text-sm text-slate-500">
-              Select a specific brand in the top bar to create a campaign
-              {brands.length === 0 ? " (add a brand first)" : ""}.
-            </p>
+            brands.length === 0 ? (
+              <NoBrandCta feature="Campaigns" />
+            ) : (
+              <p className="text-sm text-slate-500">
+                Select a specific brand in the top bar to create a campaign.
+              </p>
+            )
           )}
         </Card>
       ) : null}

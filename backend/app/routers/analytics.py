@@ -31,6 +31,26 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 CurrentUser = Annotated[AdminUser, Depends(require_authenticated)]
 
+# Allowlisted UI telemetry, recorded to the audit log (the app's existing
+# event store — no new table). Extend the set as product funnels grow.
+_UI_EVENTS = {"onboarding_shown", "onboarding_completed", "onboarding_dismissed"}
+
+
+@router.post("/ui-events", response_class=PlainTextResponse, status_code=204)
+async def record_ui_event(
+    event: str,
+    request: Request,
+    db: DbSession,
+    user: CurrentUser,
+    _: None = Depends(verify_csrf),
+) -> PlainTextResponse:
+    from app.core.exceptions import RevOSError
+
+    if event not in _UI_EVENTS:
+        raise RevOSError(f"Unknown UI event '{event}'.", code="unknown_event", status_code=400)
+    await write_audit(db, action=f"ui.{event}", user_id=user.id, request=request)
+    return PlainTextResponse(status_code=204)
+
 
 @router.get("/overview")
 async def overview(db: DbSession, _user: CurrentUser, brand_id: uuid.UUID | None = None) -> dict:
