@@ -77,6 +77,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     <Link
       key={item.href}
       href={item.href}
+      data-tour={item.href === "/dashboard/brand-book" ? "brand-book" : undefined}
       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
         isActive(item.href) ? "bg-brand/10 text-brand" : "text-slate-600 hover:bg-slate-100"
       }`}
@@ -112,7 +113,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           </button>
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        <nav data-tour="nav" className="flex-1 space-y-1 overflow-y-auto p-3">
           {itemLink(OVERVIEW_ITEM)}
           <ApprovalsPin active={isActive(APPROVALS_ITEM.href)} />
 
@@ -179,6 +180,7 @@ function ApprovalsPin({ active }: { active: boolean }) {
   return (
     <Link
       href={APPROVALS_ITEM.href}
+      data-tour="approvals"
       className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
         active
           ? "border-brand bg-brand/10 text-brand"

@@ -60,7 +60,7 @@ export function RecommendedForYou() {
   }
 
   return (
-    <Card className="mb-4 border-brand/30 bg-brand/[0.03]">
+    <Card className="mb-4 border-brand/30 bg-brand/[0.03]" data-tour="recommended">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <CardTitle>Recommended for you</CardTitle>

@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { authApi, billingApi, ApiError, type BillingStatus } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { BrandProvider } from "@/lib/brand";
+import { TourProvider } from "@/lib/tour";
 
 function VerifyEmailBanner() {
   const [sent, setSent] = useState(false);
@@ -94,15 +95,17 @@ function Shell({ children }: { children: ReactNode }) {
   if (billing && (billing.status === null || billing.is_trial_expired)) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar onMenuClick={() => setSidebarOpen(true)} />
-        {!user.email_verified ? <VerifyEmailBanner /> : null}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+    <TourProvider>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Topbar onMenuClick={() => setSidebarOpen(true)} />
+          {!user.email_verified ? <VerifyEmailBanner /> : null}
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+        </div>
+        <BrandOnboarding />
       </div>
-      <BrandOnboarding />
-    </div>
+    </TourProvider>
   );
 }
 

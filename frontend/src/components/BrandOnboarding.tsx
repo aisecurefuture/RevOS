@@ -11,6 +11,7 @@ import { BrandCreateForm } from "@/components/BrandCreateForm";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
+import { hasSeenTour, useTour } from "@/lib/tour";
 
 const DISMISS_KEY = "revos.onboardingDismissed"; // sessionStorage: re-surfaces next session
 
@@ -23,6 +24,7 @@ function recordEvent(event: string) {
 export function BrandOnboarding() {
   const { user } = useAuth();
   const { brands, loading, refresh } = useBrand();
+  const { startTour } = useTour();
   const [dismissed, setDismissed] = useState(true); // assume dismissed until hydrated
   const [shown, setShown] = useState(false);
 
@@ -51,6 +53,8 @@ export function BrandOnboarding() {
     }
     setDismissed(true);
     recordEvent("onboarding_dismissed");
+    // Skipping brand creation? Still show them around the product.
+    if (!hasSeenTour()) startTour();
   }
 
   return (
@@ -72,6 +76,8 @@ export function BrandOnboarding() {
             onCreated={async () => {
               recordEvent("onboarding_completed");
               await refresh();
+              // First brand exists — walk them through the product.
+              if (!hasSeenTour()) startTour();
             }}
           />
         </div>
