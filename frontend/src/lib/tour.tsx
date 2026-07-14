@@ -177,19 +177,45 @@ function TourOverlay({
       }
     : null;
 
-  // Tooltip placement: below the target if room, else above; centered when
-  // there's no target.
+  // Tooltip placement. The tricky case is a TALL target (e.g. the full-height
+  // sidebar) — it won't fit a tooltip above or below, so we place beside it.
+  // In every case the final top/left is clamped so the whole tooltip stays on
+  // screen (the earlier bug: an above-placement overflowed off the top).
   const tipStyle: React.CSSProperties = rect
     ? (() => {
-        const below = rect.top + rect.height + 320 < window.innerHeight;
-        return {
-          position: "fixed",
-          top: below ? rect.top + rect.height + 16 : undefined,
-          bottom: below ? undefined : window.innerHeight - rect.top + 16,
-          left: Math.min(Math.max(rect.left, 16), window.innerWidth - 356),
-          width: 340,
-          zIndex: 1001,
-        };
+        const W = 340;
+        const H = 220; // generous estimate; content is short
+        const M = 16; // viewport margin
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi));
+
+        const spaceBelow = vh - (rect.top + rect.height);
+        const spaceAbove = rect.top;
+        const spaceRight = vw - (rect.left + rect.width);
+        const isTall = rect.height > vh * 0.55;
+
+        let top: number;
+        let left: number;
+        if (isTall && spaceRight > W + M * 2) {
+          // Beside a tall target (sidebar): to its right, vertically aligned.
+          left = rect.left + rect.width + M;
+          top = clamp(rect.top, M, vh - H - M);
+        } else if (spaceBelow > H + M) {
+          top = rect.top + rect.height + M;
+          left = clamp(rect.left, M, vw - W - M);
+        } else if (spaceAbove > H + M) {
+          top = rect.top - H - M;
+          left = clamp(rect.left, M, vw - W - M);
+        } else if (spaceRight > W + M * 2) {
+          left = rect.left + rect.width + M;
+          top = clamp(rect.top, M, vh - H - M);
+        } else {
+          // Last resort: overlay-clamped, still fully visible.
+          left = clamp(rect.left, M, vw - W - M);
+          top = clamp(rect.top, M, vh - H - M);
+        }
+        return { position: "fixed", top, left, width: W, zIndex: 1001 };
       })()
     : {
         position: "fixed",
