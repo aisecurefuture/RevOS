@@ -61,6 +61,15 @@ async def get_current_user(request: Request, db: DbSession) -> AdminUser:
     # set the request-scoped tenant context, and stash the role for require_role.
     membership = await resolve_active_membership(db, user, _parse_uuid(payload.get("act")))
     if membership is not None:
+        # A platform-admin disabled tenant blocks its members from acting under
+        # it (platform admins themselves bypass this to manage it via /admin).
+        from app.config import settings
+        from app.models.account import Account
+
+        account = await db.get(Account, membership.account_id)
+        if (account is not None and account.disabled_at is not None
+                and not settings.is_platform_admin(user.email)):
+            raise AuthError("This workspace has been disabled. Contact support.")
         set_active_account(membership.account_id)
         request.state.account_id = membership.account_id
         request.state.account_role = membership.role
@@ -92,6 +101,17 @@ require_authenticated = require_role(Role.viewer)
 require_editor = require_role(Role.editor)
 require_admin = require_role(Role.admin)
 require_owner = require_role(Role.owner)
+
+
+async def require_platform_admin(user: CurrentUser) -> AdminUser:
+    """Platform super-admin gate — the /admin console. Membership is by the
+    PLATFORM_ADMIN_EMAILS env allowlist, never a DB role, so there's no in-app
+    escalation path. Normal login (password + 2FA) still applies."""
+    from app.config import settings
+
+    if not settings.is_platform_admin(user.email):
+        raise PermissionError_("Platform admin access required.", code="not_platform_admin")
+    return user
 
 
 async def require_verified_email(user: CurrentUser) -> AdminUser:

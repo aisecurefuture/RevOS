@@ -28,6 +28,7 @@ class UserOut(BaseModel):
     is_active: bool
     totp_enabled: bool = False
     email_verified: bool = False
+    is_platform_admin: bool = False
     timezone: str | None = None
     avatar_url: str | None = None
 
@@ -37,6 +38,8 @@ class UserOut(BaseModel):
         """Accept ORM objects and compute derived fields."""
         if isinstance(data, dict):
             return data
+        from app.config import settings
+
         settings_dict = getattr(data, "settings", None) or {}
         return {
             "id": data.id,
@@ -46,6 +49,7 @@ class UserOut(BaseModel):
             "is_active": data.is_active,
             "totp_enabled": getattr(data, "totp_enabled", False),
             "email_verified": getattr(data, "email_verified_at", None) is not None,
+            "is_platform_admin": settings.is_platform_admin(data.email),
             "timezone": settings_dict.get("timezone"),
             "avatar_url": settings_dict.get("avatar_url"),
         }

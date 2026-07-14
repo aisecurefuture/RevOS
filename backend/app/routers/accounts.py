@@ -217,6 +217,24 @@ async def list_invitations(
     return [InvitationOut.model_validate(i) for i in invites]
 
 
+@router.post("/{account_id}/invitations/{invite_id}/resend", response_model=InvitationCreatedOut)
+async def resend_invitation(
+    account_id: uuid.UUID,
+    invite_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+    _c: None = Depends(verify_csrf),
+    _verified: AdminUser = Depends(require_verified_email),
+) -> InvitationCreatedOut:
+    await _admin_of(db, user, account_id)
+    from app.config import settings as cfg
+    invite, token = await invitation_service.resend_invitation(db, invite_id, account_id, user)
+    return InvitationCreatedOut(
+        id=invite.id, email=invite.email, role=invite.role, created_at=invite.created_at,
+        token=token, accept_url=f"{cfg.frontend_base_url}/join?token={token}",
+    )
+
+
 @router.delete("/{account_id}/invitations/{invite_id}", status_code=204, response_class=PlainResponse)
 async def revoke_invitation(
     account_id: uuid.UUID,

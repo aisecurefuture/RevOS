@@ -10,6 +10,7 @@ export interface User {
   is_active: boolean;
   totp_enabled: boolean;
   email_verified: boolean;
+  is_platform_admin?: boolean;
   timezone?: string | null;
   avatar_url?: string | null;
 }

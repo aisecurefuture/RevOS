@@ -28,6 +28,10 @@ class AdminUser(BaseModel, table=True):
     role: Role = Field(default=Role.viewer, sa_type=sa.String, max_length=20)
     is_active: bool = Field(default=True)
     last_login_at: datetime | None = Field(default=None)
+    # Brute-force lockout: failures accumulate; once locked, login is blocked
+    # until locked_until passes (or a platform admin unlocks). Reset on success.
+    failed_login_count: int = Field(default=0)
+    locked_until: datetime | None = Field(default=None)
     # Bumped on password change / forced logout to invalidate all prior JWTs.
     token_version: int = Field(default=0)
     # Optional TOTP 2FA (Phase 2 M2). The secret is Fernet-encrypted at rest and

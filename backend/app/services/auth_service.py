@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -27,15 +29,42 @@ async def get_user_by_email(db: AsyncSession, email: str) -> AdminUser | None:
 
 
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> AdminUser:
-    """Verify credentials. Raises AuthError on any failure (generic message)."""
+    """Verify credentials. Raises AuthError on any failure (generic message).
+
+    Brute-force lockout: after ``login_max_failed_attempts`` bad passwords the
+    account locks for ``login_lockout_minutes``; a platform admin can unlock
+    early. Counters reset on a successful login.
+    """
+    from app.config import settings
+
     user = await get_user_by_email(db, email)
     if user is None:
         verify_password(password, _DUMMY_HASH)  # constant-time-ish dummy work
         raise AuthError("Invalid email or password.")
+
+    if user.locked_until is not None and user.locked_until > utcnow():
+        raise AuthError("Account temporarily locked due to failed logins. Try again later.")
+
     if not verify_password(password, user.hashed_password):
+        user.failed_login_count += 1
+        if user.failed_login_count >= settings.login_max_failed_attempts:
+            user.locked_until = utcnow() + timedelta(minutes=settings.login_lockout_minutes)
+        db.add(user)
+        # COMMIT before raising: the login request ends in an exception, which
+        # rolls the session back — so the counter must be persisted here or
+        # lockout would never accumulate.
+        await db.commit()
         raise AuthError("Invalid email or password.")
+
     if not user.is_active or user.deleted_at is not None:
         raise AuthError("This account is disabled.")
+
+    # Success — clear any accumulated failures / lock.
+    if user.failed_login_count or user.locked_until:
+        user.failed_login_count = 0
+        user.locked_until = None
+        db.add(user)
+        await db.flush()
     return user
 
 

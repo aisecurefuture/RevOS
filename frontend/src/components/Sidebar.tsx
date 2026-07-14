@@ -11,6 +11,7 @@ import {
   APPROVALS_ITEM,
   NAV_GROUPS,
   OVERVIEW_ITEM,
+  PLATFORM_ADMIN_ITEM,
   UTILITY_ITEMS,
   type NavItem,
 } from "@/lib/nav";
@@ -155,6 +156,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </nav>
 
         <div className="space-y-0.5 border-t border-slate-200 p-3">
+          {user?.is_platform_admin ? itemLink(PLATFORM_ADMIN_ITEM) : null}
           {UTILITY_ITEMS.filter(visible).map(itemLink)}
           <div className="px-3 pt-2 text-xs text-slate-400">
             <p className="mb-1">Approval-first automation</p>

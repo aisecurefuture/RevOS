@@ -70,6 +70,7 @@ def register_routers(app: FastAPI) -> None:
         offers,
         persona_identity,
         pitch_video,
+        platform_admin,
         public,
         public_scheduler,
         scheduler,
@@ -83,6 +84,7 @@ def register_routers(app: FastAPI) -> None:
 
     app.include_router(auth.router, prefix="/api")
     app.include_router(accounts.router, prefix="/api")
+    app.include_router(platform_admin.router, prefix="/api")
     app.include_router(billing.router, prefix="/api")
     app.include_router(bao.router, prefix="/api")
     app.include_router(brands.router, prefix="/api")

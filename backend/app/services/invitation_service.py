@@ -166,6 +166,19 @@ async def revoke_invitation(
     await db.flush()
 
 
+async def resend_invitation(
+    db: AsyncSession, invite_id: uuid.UUID, account_id: uuid.UUID, invited_by: AdminUser
+) -> tuple[Invitation, str]:
+    """Re-send a pending invitation's email (refreshes the token/expiry)."""
+    invite = await db.get(Invitation, invite_id)
+    if invite is None or invite.account_id != account_id or invite.deleted_at is not None:
+        raise NotFoundError("Invitation not found.")
+    if invite.accepted_at is not None:
+        raise ConflictError("This invitation has already been accepted.")
+    # send_invitation reuses the existing pending row (new token, re-sends).
+    return await send_invitation(db, account_id, invited_by, invite.email, invite.role)
+
+
 async def list_pending_invitations(
     db: AsyncSession, account_id: uuid.UUID
 ) -> list[Invitation]:

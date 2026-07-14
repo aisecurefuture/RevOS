@@ -36,6 +36,10 @@ export const OVERVIEW_ITEM: NavItem = { label: "Overview", href: "/dashboard", i
 /** The wedge: pinned, visually distinct, carries the pending-count badge. */
 export const APPROVALS_ITEM: NavItem = { label: "Approvals", href: "/dashboard/approvals", icon: "✅" };
 
+/** Platform super-admin console — shown only to PLATFORM_ADMIN_EMAILS users
+ * (gated by is_platform_admin, not a role). */
+export const PLATFORM_ADMIN_ITEM: NavItem = { label: "Platform Admin", href: "/dashboard/admin", icon: "🛡️" };
+
 export const NAV_GROUPS: NavGroup[] = [
   {
     key: "define",

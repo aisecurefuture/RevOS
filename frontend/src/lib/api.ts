@@ -174,6 +174,52 @@ export const accountsApi = {
     }),
   revokeInvitation: (accountId: string, inviteId: string) =>
     apiFetch<void>(`/accounts/${accountId}/invitations/${inviteId}`, { method: "DELETE" }),
+  resendInvitation: (accountId: string, inviteId: string) =>
+    apiFetch<InvitationCreatedOut>(`/accounts/${accountId}/invitations/${inviteId}/resend`, {
+      method: "POST",
+    }),
+};
+
+// --- Platform admin (super-admin console) -----------------------------------
+export interface AdminAccount {
+  id: string;
+  name: string;
+  slug: string;
+  type: string;
+  owner_email: string | null;
+  member_count: number;
+  disabled: boolean;
+  disabled_reason: string | null;
+  created_at: string;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  full_name: string;
+  is_active: boolean;
+  locked: boolean;
+  failed_login_count: number;
+  email_verified: boolean;
+  created_at: string;
+}
+
+export const platformAdminApi = {
+  listAccounts: () => apiFetch<AdminAccount[]>("/admin/accounts"),
+  createTenant: (name: string, leadEmail: string) =>
+    apiFetch<{ account_id: string; name: string; slug: string; lead_email: string; invited: boolean }>(
+      "/admin/accounts", { method: "POST", body: JSON.stringify({ name, lead_email: leadEmail }) },
+    ),
+  disableAccount: (id: string, reason?: string) =>
+    apiFetch<AdminAccount>(`/admin/accounts/${id}/disable`, {
+      method: "POST", body: JSON.stringify({ reason: reason ?? null }),
+    }),
+  enableAccount: (id: string) =>
+    apiFetch<AdminAccount>(`/admin/accounts/${id}/enable`, { method: "POST" }),
+  listUsers: () => apiFetch<AdminUser[]>("/admin/users"),
+  disableUser: (id: string) => apiFetch<{ status: string }>(`/admin/users/${id}/disable`, { method: "POST" }),
+  enableUser: (id: string) => apiFetch<{ status: string }>(`/admin/users/${id}/enable`, { method: "POST" }),
+  unlockUser: (id: string) => apiFetch<{ status: string }>(`/admin/users/${id}/unlock`, { method: "POST" }),
 };
 
 // --- Billing endpoints ------------------------------------------------------

@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     owner_password: str = "change-me"  # noqa: S105 — not a secret, overridden by env
     owner_name: str = "Owner"
 
+    # Platform super-admins — comma-separated emails (like cors_origins).
+    # Deliberately NOT a DB role: the only way to be one is to be listed here,
+    # so there's no in-app privilege-escalation surface. Grants the /admin
+    # console after normal login (password + 2FA still required).
+    platform_admin_emails: str = ""
+
+    # Brute-force login lockout.
+    login_max_failed_attempts: int = 8
+    login_lockout_minutes: int = 15
+
     # --- Email (Resend) -----------------------------------------------------
     resend_api_key: str = ""
     resend_webhook_secret: str = ""   # Svix "whsec_..." for status webhooks
@@ -252,6 +262,13 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def platform_admin_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.platform_admin_emails.split(",") if e.strip()]
+
+    def is_platform_admin(self, email: str | None) -> bool:
+        return bool(email) and email.strip().lower() in self.platform_admin_email_list
 
     @property
     def ssrf_allowed_host_list(self) -> list[str]:

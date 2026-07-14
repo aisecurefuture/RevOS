@@ -255,3 +255,17 @@ async def test_viewer_cannot_reset_passwords(make_client, async_session_factory)
         json={"mode": "temp"}, headers=h_viewer,
     )
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_can_resend_invitation(make_client, async_session_factory):
+    api_a = await make_client()
+    h_a = await _register(api_a, "owner@resend.com", async_session_factory)
+    team = await _create_team(api_a, h_a)
+    inv = await _invite(api_a, h_a, team["id"], "invitee@resend.com", role="editor")
+
+    r = await api_a.post(f"/api/accounts/{team['id']}/invitations/{inv['id']}/resend", headers=h_a)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["email"] == "invitee@resend.com"
+    assert body["accept_url"] and body["token"]

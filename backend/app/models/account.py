@@ -33,6 +33,12 @@ class Account(BaseModel, table=True):
     slug: str = Field(index=True, max_length=140)
     owner_user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
 
+    # Platform-admin disable switch. When disabled, the account's members are
+    # blocked from acting under it. Null disabled_at = active.
+    disabled_at: datetime | None = Field(default=None)
+    disabled_by: uuid.UUID | None = Field(default=None, foreign_key="admin_users.id")
+    disabled_reason: str | None = Field(default=None, max_length=300)
+
     # --- Auto-approve autopilot (P3-M7) -------------------------------------
     # When enabled, pending approvals for this account are executed automatically
     # by the beat sweeper — no human review. until=None while enabled means
