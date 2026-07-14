@@ -76,6 +76,7 @@ export const NAV_GROUPS: NavGroup[] = [
 
 /** Utility cluster at the sidebar bottom — account plumbing, not workflow. */
 export const UTILITY_ITEMS: NavItem[] = [
+  { label: "Help & FAQ", href: "/dashboard/help", icon: "❓" },
   { label: "Settings", href: "/dashboard/settings", icon: "⚙️", minRole: "owner" },
   { label: "Profile", href: "/dashboard/profile", icon: "👤" },
 ];
