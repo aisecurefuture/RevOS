@@ -24,6 +24,29 @@ async def test_brand_full_lifecycle(api, make_user):
     assert body["slug"] == "cyberarmor-ai"
     bid = body["id"]
 
+
+@pytest.mark.asyncio
+async def test_brand_industry_round_trips(api, make_user):
+    """The onboarding industry field persists on create and via update, and
+    accepts free-text 'Other' values (personalization, never validated to an
+    enum)."""
+    creds = await make_user("admin@test.com", "AdminPass123", Role.admin)
+    h = await _login(api, **creds)
+
+    created = await api.post("/api/brands", headers=h, json={
+        "name": "Acme Plumbing", "brand_type": "company", "industry": "plumber",
+    })
+    assert created.status_code == 201, created.text
+    bid = created.json()["id"]
+    assert created.json()["industry"] == "plumber"
+    assert (await api.get(f"/api/brands/{bid}")).json()["industry"] == "plumber"
+
+    # Free-text "Other" value is accepted, and industry is editable.
+    updated = await api.patch(f"/api/brands/{bid}", headers=h,
+                              json={"industry": "Artisanal Cheese Maker"})
+    assert updated.status_code == 200
+    assert updated.json()["industry"] == "Artisanal Cheese Maker"
+
     listed = await api.get("/api/brands")
     assert listed.status_code == 200
     assert any(b["id"] == bid for b in listed.json())

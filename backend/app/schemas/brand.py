@@ -15,6 +15,7 @@ from app.schemas.common import HttpUrlStr
 class BrandCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     brand_type: BrandType = BrandType.company
+    industry: str | None = Field(default=None, max_length=80)
     slug: str | None = Field(default=None, max_length=120)
     website_url: HttpUrlStr | None = Field(default=None, max_length=500)
     tagline: str | None = Field(default=None, max_length=300)
@@ -27,6 +28,7 @@ class BrandCreate(BaseModel):
 class BrandUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     brand_type: BrandType | None = None
+    industry: str | None = Field(default=None, max_length=80)
     website_url: HttpUrlStr | None = Field(default=None, max_length=500)
     tagline: str | None = Field(default=None, max_length=300)
     description: str | None = None
@@ -43,6 +45,7 @@ class BrandOut(BaseModel):
     name: str
     slug: str
     brand_type: str
+    industry: str | None = None
     website_url: str | None = None
     tagline: str | None = None
     description: str | None = None

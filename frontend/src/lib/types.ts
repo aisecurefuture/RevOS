@@ -24,6 +24,7 @@ export interface Brand {
   name: string;
   slug: string;
   brand_type: string;
+  industry?: string | null;
   website_url?: string | null;
   tagline?: string | null;
   description?: string | null;

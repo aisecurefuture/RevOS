@@ -29,6 +29,10 @@ class Brand(TenantModel, table=True):
     name: str = Field(index=True, max_length=200)
     slug: str = Field(unique=True, index=True, max_length=120)
     brand_type: BrandType = Field(default=BrandType.company, sa_type=sa.String, max_length=20)
+    # Free-form industry/profession slug (see frontend lib/industries.ts) —
+    # personalization only (recommended features, onboarding tour), never a
+    # structural gate. Nullable + free text so nobody is ever excluded.
+    industry: str | None = Field(default=None, max_length=80)
     website_url: str | None = Field(default=None, max_length=500)
     tagline: str | None = Field(default=None, max_length=300)
     description: str | None = Field(default=None, sa_type=sa.Text)

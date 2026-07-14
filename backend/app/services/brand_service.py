@@ -42,6 +42,7 @@ async def create_brand(db: AsyncSession, body: BrandCreate) -> Brand:
         name=clean_text(body.name) or body.name,
         slug=slug,
         brand_type=body.brand_type,
+        industry=body.industry,
         website_url=body.website_url,
         tagline=clean_text(body.tagline),
         description=clean_text(body.description),
