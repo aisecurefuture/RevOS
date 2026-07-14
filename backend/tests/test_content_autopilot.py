@@ -201,3 +201,50 @@ async def test_config_crud_and_admin_only(api, make_user):
 
     ed = await _login(**await make_user("ed@test.com", "EditorPass123", Role.editor))
     assert (await api.patch(f"/api/autopilot/{bid}", headers=ed, json={"enabled": True})).status_code in (403, 404)
+
+
+@pytest.mark.asyncio
+async def test_media_platform_queues_not_publishes_even_with_autopublish(api, async_session_factory):
+    """Instagram/YouTube/TikTok need media; autopilot must draft the caption and
+    QUEUE it (for a human to attach media + approve), never auto-publish empty."""
+    from app.models.social import SocialPost
+    from app.models.social_connection import SocialConnection, SocialConnectionStatus
+
+    h = await _register_owner(api)
+    me = (await api.get("/api/auth/me", headers=h)).json()
+    user_id = uuid.UUID(me["id"])
+    bid = (await api.post("/api/brands", headers=h, json={"name": "Acme"})).json()["id"]
+    await api.patch(f"/api/brand-book/{bid}", headers=h, json={"is_published": True})
+    await api.post(f"/api/brand-book/{bid}/claims", headers=h, json={
+        "claim": "Trusted by 10,000 teams", "category": "metric",
+    })
+
+    async with async_session_factory() as s:
+        tmp = (await api.post("/api/social/posts", headers=h, json={
+            "brand_id": bid, "platform": "instagram", "caption": "seed",
+        })).json()
+        sp = await s.get(SocialPost, uuid.UUID(tmp["id"]))
+        account_id = sp.account_id
+        sp.deleted_at = sp.updated_at
+        s.add(SocialConnection(
+            account_id=account_id, platform="instagram", external_id="ig-1",
+            display_name="IG", status=SocialConnectionStatus.active,
+            token_ref="revos/ig", connected_by=user_id,
+        ))
+        s.add(sp)
+        await s.commit()
+
+    await api.patch(f"/api/autopilot/{bid}", headers=h, json={
+        "enabled": True, "auto_publish": True, "platforms": ["instagram"], "posts_per_run": 1,
+    })
+
+    with patch.object(svc, "generate_caption",
+                      AsyncMock(return_value="Behind the scenes today ✨ #brand")):
+        run = (await api.post(f"/api/autopilot/{bid}/run", headers=h)).json()
+
+    # Clean caption, auto_publish on — but media platform → queued, not published.
+    assert run["queued"] == 1
+    assert run["published"] == 0
+    posts = await _posts(api, h, bid)
+    assert len(posts) == 1
+    assert posts[0]["state"] != "published"

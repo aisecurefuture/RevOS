@@ -43,6 +43,11 @@ logger = logging.getLogger("revos.autopilot")
 
 _MAX_POSTS_PER_RUN = 5
 
+# These platforms can't publish a caption alone — they need an image/video.
+# Autopilot generates text, so for these it drafts the caption and QUEUES it
+# for a human to attach media + approve (never a failed auto-publish).
+_MEDIA_REQUIRED_PLATFORMS = {"instagram", "youtube", "tiktok"}
+
 
 # ---------------------------------------------------------------------------
 # Config CRUD
@@ -173,8 +178,15 @@ async def run_for_brand(db: AsyncSession, config: AutopilotConfig) -> dict:
                 stats["skipped"] += 1
                 continue
 
-            # Auto-publish only fully-clean content, and only when opted in.
-            if config.auto_publish and check.passed:
+            # Auto-publish only fully-clean content, only when opted in, and
+            # only for platforms that can publish a caption alone. Media
+            # platforms (IG/YouTube/TikTok) always queue — a human attaches the
+            # image/video and approves.
+            can_autopublish = (
+                config.auto_publish and check.passed
+                and platform not in _MEDIA_REQUIRED_PLATFORMS
+            )
+            if can_autopublish:
                 try:
                     await automation_service.execute_approval(db, approval, actor)
                     stats["published"] += 1

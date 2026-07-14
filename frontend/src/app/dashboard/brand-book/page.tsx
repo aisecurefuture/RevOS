@@ -368,7 +368,20 @@ function VoiceSpectrumEditor({ spectrum, onChange }: { spectrum: VoiceSpectrum; 
   );
 }
 
-const TEXT_PLATFORMS = ["facebook", "twitter", "linkedin", "threads"];
+// Text platforms auto-publish a caption; media platforms (IG/YouTube/TikTok)
+// need an image/video, so autopilot drafts their caption and queues it for a
+// human to attach media + approve.
+const TEXT_PLATFORMS: { value: string; label: string }[] = [
+  { value: "facebook", label: "Facebook" },
+  { value: "twitter", label: "X" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "threads", label: "Threads" },
+];
+const MEDIA_PLATFORMS: { value: string; label: string }[] = [
+  { value: "instagram", label: "Instagram" },
+  { value: "youtube", label: "YouTube" },
+  { value: "tiktok", label: "TikTok" },
+];
 
 function AutopilotCard({ brandId }: { brandId: string }) {
   const { user } = useAuth();
@@ -444,15 +457,28 @@ function AutopilotCard({ brandId }: { brandId: string }) {
         </label>
 
         <div>
-          <p className="mb-1 text-xs font-medium text-slate-500">Platforms (text posts)</p>
+          <p className="mb-1 text-xs font-medium text-slate-500">Text platforms — auto-publish captions</p>
           <div className="flex flex-wrap gap-3">
             {TEXT_PLATFORMS.map((p) => (
-              <label key={p} className="flex items-center gap-1 text-sm">
-                <input type="checkbox" checked={cfg.platforms.includes(p)} onChange={() => togglePlatform(p)} />
-                {p}
+              <label key={p.value} className="flex items-center gap-1 text-sm">
+                <input type="checkbox" checked={cfg.platforms.includes(p.value)} onChange={() => togglePlatform(p.value)} />
+                {p.label}
               </label>
             ))}
           </div>
+          <p className="mb-1 mt-3 text-xs font-medium text-slate-500">Media platforms — draft caption, queue for review</p>
+          <div className="flex flex-wrap gap-3">
+            {MEDIA_PLATFORMS.map((p) => (
+              <label key={p.value} className="flex items-center gap-1 text-sm">
+                <input type="checkbox" checked={cfg.platforms.includes(p.value)} onChange={() => togglePlatform(p.value)} />
+                {p.label}
+              </label>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-slate-400">
+            Instagram, YouTube, and TikTok need an image or video. Autopilot writes an on-brand
+            caption and queues it for you to attach media and approve — it never auto-posts them empty.
+          </p>
         </div>
 
         <div className="flex flex-wrap gap-4 text-sm">
