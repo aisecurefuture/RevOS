@@ -161,6 +161,11 @@ export const accountsApi = {
     }),
   removeMember: (accountId: string, userId: string) =>
     apiFetch<void>(`/accounts/${accountId}/members/${userId}`, { method: "DELETE" }),
+  resetMemberPassword: (accountId: string, userId: string, mode: "link" | "temp") =>
+    apiFetch<{ mode: string; email: string; emailed: boolean; temporary_password: string | null }>(
+      `/accounts/${accountId}/members/${userId}/reset-password`,
+      { method: "POST", body: JSON.stringify({ mode }) },
+    ),
   listInvitations: (accountId: string) =>
     apiFetch<InvitationOut[]>(`/accounts/${accountId}/invitations`),
   inviteMember: (accountId: string, email: string, role: string) =>

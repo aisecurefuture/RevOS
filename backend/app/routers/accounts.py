@@ -28,9 +28,12 @@ from app.schemas.account import (
     InviteRequest,
     MemberOut,
     MembershipOut,
+    ResetMemberPasswordOut,
+    ResetMemberPasswordRequest,
     SwitchAccountRequest,
     UpdateMemberRoleRequest,
 )
+from app.core.audit import write_audit
 from app.services import account_service, invitation_service
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -137,6 +140,30 @@ async def change_member_role(
         full_name="",
         role=membership.role,
     )
+
+
+@router.post("/{account_id}/members/{member_user_id}/reset-password",
+             response_model=ResetMemberPasswordOut)
+async def reset_member_password(
+    account_id: uuid.UUID,
+    member_user_id: uuid.UUID,
+    body: ResetMemberPasswordRequest,
+    request: Request,
+    user: CurrentUser,
+    db: DbSession,
+    _c: None = Depends(verify_csrf),
+) -> ResetMemberPasswordOut:
+    """Admin/owner resets another member's password (link or temp password)."""
+    requester = await _admin_of(db, user, account_id)
+    result = await account_service.admin_reset_member_password(
+        db, account_id, member_user_id, requester, mode=body.mode,
+    )
+    await write_audit(
+        db, action="account.member_password_reset", user_id=user.id,
+        entity_type="admin_user", entity_id=str(member_user_id), request=request,
+        meta={"mode": body.mode},
+    )
+    return ResetMemberPasswordOut(**result)
 
 
 @router.delete("/{account_id}/members/{member_user_id}", status_code=204, response_class=PlainResponse)

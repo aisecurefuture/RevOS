@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.config import settings
 from app.core.exceptions import ConflictError, NotFoundError, PermissionError_
 from app.core.rbac import role_at_least
 
@@ -167,6 +168,62 @@ async def change_member_role(
     db.add(target)
     await db.flush()
     return target
+
+
+async def admin_reset_member_password(
+    db: AsyncSession,
+    account_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    requester: Membership,
+    *,
+    mode: str,
+) -> dict:
+    """Admin/owner resets another member's password.
+
+    Two modes so it works whether or not email is configured:
+      * ``link`` — email the member a self-service reset link.
+      * ``temp`` — generate a strong temporary password, set it, invalidate
+        the member's existing sessions, and RETURN it once so the admin can
+        relay it (works even when email delivery is down).
+
+    Guards: requester must be admin+ of the account; only an owner may reset a
+    member who is themselves an admin or owner (so an admin can't hijack an
+    owner). A member can't reset their own password here (use change-password).
+    """
+    import secrets
+
+    from app.core.security import hash_password
+    from app.services import password_reset_service
+
+    if not role_at_least(requester.role, Role.admin):
+        raise PermissionError_("Admin access required to reset a member's password.")
+    if target_user_id == requester.user_id:
+        raise PermissionError_("Use the change-password flow for your own account.")
+
+    target = await get_membership(db, target_user_id, account_id)
+    if target is None:
+        raise NotFoundError("Member not found in this account.")
+    if role_at_least(target.role, Role.admin) and not role_at_least(requester.role, Role.owner):
+        raise PermissionError_("Only the account owner can reset an admin or owner's password.")
+
+    user = await db.get(AdminUser, target_user_id)
+    if user is None or user.deleted_at is not None:
+        raise NotFoundError("Member not found.")
+
+    if mode == "link":
+        await password_reset_service.send_reset_email(db, user.email)
+        return {"mode": "link", "email": user.email, "emailed": settings.email_enabled}
+
+    if mode == "temp":
+        # url-safe, ~16 chars, mixed — meets validate_password_strength.
+        temp = secrets.token_urlsafe(12) + "Aa1!"
+        user.hashed_password = hash_password(temp)
+        user.token_version += 1  # kill all existing sessions for this user
+        db.add(user)
+        await db.flush()
+        return {"mode": "temp", "email": user.email, "temporary_password": temp}
+
+    raise PermissionError_(f"Unknown reset mode: {mode}")
 
 
 async def resolve_active_membership(

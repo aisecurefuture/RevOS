@@ -175,3 +175,83 @@ async def test_change_member_role(make_client, async_session_factory):
     )
     assert r.status_code == 200, r.text
     assert r.json()["role"] == "editor"
+
+
+# --- admin/owner resets a member's password --------------------------------
+
+@pytest.mark.asyncio
+async def test_owner_sets_member_temp_password_and_invalidates_sessions(
+    make_client, async_session_factory
+):
+    """Owner sets a temp password for a member: it's returned once, the member
+    can log in with it, and their old session is invalidated."""
+    api_a = await make_client()
+    api_b = await make_client()
+
+    h_a = await _register(api_a, "owner@pwreset.com", async_session_factory)
+    team = await _create_team(api_a, h_a)
+    inv = await _invite(api_a, h_a, team["id"], "member@pwreset.com", role="editor")
+    h_b = await _register(api_b, "member@pwreset.com", async_session_factory, pw="OldPass123456")
+    await api_b.post("/api/auth/invitation/accept", json={"token": inv["token"]}, headers=h_b)
+    # Act under the team so the member row is in this account.
+
+    members = (await api_a.get(f"/api/accounts/{team['id']}/members", headers=h_a)).json()
+    b_id = next(m["user_id"] for m in members if m["email"] == "member@pwreset.com")
+
+    r = await api_a.post(
+        f"/api/accounts/{team['id']}/members/{b_id}/reset-password",
+        json={"mode": "temp"}, headers=h_a,
+    )
+    assert r.status_code == 200, r.text
+    temp = r.json()["temporary_password"]
+    assert temp and len(temp) >= 12
+
+    # Old password no longer works; the temp one does.
+    old = await api_b.post("/api/auth/login", json={"email": "member@pwreset.com", "password": "OldPass123456"})
+    assert old.status_code == 401
+    new = await api_b.post("/api/auth/login", json={"email": "member@pwreset.com", "password": temp})
+    assert new.status_code == 200, new.text
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_reset_owner_password(make_client, async_session_factory):
+    """An admin (not owner) may reset editors/viewers but NOT an owner/admin."""
+    api_owner = await make_client()
+    api_admin = await make_client()
+
+    h_owner = await _register(api_owner, "owner2@pwreset.com", async_session_factory)
+    team = await _create_team(api_owner, h_owner)
+    inv = await _invite(api_owner, h_owner, team["id"], "admin2@pwreset.com", role="admin")
+    h_admin = await _register(api_admin, "admin2@pwreset.com", async_session_factory)
+    await api_admin.post("/api/auth/invitation/accept", json={"token": inv["token"]}, headers=h_admin)
+
+    members = (await api_owner.get(f"/api/accounts/{team['id']}/members", headers=h_owner)).json()
+    owner_id = next(m["user_id"] for m in members if m["email"] == "owner2@pwreset.com")
+
+    # Admin tries to reset the OWNER's password → 403.
+    r = await api_admin.post(
+        f"/api/accounts/{team['id']}/members/{owner_id}/reset-password",
+        json={"mode": "temp"}, headers=h_admin,
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_reset_passwords(make_client, async_session_factory):
+    api_owner = await make_client()
+    api_viewer = await make_client()
+
+    h_owner = await _register(api_owner, "owner3@pwreset.com", async_session_factory)
+    team = await _create_team(api_owner, h_owner)
+    inv = await _invite(api_owner, h_owner, team["id"], "viewer3@pwreset.com", role="viewer")
+    h_viewer = await _register(api_viewer, "viewer3@pwreset.com", async_session_factory)
+    await api_viewer.post("/api/auth/invitation/accept", json={"token": inv["token"]}, headers=h_viewer)
+
+    members = (await api_owner.get(f"/api/accounts/{team['id']}/members", headers=h_owner)).json()
+    owner_id = next(m["user_id"] for m in members if m["email"] == "owner3@pwreset.com")
+
+    r = await api_viewer.post(
+        f"/api/accounts/{team['id']}/members/{owner_id}/reset-password",
+        json={"mode": "temp"}, headers=h_viewer,
+    )
+    assert r.status_code == 403

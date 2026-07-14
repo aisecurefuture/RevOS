@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -79,3 +80,16 @@ class InvitationCreatedOut(InvitationOut):
 
 class AcceptInvitationRequest(BaseModel):
     token: str
+
+
+class ResetMemberPasswordRequest(BaseModel):
+    # "link" emails a reset link; "temp" sets a temporary password returned once.
+    mode: Literal["link", "temp"] = "link"
+
+
+class ResetMemberPasswordOut(BaseModel):
+    mode: str
+    email: str
+    emailed: bool = False
+    # Present only for mode="temp" — shown once to the admin to relay.
+    temporary_password: str | None = None
