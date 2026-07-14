@@ -116,7 +116,10 @@ async def get_connect_url(
 ) -> ConnectUrlOut:
     """Return the Meta OAuth dialog URL. Frontend redirects the user there."""
     account_id = _account_id(request)
-    url = svc.get_connect_url(platform, account_id)
+    # user.id is signed into the OAuth state so the callback can identify the
+    # connector without the session cookie (the provider redirects to a
+    # different subdomain where the cookie isn't sent).
+    url = svc.get_connect_url(platform, account_id, user.id)
     return ConnectUrlOut(url=url)
 
 
@@ -132,9 +135,14 @@ async def oauth_callback(
     error: str | None = None,
     error_reason: str | None = None,
     db: DbSession = None,
-    user: CurrentUser = None,
 ) -> RedirectResponse:
-    """Meta redirects here after the OAuth dialog.
+    """The provider redirects here after the OAuth dialog.
+
+    NOTE: this endpoint does NOT require the session cookie. It's a cross-site
+    redirect from the provider to the api.* subdomain, where the app.* session
+    cookie isn't sent — so we authenticate the connecting user from the
+    HMAC-signed, time-limited `state` instead (minted by an authenticated
+    connect-url call). This is the standard OAuth-callback pattern.
 
     On success: redirects to frontend /dashboard/settings/connections?connected={platform}
     On error:   redirects to frontend /dashboard/settings/connections?error={reason}
@@ -145,13 +153,15 @@ async def oauth_callback(
 
     if error or not code or not state:
         reason = error_reason or error or "cancelled"
-        logger.info("Meta OAuth denied: %s", reason)
+        logger.info("OAuth denied: %s", reason)
         return RedirectResponse(f"{base}/dashboard/settings/connections?error={reason}")
 
     if platform not in _SUPPORTED_PLATFORMS:
         return RedirectResponse(f"{dest_err}&detail=unsupported_platform")
 
     try:
+        # Identify the connecting user from the signed state (not the cookie).
+        user = await svc.resolve_state_user(db, svc.verify_oauth_state(state))
         if platform == "threads":
             connections = await svc.handle_threads_callback(
                 code=code, state=state, user=user, db=db,

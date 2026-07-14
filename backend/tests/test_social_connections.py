@@ -42,6 +42,39 @@ def test_make_and_verify_state():
     assert data["platform"] == "facebook"
 
 
+def test_state_carries_user_id_for_cookieless_callback():
+    """The callback runs on a different subdomain than the session cookie, so
+    the connecting user must travel in the signed state, not the cookie."""
+    state = svc.make_oauth_state(ACCOUNT_ID, "twitter", USER_ID)
+    data = svc.verify_oauth_state(state)
+    assert data["user_id"] == str(USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_resolve_state_user_prefers_state_then_owner(api, async_session_factory):
+    """resolve_state_user identifies the connector from the signed state
+    without any session cookie; it falls back to the account owner for older
+    states minted before user_id was signed in."""
+    r = await api.post("/api/auth/register", json={
+        "email": "owner@test.com", "password": "OwnerPass123", "full_name": "Owner",
+    })
+    assert r.status_code == 201, r.text
+    me = (await api.get("/api/auth/me", headers={"X-CSRF-Token": r.json()["csrf_token"]})).json()
+    user_id = uuid.UUID(me["id"])
+
+    from app.models.account import Account
+    from sqlalchemy import select
+
+    async with async_session_factory() as s:
+        account = (await s.execute(select(Account))).scalars().first()
+        # State WITH user_id → returns exactly that user.
+        u = await svc.resolve_state_user(s, {"account_id": str(account.id), "user_id": str(user_id)})
+        assert u.id == user_id
+        # State WITHOUT user_id → falls back to the account owner.
+        u2 = await svc.resolve_state_user(s, {"account_id": str(account.id)})
+        assert u2.id == account.owner_user_id
+
+
 def test_verify_state_invalid():
     from app.core.exceptions import RevOSError
     with pytest.raises(RevOSError) as exc_info:

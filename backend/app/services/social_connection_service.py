@@ -51,8 +51,19 @@ def _signer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.secret_key, salt=_STATE_SALT)
 
 
-def make_oauth_state(account_id: uuid.UUID, platform: str, extra: dict | None = None) -> str:
+def make_oauth_state(
+    account_id: uuid.UUID, platform: str, user_id: uuid.UUID | None = None,
+    extra: dict | None = None,
+) -> str:
+    # user_id is signed into the state so the OAuth callback can identify the
+    # connecting user WITHOUT the session cookie — the provider redirects the
+    # browser to a different subdomain (api.*) than where the app-domain
+    # cookie lives, so the cookie isn't sent. The state is HMAC-signed and
+    # time-limited, minted by an authenticated connect-url call, so it's a
+    # trustworthy identity.
     data = {"account_id": str(account_id), "platform": platform}
+    if user_id:
+        data["user_id"] = str(user_id)
     if extra:
         data.update(extra)
     return _signer().dumps(data)
@@ -67,6 +78,25 @@ def verify_oauth_state(state: str) -> dict:
         raise RevOSError("Invalid OAuth state.", code="state_invalid", status_code=400)
 
 
+async def resolve_state_user(db: AsyncSession, state_data: dict) -> AdminUser:
+    """The connecting user for an OAuth callback, from the signed state (not
+    the session cookie). Falls back to the account owner for states minted
+    before user_id was signed in (short-lived, so only in-flight ones)."""
+    from app.models.account import Account
+
+    uid = state_data.get("user_id")
+    if uid:
+        user = await db.get(AdminUser, uuid.UUID(uid))
+        if user is not None:
+            return user
+    account = await db.get(Account, uuid.UUID(state_data["account_id"]))
+    if account is not None:
+        owner = await db.get(AdminUser, account.owner_user_id)
+        if owner is not None:
+            return owner
+    raise RevOSError("Could not identify the connecting user.", code="no_connector", status_code=400)
+
+
 # ---------------------------------------------------------------------------
 # Token path helpers
 # ---------------------------------------------------------------------------
@@ -79,8 +109,8 @@ def _token_path(account_id: uuid.UUID, platform: str, connection_id: uuid.UUID) 
 # Connect URL
 # ---------------------------------------------------------------------------
 
-def get_connect_url(platform: str, account_id: uuid.UUID) -> str:
-    state = make_oauth_state(account_id, platform)
+def get_connect_url(platform: str, account_id: uuid.UUID, user_id: uuid.UUID | None = None) -> str:
+    state = make_oauth_state(account_id, platform, user_id)
     if platform in ("facebook", "instagram"):
         if not settings.meta_app_id or not settings.meta_app_secret or not settings.meta_redirect_uri:
             raise RevOSError("Meta OAuth is not configured on this server.", code="meta_unconfigured", status_code=503)
@@ -99,7 +129,7 @@ def get_connect_url(platform: str, account_id: uuid.UUID) -> str:
         # PKCE: stash the verifier in the signed state so the callback can
         # complete the exchange without server-side session storage.
         verifier = x_client.generate_code_verifier()
-        pkce_state = make_oauth_state(account_id, platform, extra={"cv": verifier})
+        pkce_state = make_oauth_state(account_id, platform, user_id, extra={"cv": verifier})
         return x_client.connect_url(pkce_state, x_client.code_challenge(verifier))
     if platform == "linkedin":
         if not settings.linkedin_client_id or not settings.linkedin_client_secret or not settings.linkedin_redirect_uri:
