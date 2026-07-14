@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { MetricCard } from "@/components/MetricCard";
 import { PageHeader } from "@/components/PageHeader";
+import { RecommendedForYou } from "@/components/RecommendedForYou";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { ApiError } from "@/lib/api";
@@ -54,6 +55,8 @@ export default function OverviewPage() {
       {error ? (
         <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       ) : null}
+
+      <RecommendedForYou />
 
       {loading || !data ? (
         <Spinner />

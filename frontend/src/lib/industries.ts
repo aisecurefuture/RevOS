@@ -61,6 +61,28 @@ export const F = {
   approvals: "/dashboard/approvals",
 } as const;
 
+// Presentation metadata for the "Recommended for you" panel + tour, keyed by
+// the same hrefs as F. Blurb is a short, action-oriented "why this".
+export const FEATURE_META: Record<string, { label: string; icon: string; blurb: string }> = {
+  [F.brands]: { label: "Brands", icon: "🏢", blurb: "Manage every brand you run from one place." },
+  [F.brandBook]: { label: "Brand Book", icon: "📖", blurb: "Define your voice, claims, and guardrails — everything else inherits from it." },
+  [F.personas]: { label: "Avatar Personas", icon: "🎭", blurb: "Create a consented on-brand video avatar of yourself." },
+  [F.offers]: { label: "Offers", icon: "🎁", blurb: "Set up the products and services you sell." },
+  [F.leads]: { label: "Leads", icon: "🧲", blurb: "Capture and track every new prospect." },
+  [F.forms]: { label: "Forms", icon: "📋", blurb: "Build intake and contact forms that feed your CRM." },
+  [F.crm]: { label: "CRM", icon: "👥", blurb: "Contacts, deals, and pipeline in one view." },
+  [F.campaigns]: { label: "Campaigns", icon: "🚀", blurb: "Run multi-channel campaigns end to end." },
+  [F.emails]: { label: "Emails", icon: "✉️", blurb: "Send on-brand email that waits for your approval." },
+  [F.sequences]: { label: "Sequences", icon: "🔁", blurb: "Automate multi-step nurtures on a schedule." },
+  [F.content]: { label: "Content", icon: "📝", blurb: "Draft posts and copy grounded in your Brand Book." },
+  [F.media]: { label: "Media", icon: "🎬", blurb: "Upload once → platform-ready renditions for every format." },
+  [F.pitchVideos]: { label: "Pitch Videos", icon: "🎥", blurb: "Turn a deck into a narrated, brand-themed video." },
+  [F.social]: { label: "Social", icon: "📣", blurb: "Publish and schedule across 7 networks." },
+  [F.scheduler]: { label: "Scheduler", icon: "📅", blurb: "Let people book time with you — no other tool needed." },
+  [F.analytics]: { label: "Analytics", icon: "📈", blurb: "See leads, pipeline, and revenue at a glance." },
+  [F.approvals]: { label: "Approvals", icon: "✅", blurb: "Review everything before it goes out — your trust wedge." },
+};
+
 // Default recommended features per category (3-5 each, most-useful first).
 export const CATEGORY_RECOMMENDS: Record<IndustryCategory, string[]> = {
   trades: [F.leads, F.forms, F.scheduler, F.crm, F.media],
