@@ -40,30 +40,36 @@ class PlanLimits:
 
 
 PLAN_LIMITS: dict[PlanName, PlanLimits] = {
-    # Trial inherits Premium-level limits while active (full evaluation).
+    # Trial inherits Premium-level limits while active (full evaluation), but
+    # emails are capped to Premium's 5k so a trial can't drain the shared
+    # Resend quota.
     PlanName.trial: PlanLimits(
         seats=5, brands=None, contacts=None,
-        emails_per_month=None, social_connections=None,
+        emails_per_month=5_000, social_connections=None,
         ai_drafts_per_month=None, landing_pages=None,
         api_access=True, client_workspaces=True, white_label=False,
     ),
     # --- Current tiers (spec: seats / social / contacts are fixed by pricing;
     #     the remaining caps ladder up sensibly). -----------------------------
+    # emails_per_month is deliberately conservative: all tenants send through a
+    # single shared Resend Pro account (50k/mo) that also serves 6 other sites,
+    # so RevOS's whole fleet must fit in a slice of that. A few Premium tenants
+    # at 5k stay well under ~15k, leaving headroom for the other domains.
     PlanName.pro: PlanLimits(
         seats=1, brands=1, contacts=100,
-        emails_per_month=5_000, social_connections=4,
+        emails_per_month=500, social_connections=4,
         ai_drafts_per_month=100, landing_pages=3,
         api_access=False, client_workspaces=False, white_label=False,
     ),
     PlanName.pro_max: PlanLimits(
         seats=3, brands=3, contacts=500,
-        emails_per_month=25_000, social_connections=18,
+        emails_per_month=2_000, social_connections=18,
         ai_drafts_per_month=500, landing_pages=15,
         api_access=True, client_workspaces=True, white_label=False,
     ),
     PlanName.premium: PlanLimits(
         seats=5, brands=10, contacts=1_000,
-        emails_per_month=100_000, social_connections=30,
+        emails_per_month=5_000, social_connections=30,
         ai_drafts_per_month=2_000, landing_pages=50,
         api_access=True, client_workspaces=True, white_label=True,
     ),
