@@ -117,19 +117,28 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_publishable_key: str = ""
 
-    # Stripe Price IDs — create these in the Stripe dashboard, then set env vars.
-    # Monthly prices
-    stripe_pro_monthly_price_id: str = ""
-    stripe_agency_monthly_price_id: str = ""
-    # Annual prices (billed yearly, ~20% discount)
-    stripe_pro_annual_price_id: str = ""
-    stripe_agency_annual_price_id: str = ""
+    # Stripe Price IDs — live prices created in the Stripe dashboard. Not secret
+    # (they ship to the browser at checkout), so the current live IDs are the
+    # defaults; override per environment (e.g. test-mode prices) via env vars.
+    # Three tiers × two intervals. Set 2026-07-14.
+    #   Pro      1 seat  ·  4 social · 100 contacts
+    #   Pro Max  3 seats · 18 social · 500 contacts
+    #   Premium  5 seats · 30 social · 1000 contacts
+    stripe_pro_monthly_price_id: str = "price_1TtFuEIPTrvvrCDyofJaiX47"
+    stripe_pro_annual_price_id: str = "price_1TtFnbIPTrvvrCDyQCkEBRmu"
+    stripe_pro_max_monthly_price_id: str = "price_1TtFqtIPTrvvrCDyaycNFiQ4"
+    stripe_pro_max_annual_price_id: str = "price_1TtFx8IPTrvvrCDyYI9oDwmI"
+    stripe_premium_monthly_price_id: str = "price_1TtG0VIPTrvvrCDyiOze6fFO"
+    stripe_premium_annual_price_id: str = "price_1TtG4JIPTrvvrCDyXIwkJRMh"
 
     # Display prices in cents (Stripe is authoritative for actual charges).
-    plan_pro_monthly_cents: int = 14900      # $149.00
-    plan_pro_annual_cents: int = 142800      # $1,428.00 ($119/mo)
-    plan_agency_monthly_cents: int = 44900   # $449.00
-    plan_agency_annual_cents: int = 430800   # $4,308.00 ($359/mo)
+    # Annual = 12× monthly with ~20% off.
+    plan_pro_monthly_cents: int = 199999       # $1,999.99
+    plan_pro_annual_cents: int = 1920000       # $19,200.00 (~$1,600/mo)
+    plan_pro_max_monthly_cents: int = 399999   # $3,999.99
+    plan_pro_max_annual_cents: int = 3840000   # $38,400.00 (~$3,200/mo)
+    plan_premium_monthly_cents: int = 599999   # $5,999.99
+    plan_premium_annual_cents: int = 5760000   # $57,600.00 (~$4,800/mo)
 
     # Trial length in days for new accounts.
     trial_days: int = 14

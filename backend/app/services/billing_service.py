@@ -51,8 +51,10 @@ def _price_id(plan: str, interval: str) -> str | None:
     return {
         ("pro", "monthly"): settings.stripe_pro_monthly_price_id,
         ("pro", "annual"): settings.stripe_pro_annual_price_id,
-        ("agency", "monthly"): settings.stripe_agency_monthly_price_id,
-        ("agency", "annual"): settings.stripe_agency_annual_price_id,
+        ("pro_max", "monthly"): settings.stripe_pro_max_monthly_price_id,
+        ("pro_max", "annual"): settings.stripe_pro_max_annual_price_id,
+        ("premium", "monthly"): settings.stripe_premium_monthly_price_id,
+        ("premium", "annual"): settings.stripe_premium_annual_price_id,
     }.get((plan, interval)) or None
 
 
@@ -60,13 +62,19 @@ def _plan_from_price_id(pid: str) -> PlanName:
     """Reverse-map a Stripe price ID → our PlanName. Defaults to pro."""
     if pid in (settings.stripe_pro_monthly_price_id, settings.stripe_pro_annual_price_id):
         return PlanName.pro
-    if pid in (settings.stripe_agency_monthly_price_id, settings.stripe_agency_annual_price_id):
-        return PlanName.agency
+    if pid in (settings.stripe_pro_max_monthly_price_id, settings.stripe_pro_max_annual_price_id):
+        return PlanName.pro_max
+    if pid in (settings.stripe_premium_monthly_price_id, settings.stripe_premium_annual_price_id):
+        return PlanName.premium
     return PlanName.pro
 
 
 def _interval_from_price_id(pid: str) -> str:
-    if pid in (settings.stripe_pro_annual_price_id, settings.stripe_agency_annual_price_id):
+    if pid in (
+        settings.stripe_pro_annual_price_id,
+        settings.stripe_pro_max_annual_price_id,
+        settings.stripe_premium_annual_price_id,
+    ):
         return "annual"
     return "monthly"
 
@@ -159,7 +167,8 @@ async def create_checkout_session(
     if not pid:
         raise RevOSError(
             f"Stripe price ID for {plan}/{interval} is not configured. "
-            "Set STRIPE_PRO_MONTHLY_PRICE_ID / STRIPE_AGENCY_MONTHLY_PRICE_ID etc.",
+            "Set STRIPE_PRO_MONTHLY_PRICE_ID / STRIPE_PRO_MAX_MONTHLY_PRICE_ID / "
+            "STRIPE_PREMIUM_MONTHLY_PRICE_ID etc.",
             status_code=503,
             code="stripe_unconfigured",
         )

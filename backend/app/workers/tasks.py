@@ -199,7 +199,7 @@ async def _run_expire_trials() -> dict:
                                     f"<p>Hi {owner.full_name or 'there'},</p>"
                                     f"<p>Your 14-day RevOS trial for <strong>{acct.name}</strong> "
                                     f"has ended.</p>"
-                                    f"<p>Upgrade to Pro ($149/mo) or Agency ($449/mo) to keep "
+                                    f"<p>Upgrade to Pro, Pro Max, or Premium to keep "
                                     f"all your data and continue automating.</p>"
                                     f'<p><a href="{settings.frontend_base_url}/billing">'
                                     f"Upgrade now</a></p>"

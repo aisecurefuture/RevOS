@@ -76,8 +76,8 @@ export default function TermsPage() {
             <h2 className="text-xl font-semibold text-slate-900">4. Subscription and Billing</h2>
             <h3 className="mt-4 font-semibold text-slate-800">4.1 Plans and Pricing</h3>
             <p>
-              RevOS360 offers a 14-day free trial followed by paid subscription plans (Pro and
-              Agency). Current pricing is displayed at the time of purchase and in your account
+              RevOS360 offers a 14-day free trial followed by paid subscription plans (Pro, Pro
+              Max, and Premium). Current pricing is displayed at the time of purchase and in your account
               billing section. We reserve the right to change pricing with 30 days' advance
               notice to active subscribers.
             </p>

@@ -6,10 +6,10 @@ Endpoints:
   POST /api/billing/portal   — Stripe Customer Portal → redirect URL
   POST /api/billing/webhook  — Stripe webhook (no auth, signature-verified)
 
-Pricing (as of 2026-07-04):
-  Pro    $149/mo | $119/mo annual
-  Agency $449/mo | $359/mo annual
-  Enterprise: contact sales
+Pricing (as of 2026-07-14):
+  Pro      $1,999.99/mo | $19,200/yr
+  Pro Max  $3,999.99/mo | $38,400/yr
+  Premium  $5,999.99/mo | $57,600/yr
 """
 
 from __future__ import annotations
@@ -60,8 +60,10 @@ async def billing_status(request: Request, user: CurrentUser, db: DbSession) -> 
     prices = {
         "pro_monthly_cents": cfg.plan_pro_monthly_cents,
         "pro_annual_cents": cfg.plan_pro_annual_cents,
-        "agency_monthly_cents": cfg.plan_agency_monthly_cents,
-        "agency_annual_cents": cfg.plan_agency_annual_cents,
+        "pro_max_monthly_cents": cfg.plan_pro_max_monthly_cents,
+        "pro_max_annual_cents": cfg.plan_pro_max_annual_cents,
+        "premium_monthly_cents": cfg.plan_premium_monthly_cents,
+        "premium_annual_cents": cfg.plan_premium_annual_cents,
     }
 
     return BillingStatusOut(
@@ -120,8 +122,10 @@ async def start_trial(
     prices = {
         "pro_monthly_cents": cfg.plan_pro_monthly_cents,
         "pro_annual_cents": cfg.plan_pro_annual_cents,
-        "agency_monthly_cents": cfg.plan_agency_monthly_cents,
-        "agency_annual_cents": cfg.plan_agency_annual_cents,
+        "pro_max_monthly_cents": cfg.plan_pro_max_monthly_cents,
+        "pro_max_annual_cents": cfg.plan_pro_max_annual_cents,
+        "premium_monthly_cents": cfg.plan_premium_monthly_cents,
+        "premium_annual_cents": cfg.plan_premium_annual_cents,
     }
     return BillingStatusOut(
         plan=sub.plan,
@@ -212,8 +216,10 @@ async def cancel_subscription(
     prices = {
         "pro_monthly_cents": cfg.plan_pro_monthly_cents,
         "pro_annual_cents": cfg.plan_pro_annual_cents,
-        "agency_monthly_cents": cfg.plan_agency_monthly_cents,
-        "agency_annual_cents": cfg.plan_agency_annual_cents,
+        "pro_max_monthly_cents": cfg.plan_pro_max_monthly_cents,
+        "pro_max_annual_cents": cfg.plan_pro_max_annual_cents,
+        "premium_monthly_cents": cfg.plan_premium_monthly_cents,
+        "premium_annual_cents": cfg.plan_premium_annual_cents,
     }
     return BillingStatusOut(
         plan=sub.plan,

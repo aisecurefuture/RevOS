@@ -70,10 +70,12 @@ async def test_billing_status_includes_prices(api):
     h = await _register(api, "prices@billing.com")
     r = await api.get("/api/billing/status", headers=h)
     prices = r.json()["prices"]
-    assert prices["pro_monthly_cents"] == 14900
-    assert prices["agency_monthly_cents"] == 44900
-    assert prices["pro_annual_cents"] == 142800
-    assert prices["agency_annual_cents"] == 430800
+    assert prices["pro_monthly_cents"] == 199999
+    assert prices["pro_max_monthly_cents"] == 399999
+    assert prices["premium_monthly_cents"] == 599999
+    assert prices["pro_annual_cents"] == 1920000
+    assert prices["pro_max_annual_cents"] == 3840000
+    assert prices["premium_annual_cents"] == 5760000
 
 
 # --- entitlement unit tests (pure logic, no HTTP) ---------------------------

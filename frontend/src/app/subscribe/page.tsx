@@ -11,8 +11,19 @@ import { ApiError, billingApi, type BillingStatus } from "@/lib/api";
 // Helpers
 // ---------------------------------------------------------------------------
 
+const PLAN_LABELS: Record<string, string> = {
+  pro: "Pro",
+  pro_max: "Pro Max",
+  premium: "Premium",
+};
+
 function fmt(cents: number) {
-  return `$${(cents / 100).toFixed(0)}`;
+  const dollars = cents / 100;
+  const hasCents = cents % 100 !== 0;
+  return `$${dollars.toLocaleString("en-US", {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function daysLeft(iso: string | null) {
@@ -26,7 +37,7 @@ function daysLeft(iso: string | null) {
 // ---------------------------------------------------------------------------
 
 interface PlanCardProps {
-  name: "pro" | "agency";
+  name: "pro" | "pro_max" | "premium";
   label: string;
   monthlyCents: number;
   annualCents: number;
@@ -75,7 +86,7 @@ function PlanCard({ name, label, monthlyCents, annualCents, features, interval, 
           </li>
         ))}
       </ul>
-      {name === "agency" && (
+      {name === "pro_max" && (
         <span className="mt-3 inline-block rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-medium text-brand">
           Most popular
         </span>
@@ -93,7 +104,7 @@ export default function SubscribePage() {
 
   const [bs, setBs] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPlan, setSelectedPlan] = useState<"trial" | "pro" | "agency">("trial");
+  const [selectedPlan, setSelectedPlan] = useState<"trial" | "pro" | "pro_max" | "premium">("trial");
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -239,20 +250,30 @@ export default function SubscribePage() {
                 label="Pro"
                 monthlyCents={bs.prices.pro_monthly_cents}
                 annualCents={bs.prices.pro_annual_cents}
-                features={["3 team seats", "10,000 contacts", "5 social connections", "50k emails/month", "AI drafts"]}
+                features={["1 seat", "4 social accounts", "100 contacts", "AI drafts & approvals"]}
                 interval={billingInterval}
                 selected={selectedPlan === "pro"}
                 onSelect={() => setSelectedPlan("pro")}
               />
               <PlanCard
-                name="agency"
-                label="Agency"
-                monthlyCents={bs.prices.agency_monthly_cents}
-                annualCents={bs.prices.agency_annual_cents}
-                features={["15 team seats", "100,000 contacts", "Unlimited social connections", "Unlimited emails", "Client workspaces", "White-label", "API access"]}
+                name="pro_max"
+                label="Pro Max"
+                monthlyCents={bs.prices.pro_max_monthly_cents}
+                annualCents={bs.prices.pro_max_annual_cents}
+                features={["3 seats", "18 social accounts", "500 contacts", "Client workspaces", "API access"]}
                 interval={billingInterval}
-                selected={selectedPlan === "agency"}
-                onSelect={() => setSelectedPlan("agency")}
+                selected={selectedPlan === "pro_max"}
+                onSelect={() => setSelectedPlan("pro_max")}
+              />
+              <PlanCard
+                name="premium"
+                label="Premium"
+                monthlyCents={bs.prices.premium_monthly_cents}
+                annualCents={bs.prices.premium_annual_cents}
+                features={["5 seats", "30 social accounts", "1,000 contacts", "White-label", "API access", "Priority support"]}
+                interval={billingInterval}
+                selected={selectedPlan === "premium"}
+                onSelect={() => setSelectedPlan("premium")}
               />
             </>
           )}
@@ -280,7 +301,7 @@ export default function SubscribePage() {
               ? "Please wait…"
               : selectedPlan === "trial"
                 ? trialActive ? "Continue to dashboard" : "Start free trial"
-                : `Upgrade to ${selectedPlan === "pro" ? "Pro" : "Agency"}`}
+                : `Upgrade to ${PLAN_LABELS[selectedPlan]}`}
           </Button>
         </div>
 

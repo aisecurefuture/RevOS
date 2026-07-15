@@ -259,10 +259,14 @@ export interface BillingStatus {
   prices: {
     pro_monthly_cents: number;
     pro_annual_cents: number;
-    agency_monthly_cents: number;
-    agency_annual_cents: number;
+    pro_max_monthly_cents: number;
+    pro_max_annual_cents: number;
+    premium_monthly_cents: number;
+    premium_annual_cents: number;
   };
 }
+
+export type PlanTier = "pro" | "pro_max" | "premium";
 
 // --- Social connections ------------------------------------------------------
 export interface SocialConnection {
@@ -746,7 +750,7 @@ export const scriptApi = {
 export const billingApi = {
   status: () => apiFetch<BillingStatus>("/billing/status"),
   startTrial: () => apiFetch<BillingStatus>("/billing/start-trial", { method: "POST" }),
-  checkout: (plan: "pro" | "agency", interval: "monthly" | "annual") =>
+  checkout: (plan: PlanTier, interval: "monthly" | "annual") =>
     apiFetch<{ checkout_url: string }>("/billing/checkout", {
       method: "POST",
       body: JSON.stringify({ plan, interval }),

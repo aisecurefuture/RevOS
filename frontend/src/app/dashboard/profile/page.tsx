@@ -354,6 +354,9 @@ function TwoFASection() {
 const PLAN_LABELS: Record<string, string> = {
   trial: "Trial",
   pro: "Pro",
+  pro_max: "Pro Max",
+  premium: "Premium",
+  // Legacy tiers — shown only for accounts still on an old subscription.
   agency: "Agency",
   enterprise: "Enterprise",
 };
@@ -367,7 +370,12 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 function fmt(cents: number) {
-  return `$${(cents / 100).toFixed(0)}`;
+  const dollars = cents / 100;
+  const hasCents = cents % 100 !== 0;
+  return `$${dollars.toLocaleString("en-US", {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function daysLeft(iso: string | null) {
@@ -380,7 +388,7 @@ function BillingSection() {
   const [bs, setBs] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [plan, setPlan] = useState<"pro" | "agency">("pro");
+  const [plan, setPlan] = useState<"pro" | "pro_max" | "premium">("pro");
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
   const [working, setWorking] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -444,10 +452,12 @@ function BillingSection() {
 
   // Compute display price based on selected plan/interval
   const displayPrice = bs ? {
-    pro_monthly:    bs.prices.pro_monthly_cents,
-    pro_annual:     bs.prices.pro_annual_cents,
-    agency_monthly: bs.prices.agency_monthly_cents,
-    agency_annual:  bs.prices.agency_annual_cents,
+    pro_monthly:      bs.prices.pro_monthly_cents,
+    pro_annual:       bs.prices.pro_annual_cents,
+    pro_max_monthly:  bs.prices.pro_max_monthly_cents,
+    pro_max_annual:   bs.prices.pro_max_annual_cents,
+    premium_monthly:  bs.prices.premium_monthly_cents,
+    premium_annual:   bs.prices.premium_annual_cents,
   } : null;
 
   const selectedCents = displayPrice
@@ -559,7 +569,7 @@ function BillingSection() {
           <p className="text-sm font-medium text-slate-700">Upgrade your plan</p>
 
           <div className="flex gap-3">
-            {(["pro", "agency"] as const).map((p) => (
+            {(["pro", "pro_max", "premium"] as const).map((p) => (
               <button
                 key={p}
                 type="button"
@@ -577,10 +587,13 @@ function BillingSection() {
                   </p>
                 )}
                 {p === "pro" && (
-                  <p className="mt-1 text-xs text-slate-500">3 seats · 10k contacts · 5 social connections</p>
+                  <p className="mt-1 text-xs text-slate-500">1 seat · 4 social · 100 contacts</p>
                 )}
-                {p === "agency" && (
-                  <p className="mt-1 text-xs text-slate-500">15 seats · 100k contacts · unlimited brands</p>
+                {p === "pro_max" && (
+                  <p className="mt-1 text-xs text-slate-500">3 seats · 18 social · 500 contacts</p>
+                )}
+                {p === "premium" && (
+                  <p className="mt-1 text-xs text-slate-500">5 seats · 30 social · 1,000 contacts</p>
                 )}
               </button>
             ))}

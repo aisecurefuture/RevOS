@@ -20,6 +20,10 @@ from app.models.base import BaseModel
 class PlanName(StrEnum):
     trial = "trial"
     pro = "pro"
+    pro_max = "pro_max"
+    premium = "premium"
+    # Legacy tiers — retained so subscriptions created before the 2026-07-14
+    # pricing change still resolve their entitlements. Not offered at checkout.
     agency = "agency"
     enterprise = "enterprise"
 

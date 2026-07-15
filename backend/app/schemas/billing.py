@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class CheckoutRequest(BaseModel):
-    plan: Literal["pro", "agency"] = "pro"
+    plan: Literal["pro", "pro_max", "premium"] = "pro"
     interval: Literal["monthly", "annual"] = "monthly"
 
 

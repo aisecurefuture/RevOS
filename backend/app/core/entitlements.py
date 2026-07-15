@@ -4,12 +4,15 @@ All limit values live here — change the dataclass fields to adjust what each
 tier gets.  The *config* for display prices is in settings; these are the
 *access* rules that the API enforces.
 
-Pricing tiers (as of 2026-07-04):
-  Pro    $149/mo | $119/mo annual  — solo operators, small business
-  Agency $449/mo | $359/mo annual  — agencies, growing teams
-  Enterprise custom                — franchises, large orgs
+Pricing tiers (as of 2026-07-14):
+  Pro      $1,999.99/mo | $19,200/yr  — 1 seat,  4 social, 100 contacts
+  Pro Max  $3,999.99/mo | $38,400/yr  — 3 seats, 18 social, 500 contacts
+  Premium  $5,999.99/mo | $57,600/yr  — 5 seats, 30 social, 1000 contacts
 
-Trial gives Agency-level access for 14 days, then requires upgrade.
+`agency` / `enterprise` are legacy tiers kept only so pre-2026-07-14
+subscriptions keep resolving; they are not offered at checkout.
+
+Trial gives Premium-level access for 14 days, then requires upgrade.
 """
 
 from __future__ import annotations
@@ -37,19 +40,34 @@ class PlanLimits:
 
 
 PLAN_LIMITS: dict[PlanName, PlanLimits] = {
-    # Trial inherits Agency limits while active.
+    # Trial inherits Premium-level limits while active (full evaluation).
     PlanName.trial: PlanLimits(
-        seats=3, brands=None, contacts=None,
+        seats=5, brands=None, contacts=None,
         emails_per_month=None, social_connections=None,
         ai_drafts_per_month=None, landing_pages=None,
         api_access=True, client_workspaces=True, white_label=False,
     ),
+    # --- Current tiers (spec: seats / social / contacts are fixed by pricing;
+    #     the remaining caps ladder up sensibly). -----------------------------
     PlanName.pro: PlanLimits(
-        seats=3, brands=2, contacts=10_000,
-        emails_per_month=10_000, social_connections=5,
-        ai_drafts_per_month=200, landing_pages=5,
+        seats=1, brands=1, contacts=100,
+        emails_per_month=5_000, social_connections=4,
+        ai_drafts_per_month=100, landing_pages=3,
         api_access=False, client_workspaces=False, white_label=False,
     ),
+    PlanName.pro_max: PlanLimits(
+        seats=3, brands=3, contacts=500,
+        emails_per_month=25_000, social_connections=18,
+        ai_drafts_per_month=500, landing_pages=15,
+        api_access=True, client_workspaces=True, white_label=False,
+    ),
+    PlanName.premium: PlanLimits(
+        seats=5, brands=10, contacts=1_000,
+        emails_per_month=100_000, social_connections=30,
+        ai_drafts_per_month=2_000, landing_pages=50,
+        api_access=True, client_workspaces=True, white_label=True,
+    ),
+    # --- Legacy tiers (retained so old subscriptions resolve). --------------
     PlanName.agency: PlanLimits(
         seats=15, brands=None, contacts=100_000,
         emails_per_month=100_000, social_connections=None,
