@@ -85,6 +85,11 @@ class TwoFALoginRequest(BaseModel):
     code: str = Field(min_length=1, max_length=40)
 
 
+class EmailOtpLoginRequest(BaseModel):
+    pending_token: str
+    code: str = Field(min_length=1, max_length=12)
+
+
 # --- Profile ----------------------------------------------------------------
 class UpdateProfileRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=200)

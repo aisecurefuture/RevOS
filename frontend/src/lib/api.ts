@@ -83,16 +83,28 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
 
 
 // --- Auth endpoints ---------------------------------------------------------
+// Login may return a full session OR a second-step challenge (app 2FA or an
+// emailed anti-bot code).
+export type LoginResult =
+  | LoginResponse
+  | { twofa_required: true; pending_token: string }
+  | { email_otp_required: true; pending_token: string; email: string };
+
 export const authApi = {
   login: (email: string, password: string) =>
-    apiFetch<LoginResponse>("/auth/login", {
+    apiFetch<LoginResult>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  register: (email: string, password: string, full_name: string) =>
+  emailOtpLogin: (pending_token: string, code: string) =>
+    apiFetch<LoginResponse>("/auth/login/email-otp", {
+      method: "POST",
+      body: JSON.stringify({ pending_token, code }),
+    }),
+  register: (email: string, password: string, full_name: string, website?: string) =>
     apiFetch<LoginResponse>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, password, full_name }),
+      body: JSON.stringify({ email, password, full_name, website: website || undefined }),
     }),
   me: () => apiFetch<User>("/auth/me"),
   logout: () => apiFetch<{ status: string }>("/auth/logout", { method: "POST" }),

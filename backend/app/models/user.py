@@ -45,6 +45,19 @@ class AdminUser(BaseModel, table=True):
     settings: dict = Field(default_factory=dict, sa_type=JSON)
 
 
+class EmailLoginCode(BaseModel, table=True):
+    """A short-lived email one-time code for the anti-bot login step. Stored
+    hashed; one active code per user (old ones are replaced)."""
+
+    __tablename__ = "email_login_codes"
+
+    user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
+    code_hash: str = Field(max_length=128)
+    expires_at: datetime
+    attempts: int = Field(default=0)
+    used_at: datetime | None = Field(default=None)
+
+
 class RecoveryCode(BaseModel, table=True):
     """One-time 2FA recovery codes (stored hashed; shown to the user once)."""
 

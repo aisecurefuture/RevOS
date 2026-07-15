@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     login_max_failed_attempts: int = 8
     login_lockout_minutes: int = 15
 
+    # Email login code (anti-bot 2nd factor). Only takes effect when email is
+    # actually enabled — so a misconfigured mailer can never lock everyone out.
+    # Skipped for users with app-based 2FA and for browsers with a valid
+    # trusted-device cookie (set after a successful code entry).
+    login_email_otp: bool = False
+    login_otp_ttl_minutes: int = 10
+    login_otp_max_attempts: int = 5
+    login_trusted_device_days: int = 30
+
     # --- Email (Resend) -----------------------------------------------------
     resend_api_key: str = ""
     resend_webhook_secret: str = ""   # Svix "whsec_..." for status webhooks

@@ -13,6 +13,9 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=200)
     full_name: str = Field(default="", max_length=200)
+    # Honeypot: a hidden field real users never see/fill. A non-empty value
+    # means a bot autofilled the form → reject. Named to look tempting.
+    website: str | None = Field(default=None, max_length=200)
 
 
 class AccountOut(BaseModel):

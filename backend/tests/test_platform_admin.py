@@ -146,3 +146,70 @@ async def test_successful_login_resets_failure_counter(api, monkeypatch):
     await api.post("/api/auth/login", json={"email": "reset@test.com", "password": "wrong"})
     await api.post("/api/auth/login", json={"email": "reset@test.com", "password": "wrong"})
     assert (await api.post("/api/auth/login", json={"email": "reset@test.com", "password": "RightPass1234"})).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Email login OTP (anti-bot) + trusted device + register honeypot
+# ---------------------------------------------------------------------------
+
+def _enable_email_otp(monkeypatch):
+    from app.config import settings as s
+    monkeypatch.setattr(s, "login_email_otp", True)
+    monkeypatch.setattr(s, "resend_api_key", "re_test")   # email_enabled needs a key…
+    monkeypatch.setattr(s, "email_test_mode", False)      # …and not test mode
+
+
+@pytest.mark.asyncio
+async def test_email_otp_required_then_completes_and_trusts_device(api, monkeypatch):
+    _enable_email_otp(monkeypatch)
+    # Capture the emailed code instead of really sending.
+    sent = {}
+    from app.services import email_otp_service
+    monkeypatch.setattr(email_otp_service, "send_transactional",
+                        lambda **kw: sent.update(subject=kw["subject"]))
+
+    await _register(api, "otp@test.com", pw="RightPass1234")
+    # Fresh login (register auto-logged-in, but a new login triggers the code).
+    r = await api.post("/api/auth/login", json={"email": "otp@test.com", "password": "RightPass1234"})
+    assert r.status_code == 200
+    assert r.json()["email_otp_required"] is True
+    pending = r.json()["pending_token"]
+    code = sent["subject"].split()[-1]  # "Your RevOS login code: 123456"
+
+    bad = await api.post("/api/auth/login/email-otp", json={"pending_token": pending, "code": "000000"})
+    assert bad.status_code == 401
+    ok = await api.post("/api/auth/login/email-otp", json={"pending_token": pending, "code": code})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["user"]["email"] == "otp@test.com"
+
+    # This browser is now trusted — a subsequent login skips the code.
+    again = await api.post("/api/auth/login", json={"email": "otp@test.com", "password": "RightPass1234"})
+    assert again.status_code == 200
+    assert "email_otp_required" not in again.json()
+
+
+@pytest.mark.asyncio
+async def test_email_otp_inactive_without_email_delivery(api, monkeypatch):
+    """Safety: with the flag on but email NOT configured, login must NOT
+    require a code (else a broken mailer locks everyone out)."""
+    from app.config import settings as s
+    monkeypatch.setattr(s, "login_email_otp", True)
+    monkeypatch.setattr(s, "resend_api_key", "")  # email disabled
+    await _register(api, "safe@test.com", pw="RightPass1234")
+    r = await api.post("/api/auth/login", json={"email": "safe@test.com", "password": "RightPass1234"})
+    assert r.status_code == 200
+    assert "email_otp_required" not in r.json()
+
+
+@pytest.mark.asyncio
+async def test_register_honeypot_blocks_bots(api):
+    filled = await api.post("/api/auth/register", json={
+        "email": "bot@test.com", "password": "PassWord1234", "full_name": "Bot",
+        "website": "http://spam.example",  # bot filled the hidden field
+    })
+    assert filled.status_code == 401
+    # A normal signup (no honeypot value) still works.
+    clean = await api.post("/api/auth/register", json={
+        "email": "human@test.com", "password": "PassWord1234", "full_name": "Human",
+    })
+    assert clean.status_code == 201

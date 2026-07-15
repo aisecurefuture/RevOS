@@ -15,6 +15,7 @@ function RegisterForm() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot — humans leave empty
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -23,7 +24,7 @@ function RegisterForm() {
     setError(null);
     setSubmitting(true);
     try {
-      await authApi.register(email, password, fullName);
+      await authApi.register(email, password, fullName, website);
       router.replace(next || "/subscribe");
     } catch (err) {
       setError(
@@ -42,6 +43,15 @@ function RegisterForm() {
           <p className="mt-3 text-sm text-slate-500">Create your free account</p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
+          {/* Honeypot: hidden from humans (offscreen, not tab-reachable, no
+              autofill hint). Bots that fill every field trip it server-side. */}
+          <div aria-hidden className="absolute left-[-9999px] top-[-9999px]" style={{ opacity: 0 }}>
+            <label htmlFor="website">Website</label>
+            <input
+              id="website" name="website" type="text" tabIndex={-1} autoComplete="off"
+              value={website} onChange={(e) => setWebsite(e.target.value)}
+            />
+          </div>
           <div>
             <label htmlFor="full_name" className="mb-1 block text-sm font-medium text-slate-700">
               Full name

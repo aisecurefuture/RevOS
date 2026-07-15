@@ -58,7 +58,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await authApi.login(email, password);
-    setUser(res.user);
+    // A second step (2FA / email code) can't complete here — the login page
+    // handles the challenge flow directly. This context helper is for the
+    // simple single-step case.
+    if ("user" in res) {
+      setUser(res.user);
+    } else {
+      throw new ApiError(401, "verification_required", "Additional verification required. Please sign in from the login page.");
+    }
   }, []);
 
   const logout = useCallback(async () => {

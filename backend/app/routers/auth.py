@@ -46,12 +46,19 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     TwoFACodeRequest,
     TwoFADisableRequest,
+    EmailOtpLoginRequest,
     TwoFALoginRequest,
     TwoFASetupResponse,
     UpdateProfileRequest,
     UserOut,
 )
-from app.services import invitation_service, password_reset_service, twofa_service, verification_service
+from app.services import (
+    email_otp_service,
+    invitation_service,
+    password_reset_service,
+    twofa_service,
+    verification_service,
+)
 from app.services.account_service import resolve_active_membership
 from app.services.auth_service import (
     authenticate_user,
@@ -62,10 +69,45 @@ from app.services.auth_service import (
 
 _2FA_SALT = "2fa-pending"
 _2FA_MAX_AGE = 300  # a 2FA challenge is valid for 5 minutes
+_EMAIL_OTP_SALT = "email-otp-pending"
+_EMAIL_OTP_MAX_AGE = 900  # 15 min to enter the emailed code
+_TRUSTED_DEVICE_SALT = "trusted-device"
+TRUSTED_DEVICE_COOKIE = "revos_trusted_device"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 _CSRF_MAX_AGE = 60 * 60 * 8
+
+
+def _trusted_device_ok(request: Request, user: AdminUser) -> bool:
+    """A browser is trusted if it carries our signed cookie for this user and
+    token version, within the configured window."""
+    token = request.cookies.get(TRUSTED_DEVICE_COOKIE)
+    if not token:
+        return False
+    try:
+        data = read_signed_token(
+            token, salt=_TRUSTED_DEVICE_SALT,
+            max_age_seconds=settings.login_trusted_device_days * 86400,
+        )
+    except AuthError:
+        return False
+    return data.get("uid") == str(user.id) and int(data.get("tv", -1)) == user.token_version
+
+
+def _set_trusted_device(response: Response, user: AdminUser) -> None:
+    token = make_signed_token({"uid": str(user.id), "tv": user.token_version}, salt=_TRUSTED_DEVICE_SALT)
+    response.set_cookie(
+        TRUSTED_DEVICE_COOKIE, token,
+        max_age=settings.login_trusted_device_days * 86400,
+        httponly=True, secure=settings.cookie_secure, samesite=settings.cookie_samesite, path="/",
+    )
+
+
+def _mask_email(email: str) -> str:
+    name, _, domain = email.partition("@")
+    shown = name[0] + "•••" if name else "•••"
+    return f"{shown}@{domain}"
 
 
 def _set_auth_cookies(
@@ -124,6 +166,17 @@ async def login(
         )
         await write_audit(db, action="auth.login.2fa_challenge", user_id=user.id, request=request)
         return {"twofa_required": True, "pending_token": pending}
+    # Anti-bot email code — for non-2FA users on an untrusted browser.
+    if email_otp_service.should_challenge(user, _trusted_device_ok(request, user)):
+        await email_otp_service.create_and_send(db, user)
+        pending = make_signed_token(
+            {"uid": str(user.id), "tv": user.token_version}, salt=_EMAIL_OTP_SALT
+        )
+        await write_audit(db, action="auth.login.email_otp_challenge", user_id=user.id, request=request)
+        return {
+            "email_otp_required": True, "pending_token": pending,
+            "email": _mask_email(user.email),
+        }
     await update_last_login(db, user)
     membership = await resolve_active_membership(db, user, None)
     active_account = str(membership.account_id) if membership else None
@@ -144,6 +197,11 @@ async def register(
 ) -> LoginResponse:
     """Self-signup: creates the user + their personal workspace, then logs them
     in. New signups own their personal account."""
+    # Honeypot: a real user's browser leaves this hidden field empty. A bot that
+    # blindly fills every input trips it — reject without creating anything.
+    if body.website:
+        await write_audit(db, action="auth.register.honeypot_blocked", request=request)
+        raise AuthError("Registration could not be completed.")
     user = await create_user(
         db, email=body.email, password=body.password,
         full_name=body.full_name, role=Role.owner,
@@ -356,4 +414,35 @@ async def twofa_login(
     csrf = generate_csrf_token()
     _set_auth_cookies(response, user, csrf, active_account=active_account, role=role)
     await write_audit(db, action="auth.login.2fa_success", user_id=user.id, request=request)
+    return LoginResponse(user=UserOut.model_validate(user), csrf_token=csrf)
+
+
+@router.post("/login/email-otp", response_model=LoginResponse)
+async def email_otp_login(
+    request: Request, response: Response, body: EmailOtpLoginRequest, db: DbSession,
+    _rl: None = Depends(rate_limit_login),
+) -> LoginResponse:
+    """Second step of an email-code login: exchange the challenge token + the
+    emailed code for a full session, and mark this browser trusted."""
+    try:
+        data = read_signed_token(body.pending_token, salt=_EMAIL_OTP_SALT, max_age_seconds=_EMAIL_OTP_MAX_AGE)
+    except AuthError as exc:
+        raise AuthError("Your login code expired. Please sign in again.") from exc
+    user = await db.get(AdminUser, uuid.UUID(str(data["uid"])))
+    if (
+        user is None or not user.is_active or user.deleted_at is not None
+        or int(data.get("tv", 0)) != user.token_version
+    ):
+        raise AuthError("Your login session is no longer valid. Please sign in again.")
+    if not await email_otp_service.verify(db, user.id, body.code):
+        await write_audit(db, action="auth.login.email_otp_failed", user_id=user.id, request=request)
+        raise AuthError("Invalid or expired code.")
+    await update_last_login(db, user)
+    membership = await resolve_active_membership(db, user, None)
+    active_account = str(membership.account_id) if membership else None
+    role = membership.role if membership else user.role
+    csrf = generate_csrf_token()
+    _set_auth_cookies(response, user, csrf, active_account=active_account, role=role)
+    _set_trusted_device(response, user)  # skip the code on this browser for the window
+    await write_audit(db, action="auth.login.email_otp_success", user_id=user.id, request=request)
     return LoginResponse(user=UserOut.model_validate(user), csrf_token=csrf)
