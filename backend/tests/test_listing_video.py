@@ -537,3 +537,17 @@ async def test_landscape_is_default_and_portrait_selectable(api, monkeypatch):
     )
     assert bad.status_code == 400
     assert bad.json()["error"]["code"] == "bad_aspect_ratio"
+
+
+@pytest.mark.asyncio
+async def test_validation_errors_name_the_field(api, monkeypatch):
+    """422s must say WHICH field is wrong — 'Invalid request.' is a dead end."""
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    r = await api.post("/api/listing-videos/draft-script", headers=h, json={
+        "details": _details(state="I"),  # below min_length=2
+    })
+    assert r.status_code == 422
+    msg = r.json()["error"]["message"]
+    assert "state" in msg
+    assert msg != "Invalid request."

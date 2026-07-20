@@ -81,10 +81,20 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _handle_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
         # jsonable_encoder makes details JSON-safe (Pydantic `ctx` may hold a
         # raw exception object). Errors are safe to surface — no internals.
+        # Name the first offending field in the message ("details.state:
+        # String should have at least 2 characters") — clients render only
+        # the message, and a bare "Invalid request." is undebuggable.
+        errors = exc.errors()
+        message = "Invalid request."
+        if errors:
+            first = errors[0]
+            loc = ".".join(str(p) for p in first.get("loc", ()) if p != "body")
+            msg = first.get("msg", "invalid value")
+            message = f"{loc}: {msg}" if loc else msg
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"error": {"code": "validation_error", "message": "Invalid request.",
-                               "details": jsonable_encoder(exc.errors())}},
+            content={"error": {"code": "validation_error", "message": message,
+                               "details": jsonable_encoder(errors)}},
         )
 
     @app.exception_handler(Exception)
