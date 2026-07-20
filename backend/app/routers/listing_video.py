@@ -71,13 +71,21 @@ async def voices(
     _user: Annotated[AdminUser, Depends(require_editor)],
 ) -> VoicesOut:
     """Narration options: built-in stock XTTS voices plus this account's
-    consented, ready Avatar Persona voices."""
+    consented, ready Avatar Persona voices.
+
+    Personas come from the DB and are ALWAYS returned; the stock list needs a
+    worker round-trip and degrades to [] on any failure — it must never sink
+    the personas with it."""
     _require_enabled()
     from app.routers.pitch_video import resolve_stock_speakers
 
     personas = await svc.list_ready_persona_voices(db, _account_id(request))
+    try:
+        stock = await resolve_stock_speakers()
+    except Exception:  # noqa: BLE001 — belt over resolve's own suspenders
+        stock = []
     return VoicesOut(
-        stock=await resolve_stock_speakers(),
+        stock=stock,
         personas=[PersonaVoiceOut(id=p.id, name=p.name) for p in personas],
     )
 

@@ -84,7 +84,10 @@ async def resolve_stock_speakers() -> list[str]:
 
     def _ask_worker() -> list[str]:
         from app.workers.celery_app import celery_app
-        return celery_app.send_task("pitch_video.list_speakers").get(timeout=30)
+        # Short timeout: this runs inline in a page-load request — a busy
+        # worker must degrade the dropdown, not hang the page. Once the worker
+        # answers once, the list is cached for the process lifetime.
+        return celery_app.send_task("pitch_video.list_speakers").get(timeout=6)
 
     try:
         speakers = await asyncio.to_thread(_ask_worker)

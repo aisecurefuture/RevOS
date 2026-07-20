@@ -83,7 +83,16 @@ export default function ListingVideosPage() {
         setMaxPhotos(s.max_photos);
         if (s.enabled) {
           listingVideoApi.musicTracks().then((m) => setMusicTracks(m.tracks)).catch(() => {});
-          listingVideoApi.voices().then(setVoices).catch(() => {});
+          // Stock voices need a (possibly cold) worker round-trip — retry once
+          // if the first answer came back without them.
+          listingVideoApi.voices().then((v) => {
+            setVoices(v);
+            if (v.stock.length === 0) {
+              setTimeout(() => {
+                listingVideoApi.voices().then(setVoices).catch(() => {});
+              }, 8000);
+            }
+          }).catch(() => {});
           void refreshJobs();
         }
       })
