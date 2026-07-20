@@ -368,3 +368,51 @@ async def test_stock_voice_override_is_stored(api, monkeypatch):
     created = await api.post("/api/listing-videos", headers=h, data=form, files=_photo_files(3))
     assert created.status_code == 201, created.text
     assert created.json()["speaker_name"] == "custom-speaker"
+
+
+# ---------------------------------------------------------------------------
+# TTS normalization (the XTTS digit-crash fix)
+# ---------------------------------------------------------------------------
+
+def test_tts_normalize_the_washtenaw_crash_case():
+    """The exact production failure: 5-digit street number crashed XTTS."""
+    from app.services.tts_text import tts_normalize
+    out = tts_normalize("Welcome to 11033 S Washtenaw Ave in Chicago, IL.")
+    assert out == "Welcome to one one zero three three south Washtenaw avenue in Chicago, Illinois."
+    assert not any(ch.isdigit() for ch in out)
+
+
+def test_tts_normalize_price_sqft_and_baths():
+    from app.services.tts_text import tts_normalize
+    out = tts_normalize("This home offers 4 bedrooms, 2.5 bathrooms, and 2,450 square feet. Offered at $489,000.")
+    assert "four bedrooms" in out
+    assert "two point five bathrooms" in out
+    assert "two thousand four hundred fifty square feet" in out
+    assert "four hundred eighty nine thousand dollars" in out
+    assert "$" not in out and not any(ch.isdigit() for ch in out)
+
+
+def test_tts_normalize_short_street_number_reads_as_cardinal():
+    from app.services.tts_text import tts_normalize
+    assert tts_normalize("412 Sheridan Rd").startswith("four hundred twelve Sheridan road")
+
+
+def test_tts_normalize_phone_reads_digit_by_digit():
+    from app.services.tts_text import tts_normalize
+    out = tts_normalize("Call 3124022223 today")
+    assert out == "Call three one two four zero two two two two three today"
+
+
+def test_tts_normalize_strips_exotic_chars_and_expands_symbols():
+    from app.services.tts_text import tts_normalize
+    out = tts_normalize("Kitchen & bath — 100% remodeled… “stunning” views! ∯")
+    assert "and bath" in out
+    assert "one hundred percent remodeled" in out
+    assert "∯" not in out and "—" not in out and "“" not in out
+
+
+def test_narration_uses_normalized_text():
+    """The audio stage must synthesize the normalized text, not the raw script."""
+    from app.services.tts_text import tts_normalize
+    raw = "Welcome to 11033 S Washtenaw Ave. Offered at $489,000."
+    assert svc.cache_key(tts_normalize(raw), "v") != svc.cache_key(raw, "v")

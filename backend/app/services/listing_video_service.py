@@ -55,6 +55,7 @@ from app.services.pitch_video_service import (
     seconds_to_frames,
 )
 from app.services.storage_service import get_storage
+from app.services.tts_text import tts_normalize
 
 logger = logging.getLogger("revos.listing_video")
 
@@ -494,7 +495,12 @@ async def run_audio_generation(db: AsyncSession, job: ListingVideoJob) -> None:
         else:
             voice_key = job.speaker_name
 
-        key = cache_key(job.script, voice_key)
+        # XTTS chokes on raw digits/currency/exotic punctuation (street
+        # numbers crash its internal normalizer) — synthesize from the
+        # TTS-normalized text; the human-readable script stays in the UI/DB.
+        spoken_script = tts_normalize(job.script)
+
+        key = cache_key(spoken_script, voice_key)
         cache_path = f"listing-videos/tts-cache/{key}.wav"
         with tempfile.TemporaryDirectory() as tmp:
             local_wav = Path(tmp) / "narration.wav"
@@ -505,13 +511,13 @@ async def run_audio_generation(db: AsyncSession, job: ListingVideoJob) -> None:
                 sample.write_bytes(storage.read(persona.voice_sample_path))
                 await asyncio.to_thread(
                     backend.generate_voice,
-                    script=job.script, out_path=str(local_wav), voice_sample_path=str(sample),
+                    script=spoken_script, out_path=str(local_wav), voice_sample_path=str(sample),
                 )
                 storage.save(cache_path, local_wav.read_bytes())
             else:
                 await asyncio.to_thread(
                     backend.generate_voice,
-                    script=job.script, out_path=str(local_wav), speaker_name=job.speaker_name,
+                    script=spoken_script, out_path=str(local_wav), speaker_name=job.speaker_name,
                 )
                 storage.save(cache_path, local_wav.read_bytes())
             duration = _probe_duration_seconds(str(local_wav))
