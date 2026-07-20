@@ -46,6 +46,11 @@ export default function ListingVideosPage() {
   const [minPhotos, setMinPhotos] = useState(3);
   const [maxPhotos, setMaxPhotos] = useState(15);
   const [musicTracks, setMusicTracks] = useState<string[]>([]);
+  const [voices, setVoices] = useState<{ stock: string[]; personas: { id: string; name: string }[] }>({
+    stock: [], personas: [],
+  });
+  // "" = server default · "stock:<name>" · "persona:<id>"
+  const [voiceChoice, setVoiceChoice] = useState("");
 
   // Form
   const [details, setDetails] = useState<ListingDetails>({
@@ -78,6 +83,7 @@ export default function ListingVideosPage() {
         setMaxPhotos(s.max_photos);
         if (s.enabled) {
           listingVideoApi.musicTracks().then((m) => setMusicTracks(m.tracks)).catch(() => {});
+          listingVideoApi.voices().then(setVoices).catch(() => {});
           void refreshJobs();
         }
       })
@@ -159,12 +165,16 @@ export default function ListingVideosPage() {
     setError(null);
     setSubmitting(true);
     try {
+      const [kind, value] = voiceChoice ? voiceChoice.split(":", 2) : ["", ""];
       await listingVideoApi.createJob({
         brandSlug: selectedBrand.slug,
         details,
         script,
         musicTrack,
         photos: photos.map((p) => p.file),
+        voiceMode: kind === "persona" ? "clone" : "stock",
+        speakerName: kind === "stock" ? value : "",
+        personaIdentityId: kind === "persona" ? value : "",
       });
       await refreshJobs();
       setScript("");
@@ -382,15 +392,46 @@ export default function ListingVideosPage() {
               </div>
             )}
 
-            {musicTracks.length > 0 && (
-              <div className="mt-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className={label}>Voiceover voice</label>
+                <select className={input} value={voiceChoice} onChange={(e) => setVoiceChoice(e.target.value)}>
+                  <option value="">Default voice</option>
+                  {voices.stock.length > 0 && (
+                    <optgroup label="Stock voices">
+                      {voices.stock.map((v) => <option key={v} value={`stock:${v}`}>{v}</option>)}
+                    </optgroup>
+                  )}
+                  {voices.personas.length > 0 && (
+                    <optgroup label="Your persona voices">
+                      {voices.personas.map((p) => (
+                        <option key={p.id} value={`persona:${p.id}`}>{p.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {voices.personas.length === 0 && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    Consented Avatar Personas with a voice sample appear here too.
+                  </p>
+                )}
+              </div>
+              <div>
                 <label className={label}>Background music</label>
-                <select className={input} value={musicTrack} onChange={(e) => setMusicTrack(e.target.value)}>
+                <select
+                  className={input} value={musicTrack} disabled={musicTracks.length === 0}
+                  onChange={(e) => setMusicTrack(e.target.value)}
+                >
                   <option value="">No music</option>
                   {musicTracks.map((t) => <option key={t} value={t}>{t.replace(/\.[a-z0-9]+$/i, "")}</option>)}
                 </select>
+                {musicTracks.length === 0 && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    No tracks installed on the server yet — see app/music/README.md.
+                  </p>
+                )}
               </div>
-            )}
+            </div>
 
             <div className="mt-4">
               <Button onClick={onSubmit} disabled={!canSubmit}>

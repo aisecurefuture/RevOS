@@ -70,6 +70,16 @@ class DraftScriptOut(BaseModel):
     estimated_spoken_seconds: int
 
 
+class PersonaVoiceOut(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class VoicesOut(BaseModel):
+    stock: list[str]
+    personas: list[PersonaVoiceOut]
+
+
 class ListingVideoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -78,6 +88,7 @@ class ListingVideoOut(BaseModel):
     address: str
     status: str
     music_track: str
+    voice_mode: str
     speaker_name: str
     script: str
     progress_note: str | None

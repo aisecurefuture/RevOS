@@ -55,7 +55,14 @@ class ListingVideoJob(TenantModel, table=True):
     # Filename of the licensed music bed ("" = no music).
     music_track: str = Field(default="", max_length=200)
 
-    speaker_name: str = Field(max_length=100)  # XTTS stock voice
+    # Narration voice: a built-in XTTS stock speaker, or (voice_mode=clone) an
+    # existing CONSENTED PersonaIdentity's voice — same consent surface as
+    # Avatar Personas; only status=ready identities are eligible.
+    voice_mode: str = Field(default="stock", sa_type=sa.String(10))
+    speaker_name: str = Field(default="", max_length=100)  # voice_mode=stock
+    persona_identity_id: uuid.UUID | None = Field(
+        default=None, foreign_key="persona_identities.id", index=True,
+    )  # voice_mode=clone
     # Built during the audio stage: narration duration + per-photo frame
     # timeline. Drives the Remotion render props — no re-measurement on the
     # Node side.

@@ -28,6 +28,8 @@ from app.schemas.listing_video import (
     ListingDetails,
     ListingVideoOut,
     MusicTracksOut,
+    PersonaVoiceOut,
+    VoicesOut,
 )
 from app.services import listing_video_service as svc
 from app.services.storage_service import get_storage
@@ -61,6 +63,23 @@ async def status(_user: Annotated[AdminUser, Depends(require_authenticated)]) ->
 async def music_tracks(_user: Annotated[AdminUser, Depends(require_editor)]) -> MusicTracksOut:
     _require_enabled()
     return MusicTracksOut(tracks=svc.music_track_names())
+
+
+@router.get("/voices", response_model=VoicesOut)
+async def voices(
+    request: Request, db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_editor)],
+) -> VoicesOut:
+    """Narration options: built-in stock XTTS voices plus this account's
+    consented, ready Avatar Persona voices."""
+    _require_enabled()
+    from app.routers.pitch_video import resolve_stock_speakers
+
+    personas = await svc.list_ready_persona_voices(db, _account_id(request))
+    return VoicesOut(
+        stock=await resolve_stock_speakers(),
+        personas=[PersonaVoiceOut(id=p.id, name=p.name) for p in personas],
+    )
 
 
 @router.post("/draft-script", response_model=DraftScriptOut)
@@ -98,6 +117,9 @@ async def create_job(
     script: str = Form(...),
     brand_slug: str = Form(...),
     music_track: str = Form(""),
+    voice_mode: str = Form("stock"),
+    speaker_name: str = Form(""),
+    persona_identity_id: str = Form(""),
     user: AdminUser = Depends(require_editor), _: None = Depends(verify_csrf),
 ) -> ListingVideoOut:
     _require_enabled()
@@ -105,6 +127,13 @@ async def create_job(
         parsed = ListingDetails.model_validate(json.loads(details))
     except json.JSONDecodeError as exc:
         raise RevOSError("details must be a JSON object.", code="bad_details", status_code=400) from exc
+
+    persona_uuid: uuid.UUID | None = None
+    if persona_identity_id:
+        try:
+            persona_uuid = uuid.UUID(persona_identity_id)
+        except ValueError as exc:
+            raise RevOSError("persona_identity_id must be a UUID.", code="bad_persona_id", status_code=400) from exc
 
     photo_payloads: list[tuple[str, bytes]] = []
     for p in photos:
@@ -114,6 +143,8 @@ async def create_job(
         db, _account_id(request), user,
         brand_slug=brand_slug, details=parsed, script=script,
         music_track=music_track, photos=photo_payloads,
+        voice_mode=voice_mode, speaker_name=speaker_name,
+        persona_identity_id=persona_uuid,
     )
     svc.enqueue_audio_generation(job.id)
     return ListingVideoOut.from_job(job)

@@ -58,28 +58,27 @@ async def status(_user: Annotated[AdminUser, Depends(require_authenticated)]) ->
 _speakers_cache: list[str] | None = None
 
 
-@router.get("/stock-speakers", response_model=StockSpeakersOut)
-async def stock_speakers(_user: Annotated[AdminUser, Depends(require_editor)]) -> StockSpeakersOut:
-    """The stock voices available for narration, for the voice dropdown.
+async def resolve_stock_speakers() -> list[str]:
+    """The stock XTTS voices available for narration (shared with Listing
+    Video Studio's voice picker).
 
     Resolution order: PITCH_VIDEO_VOICES env allowlist → a backend in THIS
     process (dev/tests with the stub) → a round-trip to the avatar-worker
     (the only image with the XTTS venv), cached for the process lifetime.
     Returns an empty list rather than erroring when nothing is reachable —
-    the UI degrades to a free-text field.
+    the UIs degrade gracefully.
     """
     global _speakers_cache
-    _require_enabled()
 
     if settings.pitch_video_voices:
-        return StockSpeakersOut(speakers=[v.strip() for v in settings.pitch_video_voices.split(",") if v.strip()])
+        return [v.strip() for v in settings.pitch_video_voices.split(",") if v.strip()]
     if _speakers_cache is not None:
-        return StockSpeakersOut(speakers=_speakers_cache)
+        return _speakers_cache
 
     backend = get_backend()
     if backend is not None and backend.available and hasattr(backend, "list_stock_speakers"):
         _speakers_cache = backend.list_stock_speakers()
-        return StockSpeakersOut(speakers=_speakers_cache)
+        return _speakers_cache
 
     import asyncio
 
@@ -90,10 +89,17 @@ async def stock_speakers(_user: Annotated[AdminUser, Depends(require_editor)]) -
     try:
         speakers = await asyncio.to_thread(_ask_worker)
     except Exception:  # noqa: BLE001 — worker down/slow: degrade, don't 500
-        return StockSpeakersOut(speakers=[])
+        return []
     if speakers:
         _speakers_cache = speakers
-    return StockSpeakersOut(speakers=speakers or [])
+    return speakers or []
+
+
+@router.get("/stock-speakers", response_model=StockSpeakersOut)
+async def stock_speakers(_user: Annotated[AdminUser, Depends(require_editor)]) -> StockSpeakersOut:
+    """The stock voices available for narration, for the voice dropdown."""
+    _require_enabled()
+    return StockSpeakersOut(speakers=await resolve_stock_speakers())
 
 
 @router.post("/import-pptx")

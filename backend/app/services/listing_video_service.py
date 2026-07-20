@@ -45,6 +45,7 @@ from app.core.tenancy import set_active_account
 from app.models.base import utcnow
 from app.models.brand import Brand
 from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
+from app.models.persona_identity import PersonaIdentity, PersonaIdentityStatus
 from app.models.user import AdminUser
 from app.schemas.listing_video import ListingDetails
 from app.services.avatar.inference import get_backend
@@ -278,6 +279,22 @@ async def list_jobs(db: AsyncSession, account_id: uuid.UUID) -> list[ListingVide
     return list(result.scalars().all())
 
 
+async def list_ready_persona_voices(
+    db: AsyncSession, account_id: uuid.UUID,
+) -> list[PersonaIdentity]:
+    """Consented, ready persona identities that have a voice sample — the only
+    ones eligible to narrate. Mirrors the Avatar Personas consent surface."""
+    result = await db.execute(
+        select(PersonaIdentity).where(
+            PersonaIdentity.account_id == account_id,
+            PersonaIdentity.status == PersonaIdentityStatus.ready,
+            PersonaIdentity.voice_sample_path.is_not(None),  # type: ignore[union-attr]
+            PersonaIdentity.deleted_at.is_(None),
+        ).order_by(PersonaIdentity.name)
+    )
+    return list(result.scalars().all())
+
+
 async def create_job(
     db: AsyncSession,
     account_id: uuid.UUID,
@@ -288,6 +305,9 @@ async def create_job(
     script: str,
     music_track: str,
     photos: list[tuple[str, bytes]],  # (content_type, data), in render order
+    voice_mode: str = "stock",
+    speaker_name: str = "",
+    persona_identity_id: uuid.UUID | None = None,
 ) -> ListingVideoJob:
     if not settings.listing_video_enabled:
         raise RevOSError("Listing Video Studio is not enabled.", code="feature_disabled", status_code=403)
@@ -339,12 +359,44 @@ async def create_job(
     if brand is None:
         raise NotFoundError(f"No brand with slug '{brand_slug}' in this account.")
 
-    speaker = settings.listing_video_default_voice or settings.pitch_video_default_voice
-    if not speaker:
-        raise RevOSError(
-            "No narration voice configured (set LISTING_VIDEO_DEFAULT_VOICE).",
-            code="no_voice_configured", status_code=400,
+    if voice_mode not in ("stock", "clone"):
+        raise RevOSError("voice_mode must be 'stock' or 'clone'.", code="bad_voice_mode", status_code=400)
+
+    persona: PersonaIdentity | None = None
+    speaker = ""
+    if voice_mode == "clone":
+        if persona_identity_id is None:
+            raise RevOSError(
+                "A persona voice was selected but no persona was provided.",
+                code="no_persona", status_code=400,
+            )
+        persona_result = await db.execute(
+            select(PersonaIdentity).where(
+                PersonaIdentity.id == persona_identity_id,
+                PersonaIdentity.account_id == account_id,
+                PersonaIdentity.deleted_at.is_(None),
+            )
         )
+        persona = persona_result.scalar_one_or_none()
+        if persona is None:
+            raise NotFoundError("Persona not found in this account.")
+        if persona.status != PersonaIdentityStatus.ready or not persona.voice_sample_path:
+            raise RevOSError(
+                "This persona isn't ready to narrate — it needs granted consent "
+                "and an uploaded voice sample.",
+                code="persona_not_ready", status_code=400,
+            )
+    else:
+        speaker = (
+            speaker_name.strip()
+            or settings.listing_video_default_voice
+            or settings.pitch_video_default_voice
+        )
+        if not speaker:
+            raise RevOSError(
+                "No narration voice configured (set LISTING_VIDEO_DEFAULT_VOICE).",
+                code="no_voice_configured", status_code=400,
+            )
 
     job = ListingVideoJob(
         account_id=account_id,
@@ -353,7 +405,9 @@ async def create_job(
         details=details.model_dump(),
         script=script,
         music_track=music_track,
+        voice_mode=voice_mode,
         speaker_name=speaker,
+        persona_identity_id=persona.id if persona else None,
         status=ListingVideoJobStatus.queued,
         estimated_seconds=_estimate_seconds(script),
         created_by=user.id,
@@ -421,12 +475,39 @@ async def run_audio_generation(db: AsyncSession, job: ListingVideoJob) -> None:
 
     storage = get_storage()
     try:
-        key = cache_key(job.script, job.speaker_name)
+        # Cache key scopes by voice identity: stock speaker name, or the
+        # persona's id (a re-uploaded voice sample keeps the same id — cache
+        # entries are per-script so staleness only lasts one identical script).
+        if job.voice_mode == "clone":
+            persona = await db.get(PersonaIdentity, job.persona_identity_id)
+            if (
+                persona is None
+                or persona.status != PersonaIdentityStatus.ready
+                or not persona.voice_sample_path
+            ):
+                # Consent may have been revoked between submit and run — honor it.
+                _fail(job, "The selected persona voice is no longer available (consent revoked or sample removed).")
+                db.add(job)
+                await db.flush()
+                return
+            voice_key = f"persona:{persona.id}"
+        else:
+            voice_key = job.speaker_name
+
+        key = cache_key(job.script, voice_key)
         cache_path = f"listing-videos/tts-cache/{key}.wav"
         with tempfile.TemporaryDirectory() as tmp:
             local_wav = Path(tmp) / "narration.wav"
             if storage.exists(cache_path):
                 local_wav.write_bytes(storage.read(cache_path))
+            elif job.voice_mode == "clone":
+                sample = Path(tmp) / "voice_sample.wav"
+                sample.write_bytes(storage.read(persona.voice_sample_path))
+                await asyncio.to_thread(
+                    backend.generate_voice,
+                    script=job.script, out_path=str(local_wav), voice_sample_path=str(sample),
+                )
+                storage.save(cache_path, local_wav.read_bytes())
             else:
                 await asyncio.to_thread(
                     backend.generate_voice,

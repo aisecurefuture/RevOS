@@ -740,6 +740,7 @@ export interface ListingVideoJob {
   address: string;
   status: "queued" | "generating_audio" | "rendering" | "succeeded" | "failed" | "cancelled";
   music_track: string;
+  voice_mode: "stock" | "clone";
   speaker_name: string;
   script: string;
   progress_note: string | null;
@@ -756,6 +757,10 @@ export const listingVideoApi = {
   status: () =>
     apiFetch<{ enabled: boolean; min_photos: number; max_photos: number }>("/listing-videos/status"),
   musicTracks: () => apiFetch<{ tracks: string[] }>("/listing-videos/music-tracks"),
+  voices: () =>
+    apiFetch<{ stock: string[]; personas: { id: string; name: string }[] }>(
+      "/listing-videos/voices",
+    ),
   draftScript: (details: ListingDetails) =>
     apiFetch<{ script: string; fair_housing_flags: string[]; estimated_spoken_seconds: number }>(
       "/listing-videos/draft-script",
@@ -765,12 +770,16 @@ export const listingVideoApi = {
   createJob: (args: {
     brandSlug: string; details: ListingDetails; script: string;
     musicTrack: string; photos: File[];
+    voiceMode?: "stock" | "clone"; speakerName?: string; personaIdentityId?: string;
   }) => {
     const fd = new FormData();
     fd.append("brand_slug", args.brandSlug);
     fd.append("details", JSON.stringify(args.details));
     fd.append("script", args.script);
     fd.append("music_track", args.musicTrack);
+    fd.append("voice_mode", args.voiceMode ?? "stock");
+    fd.append("speaker_name", args.speakerName ?? "");
+    fd.append("persona_identity_id", args.personaIdentityId ?? "");
     for (const p of args.photos) fd.append("photos", p);
     return apiUpload<ListingVideoJob>("/listing-videos", fd);
   },

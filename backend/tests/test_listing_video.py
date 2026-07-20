@@ -269,3 +269,102 @@ async def test_cross_account_job_is_404(api, make_client, monkeypatch):
     })
     oh = {"X-CSRF-Token": r2.json()["csrf_token"]}
     assert (await other.get(f"/api/listing-videos/{job_id}", headers=oh)).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Voice selection (stock + persona clone)
+# ---------------------------------------------------------------------------
+
+async def _make_ready_persona(async_session_factory, api, h, name="Jane Voice"):
+    """Insert a consented-ready persona with a voice sample directly (the full
+    upload+consent flow is exercised in test_avatar.py)."""
+    from app.models.account import Account
+    from app.models.persona_identity import PersonaIdentity, PersonaIdentityStatus
+    from app.services.storage_service import get_storage
+    from sqlalchemy import select as sa_select
+
+    r = await api.get("/api/accounts", headers=h)
+    account_id = uuid.UUID(r.json()[0]["account"]["id"])
+    user_id = uuid.UUID((await api.get("/api/auth/me")).json()["id"])
+
+    sample_key = f"personas/test/{name.replace(' ', '-')}.wav"
+    get_storage().save(sample_key, b"RIFF-fake-but-never-probed")
+
+    async with async_session_factory() as s:
+        p = PersonaIdentity(
+            account_id=account_id, name=name, created_by=user_id,
+            status=PersonaIdentityStatus.ready, voice_sample_path=sample_key,
+        )
+        s.add(p)
+        await s.commit()
+        await s.refresh(p)
+        return p.id
+
+
+@pytest.mark.asyncio
+async def test_voices_endpoint_lists_stock_and_personas(api, async_session_factory, monkeypatch):
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    persona_id = await _make_ready_persona(async_session_factory, api, h)
+
+    r = await api.get("/api/listing-videos/voices", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body["stock"], list)
+    assert any(p["id"] == str(persona_id) and p["name"] == "Jane Voice" for p in body["personas"])
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_non_ready_persona(api, async_session_factory, monkeypatch):
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
+
+    # Draft persona (no consent, no sample) must be rejected.
+    from app.models.persona_identity import PersonaIdentity, PersonaIdentityStatus
+    r = await api.get("/api/accounts", headers=h)
+    account_id = uuid.UUID(r.json()[0]["account"]["id"])
+    user_id = uuid.UUID((await api.get("/api/auth/me")).json()["id"])
+    async with async_session_factory() as s:
+        p = PersonaIdentity(account_id=account_id, name="Draft P", status=PersonaIdentityStatus.draft, created_by=user_id)
+        s.add(p)
+        await s.commit()
+        await s.refresh(p)
+        draft_id = p.id
+
+    form = _form() | {"voice_mode": "clone", "persona_identity_id": str(draft_id)}
+    r = await api.post("/api/listing-videos", headers=h, data=form, files=_photo_files(3))
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "persona_not_ready"
+
+
+@pytest.mark.asyncio
+async def test_persona_voice_full_audio_stage(api, async_session_factory, monkeypatch):
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
+    persona_id = await _make_ready_persona(async_session_factory, api, h)
+
+    form = _form() | {"voice_mode": "clone", "persona_identity_id": str(persona_id)}
+    created = await api.post("/api/listing-videos", headers=h, data=form, files=_photo_files(3))
+    assert created.status_code == 201, created.text
+    assert created.json()["voice_mode"] == "clone"
+
+    from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
+    async with async_session_factory() as s:
+        job = await s.get(ListingVideoJob, uuid.UUID(created.json()["id"]))
+        await svc.run_audio_generation(s, job)
+        await s.commit()
+        assert job.status == ListingVideoJobStatus.rendering, job.error
+        assert job.render_manifest["narration_frames"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_stock_voice_override_is_stored(api, monkeypatch):
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
+    form = _form() | {"voice_mode": "stock", "speaker_name": "custom-speaker"}
+    created = await api.post("/api/listing-videos", headers=h, data=form, files=_photo_files(3))
+    assert created.status_code == 201, created.text
+    assert created.json()["speaker_name"] == "custom-speaker"
