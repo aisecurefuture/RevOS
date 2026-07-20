@@ -416,13 +416,21 @@ export default function ListingVideosPage() {
                   <button
                     key={value} type="button"
                     onClick={() => setAspectRatio(value)}
-                    className={`flex-1 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                    className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
                       aspectRatio === value
                         ? "border-brand bg-brand/5 text-brand font-medium"
                         : "border-slate-200 text-slate-600 hover:border-slate-300"
                     }`}
                   >
-                    {value === "16:9" ? "▭ " : "▯ "}{text}
+                    {/* CSS-drawn frame icon — Unicode ▭/▯ glyphs are missing
+                        from Safari's fallback fonts. */}
+                    <span
+                      aria-hidden
+                      className={`shrink-0 rounded-[2px] border-2 border-current ${
+                        value === "16:9" ? "h-3 w-[18px]" : "h-[18px] w-3"
+                      }`}
+                    />
+                    <span>{text}</span>
                   </button>
                 ))}
               </div>
