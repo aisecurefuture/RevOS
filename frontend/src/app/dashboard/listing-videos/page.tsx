@@ -62,6 +62,8 @@ export default function ListingVideosPage() {
   const [featureText, setFeatureText] = useState("");
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [musicTrack, setMusicTrack] = useState("");
+  // Landscape default: MLS photos are shot landscape and crop badly in 9:16.
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
 
   // Script step
   const [script, setScript] = useState("");
@@ -71,6 +73,8 @@ export default function ListingVideosPage() {
 
   // Jobs
   const [jobs, setJobs] = useState<ListingVideoJob[]>([]);
+  // Per-failed-job voice override for Retry ("" = keep the job's voice).
+  const [retryVoice, setRetryVoice] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -181,6 +185,7 @@ export default function ListingVideosPage() {
         script,
         musicTrack,
         photos: photos.map((p) => p.file),
+        aspectRatio,
         voiceMode: kind === "persona" ? "clone" : "stock",
         speakerName: kind === "stock" ? value : "",
         personaIdentityId: kind === "persona" ? value : "",
@@ -401,6 +406,28 @@ export default function ListingVideosPage() {
               </div>
             )}
 
+            <div className="mt-4">
+              <label className={label}>Orientation</label>
+              <div className="flex gap-2">
+                {([
+                  ["16:9", "Landscape · YouTube, Facebook, websites"],
+                  ["9:16", "Portrait · TikTok, Reels"],
+                ] as const).map(([value, text]) => (
+                  <button
+                    key={value} type="button"
+                    onClick={() => setAspectRatio(value)}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                      aspectRatio === value
+                        ? "border-brand bg-brand/5 text-brand font-medium"
+                        : "border-slate-200 text-slate-600 hover:border-slate-300"
+                    }`}
+                  >
+                    {value === "16:9" ? "▭ " : "▯ "}{text}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div>
                 <label className={label}>Voiceover voice</label>
@@ -470,8 +497,13 @@ export default function ListingVideosPage() {
                     <p className="text-xs text-slate-500">
                       {j.photo_count} photos · {new Date(j.created_at).toLocaleString()}
                       {j.progress_note ? ` · ${j.progress_note}` : ""}
-                      {j.status === "failed" && j.error ? ` · ${j.error.slice(0, 140)}` : ""}
                     </p>
+                    {j.status === "failed" && j.error && (
+                      <p className="mt-0.5 text-xs text-red-600">
+                        {/* The LAST line of a traceback is the actual error. */}
+                        {(j.error.trim().split("\n").filter(Boolean).pop() ?? j.error).slice(0, 200)}
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.cls}`}>
@@ -485,18 +517,38 @@ export default function ListingVideosPage() {
                         Download MP4
                       </a>
                     )}
-                    {j.status === "failed" && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void listingVideoApi.retryJob(j.id).then(refreshJobs).catch((e) =>
-                            setError(e instanceof ApiError ? e.message : "Could not retry the job."),
-                          );
-                        }}
-                        className="rounded-lg border border-brand px-3 py-1.5 text-xs font-medium text-brand hover:bg-brand/5"
-                      >
-                        Retry
-                      </button>
+    {j.status === "failed" && (
+                      <>
+                        <select
+                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-600"
+                          value={retryVoice[j.id] ?? ""}
+                          onChange={(e) => setRetryVoice((m) => ({ ...m, [j.id]: e.target.value }))}
+                        >
+                          <option value="">Same voice ({j.voice_mode === "clone" ? "persona" : j.speaker_name || "default"})</option>
+                          {voices.stock.map((v) => <option key={v} value={`stock:${v}`}>{v}</option>)}
+                          {voices.personas.map((p) => (
+                            <option key={p.id} value={`persona:${p.id}`}>{p.name} (persona)</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const choice = retryVoice[j.id] ?? "";
+                            const [kind, value] = choice ? choice.split(":", 2) : ["", ""];
+                            const voice = kind === "stock"
+                              ? { voiceMode: "stock" as const, speakerName: value }
+                              : kind === "persona"
+                                ? { voiceMode: "clone" as const, personaIdentityId: value }
+                                : undefined;
+                            void listingVideoApi.retryJob(j.id, voice).then(refreshJobs).catch((e) =>
+                              setError(e instanceof ApiError ? e.message : "Could not retry the job."),
+                            );
+                          }}
+                          className="rounded-lg border border-brand px-3 py-1.5 text-xs font-medium text-brand hover:bg-brand/5"
+                        >
+                          Retry
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

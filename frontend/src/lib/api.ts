@@ -746,6 +746,7 @@ export interface ListingVideoJob {
   address: string;
   status: "queued" | "generating_audio" | "rendering" | "succeeded" | "failed" | "cancelled";
   music_track: string;
+  aspect_ratio: string;
   voice_mode: "stock" | "clone";
   speaker_name: string;
   script: string;
@@ -777,12 +778,14 @@ export const listingVideoApi = {
     brandSlug: string; details: ListingDetails; script: string;
     musicTrack: string; photos: File[];
     voiceMode?: "stock" | "clone"; speakerName?: string; personaIdentityId?: string;
+    aspectRatio?: "16:9" | "9:16";
   }) => {
     const fd = new FormData();
     fd.append("brand_slug", args.brandSlug);
     fd.append("details", JSON.stringify(args.details));
     fd.append("script", args.script);
     fd.append("music_track", args.musicTrack);
+    fd.append("aspect_ratio", args.aspectRatio ?? "16:9");
     fd.append("voice_mode", args.voiceMode ?? "stock");
     fd.append("speaker_name", args.speakerName ?? "");
     fd.append("persona_identity_id", args.personaIdentityId ?? "");
@@ -790,8 +793,19 @@ export const listingVideoApi = {
     return apiUpload<ListingVideoJob>("/listing-videos", fd);
   },
   getJob: (id: string) => apiFetch<ListingVideoJob>(`/listing-videos/${id}`),
-  retryJob: (id: string) =>
-    apiFetch<ListingVideoJob>(`/listing-videos/${id}/retry`, { method: "POST" }),
+  retryJob: (id: string, voice?: { voiceMode: "stock" | "clone"; speakerName?: string; personaIdentityId?: string }) =>
+    apiFetch<ListingVideoJob>(`/listing-videos/${id}/retry`, {
+      method: "POST",
+      body: JSON.stringify(
+        voice
+          ? {
+              voice_mode: voice.voiceMode,
+              speaker_name: voice.speakerName ?? null,
+              persona_identity_id: voice.personaIdentityId ?? null,
+            }
+          : {},
+      ),
+    }),
   videoUrl: (id: string) => `/api/listing-videos/${id}/video`,
 };
 

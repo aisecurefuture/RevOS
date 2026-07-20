@@ -88,6 +88,7 @@ class ListingVideoOut(BaseModel):
     address: str
     status: str
     music_track: str
+    aspect_ratio: str
     voice_mode: str
     speaker_name: str
     script: str
@@ -111,3 +112,11 @@ class ListingVideoOut(BaseModel):
 
 class MusicTracksOut(BaseModel):
     tracks: list[str]
+
+
+class RetryRequest(BaseModel):
+    """Optional voice override on retry — omit everything to retry as-is."""
+
+    voice_mode: str | None = None            # "stock" | "clone"
+    speaker_name: str | None = None
+    persona_identity_id: uuid.UUID | None = None

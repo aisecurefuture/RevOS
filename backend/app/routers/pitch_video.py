@@ -54,48 +54,13 @@ async def status(_user: Annotated[AdminUser, Depends(require_authenticated)]) ->
     return {"enabled": settings.pitch_video_studio_enabled}
 
 
-# Speaker list is static per XTTS model version — fetch once per process.
-_speakers_cache: list[str] | None = None
-
-
 async def resolve_stock_speakers() -> list[str]:
     """The stock XTTS voices available for narration (shared with Listing
-    Video Studio's voice picker).
+    Video Studio's voice picker). See services/stock_voices for the tiered
+    resolution + write-through snapshot."""
+    from app.services import stock_voices
 
-    Resolution order: PITCH_VIDEO_VOICES env allowlist → a backend in THIS
-    process (dev/tests with the stub) → a round-trip to the avatar-worker
-    (the only image with the XTTS venv), cached for the process lifetime.
-    Returns an empty list rather than erroring when nothing is reachable —
-    the UIs degrade gracefully.
-    """
-    global _speakers_cache
-
-    if settings.pitch_video_voices:
-        return [v.strip() for v in settings.pitch_video_voices.split(",") if v.strip()]
-    if _speakers_cache is not None:
-        return _speakers_cache
-
-    backend = get_backend()
-    if backend is not None and backend.available and hasattr(backend, "list_stock_speakers"):
-        _speakers_cache = backend.list_stock_speakers()
-        return _speakers_cache
-
-    import asyncio
-
-    def _ask_worker() -> list[str]:
-        from app.workers.celery_app import celery_app
-        # Short timeout: this runs inline in a page-load request — a busy
-        # worker must degrade the dropdown, not hang the page. Once the worker
-        # answers once, the list is cached for the process lifetime.
-        return celery_app.send_task("pitch_video.list_speakers").get(timeout=6)
-
-    try:
-        speakers = await asyncio.to_thread(_ask_worker)
-    except Exception:  # noqa: BLE001 — worker down/slow: degrade, don't 500
-        return []
-    if speakers:
-        _speakers_cache = speakers
-    return speakers or []
+    return await stock_voices.resolve()
 
 
 @router.get("/stock-speakers", response_model=StockSpeakersOut)

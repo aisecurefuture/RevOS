@@ -29,6 +29,7 @@ from app.schemas.listing_video import (
     ListingVideoOut,
     MusicTracksOut,
     PersonaVoiceOut,
+    RetryRequest,
     VoicesOut,
 )
 from app.services import listing_video_service as svc
@@ -125,6 +126,7 @@ async def create_job(
     script: str = Form(...),
     brand_slug: str = Form(...),
     music_track: str = Form(""),
+    aspect_ratio: str = Form("16:9"),
     voice_mode: str = Form("stock"),
     speaker_name: str = Form(""),
     persona_identity_id: str = Form(""),
@@ -152,7 +154,7 @@ async def create_job(
         brand_slug=brand_slug, details=parsed, script=script,
         music_track=music_track, photos=photo_payloads,
         voice_mode=voice_mode, speaker_name=speaker_name,
-        persona_identity_id=persona_uuid,
+        persona_identity_id=persona_uuid, aspect_ratio=aspect_ratio,
     )
     svc.enqueue_audio_generation(job.id)
     return ListingVideoOut.from_job(job)
@@ -161,11 +163,18 @@ async def create_job(
 @router.post("/{job_id}/retry", response_model=ListingVideoOut)
 async def retry_job(
     job_id: uuid.UUID, request: Request, db: DbSession,
+    body: RetryRequest | None = None,
     user: AdminUser = Depends(require_editor), _: None = Depends(verify_csrf),
 ) -> ListingVideoOut:
-    """Re-queue a failed job (same photos/script/voice/music)."""
+    """Re-queue a failed job (same photos/script/music), optionally with a
+    different narration voice."""
     _require_enabled()
-    job = await svc.retry_job(db, job_id, _account_id(request))
+    b = body or RetryRequest()
+    job = await svc.retry_job(
+        db, job_id, _account_id(request),
+        voice_mode=b.voice_mode, speaker_name=b.speaker_name,
+        persona_identity_id=b.persona_identity_id,
+    )
     svc.enqueue_audio_generation(job.id)
     return ListingVideoOut.from_job(job)
 

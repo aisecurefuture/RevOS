@@ -50,6 +50,10 @@ class ListingVideoJob(TenantModel, table=True):
     # The agent-approved narration script actually sent to TTS.
     script: str = Field(sa_type=sa.Text)
 
+    # "16:9" (landscape — default; listing photos are shot landscape) or
+    # "9:16" (portrait, for TikTok/Reels-first agents).
+    aspect_ratio: str = Field(default="16:9", max_length=10)
+
     # Ordered storage keys of the uploaded photos (render order).
     photo_paths: list = Field(default_factory=list, sa_type=JSON)
     # Filename of the licensed music bed ("" = no music).

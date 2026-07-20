@@ -72,15 +72,21 @@ def generate_audio(job_id: str) -> dict:
 @celery_app.task(name="pitch_video.list_speakers")
 def list_speakers() -> list[str]:
     """Enumerate the XTTS model's bundled stock speakers. Routed to the
-    ``avatar`` queue because only that worker carries the XTTS venv; the API
-    dispatches this on demand to populate the voice dropdown (and caches it —
-    the list is static per model version)."""
+    ``avatar`` queue because only that worker carries the XTTS venv.
+
+    Enumeration loads the model (tens of seconds on CPU), so the result is
+    written through to a storage snapshot — the API reads that instantly on
+    every later request instead of asking a possibly-busy worker live."""
+    from app.services import stock_voices
     from app.services.avatar.inference import get_backend
 
     backend = get_backend()
     if backend is None or not hasattr(backend, "list_stock_speakers"):
         return []
-    return backend.list_stock_speakers()
+    speakers = backend.list_stock_speakers()
+    if speakers:
+        stock_voices.save_snapshot(speakers)
+    return speakers
 
 
 @celery_app.task(name="pitch_video.render", acks_late=True)

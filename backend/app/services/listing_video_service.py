@@ -296,6 +296,75 @@ async def list_ready_persona_voices(
     return list(result.scalars().all())
 
 
+async def _resolve_voice(
+    db: AsyncSession,
+    account_id: uuid.UUID,
+    *,
+    voice_mode: str,
+    speaker_name: str,
+    persona_identity_id: uuid.UUID | None,
+) -> tuple[str, str, PersonaIdentity | None]:
+    """Validate a narration voice choice — FAIL FAST at submission time.
+
+    Stock voices are checked against the known speaker list when one is
+    available (env allowlist / in-process backend / worker snapshot — never a
+    live worker ask). An unknown name gets a did-you-mean suggestion instead
+    of a FileNotFoundError minutes later in the queue. Fails open when no
+    list is knowable yet (fresh install, worker never enumerated).
+    """
+    if voice_mode not in ("stock", "clone"):
+        raise RevOSError("voice_mode must be 'stock' or 'clone'.", code="bad_voice_mode", status_code=400)
+
+    if voice_mode == "clone":
+        if persona_identity_id is None:
+            raise RevOSError(
+                "A persona voice was selected but no persona was provided.",
+                code="no_persona", status_code=400,
+            )
+        persona_result = await db.execute(
+            select(PersonaIdentity).where(
+                PersonaIdentity.id == persona_identity_id,
+                PersonaIdentity.account_id == account_id,
+                PersonaIdentity.deleted_at.is_(None),
+            )
+        )
+        persona = persona_result.scalar_one_or_none()
+        if persona is None:
+            raise NotFoundError("Persona not found in this account.")
+        if persona.status != PersonaIdentityStatus.ready or not persona.voice_sample_path:
+            raise RevOSError(
+                "This persona isn't ready to narrate — it needs granted consent "
+                "and an uploaded voice sample.",
+                code="persona_not_ready", status_code=400,
+            )
+        return "clone", "", persona
+
+    speaker = (
+        speaker_name.strip()
+        or settings.listing_video_default_voice
+        or settings.pitch_video_default_voice
+    )
+    if not speaker:
+        raise RevOSError(
+            "No narration voice configured (set LISTING_VIDEO_DEFAULT_VOICE).",
+            code="no_voice_configured", status_code=400,
+        )
+
+    from app.services import stock_voices
+
+    known = await stock_voices.resolve(ask_worker=False)
+    if known and speaker not in known:
+        import difflib
+
+        close = difflib.get_close_matches(speaker, known, n=1, cutoff=0.6)
+        hint = f" Did you mean “{close[0]}”?" if close else ""
+        raise RevOSError(
+            f"Unknown narration voice “{speaker}”.{hint}",
+            code="unknown_voice", status_code=400,
+        )
+    return "stock", speaker, None
+
+
 async def create_job(
     db: AsyncSession,
     account_id: uuid.UUID,
@@ -309,6 +378,7 @@ async def create_job(
     voice_mode: str = "stock",
     speaker_name: str = "",
     persona_identity_id: uuid.UUID | None = None,
+    aspect_ratio: str = "16:9",
 ) -> ListingVideoJob:
     if not settings.listing_video_enabled:
         raise RevOSError("Listing Video Studio is not enabled.", code="feature_disabled", status_code=403)
@@ -360,44 +430,16 @@ async def create_job(
     if brand is None:
         raise NotFoundError(f"No brand with slug '{brand_slug}' in this account.")
 
-    if voice_mode not in ("stock", "clone"):
-        raise RevOSError("voice_mode must be 'stock' or 'clone'.", code="bad_voice_mode", status_code=400)
+    if aspect_ratio not in _ASPECT_DIMENSIONS:
+        raise RevOSError(
+            f"aspect_ratio must be one of {sorted(_ASPECT_DIMENSIONS)}.",
+            code="bad_aspect_ratio", status_code=400,
+        )
 
-    persona: PersonaIdentity | None = None
-    speaker = ""
-    if voice_mode == "clone":
-        if persona_identity_id is None:
-            raise RevOSError(
-                "A persona voice was selected but no persona was provided.",
-                code="no_persona", status_code=400,
-            )
-        persona_result = await db.execute(
-            select(PersonaIdentity).where(
-                PersonaIdentity.id == persona_identity_id,
-                PersonaIdentity.account_id == account_id,
-                PersonaIdentity.deleted_at.is_(None),
-            )
-        )
-        persona = persona_result.scalar_one_or_none()
-        if persona is None:
-            raise NotFoundError("Persona not found in this account.")
-        if persona.status != PersonaIdentityStatus.ready or not persona.voice_sample_path:
-            raise RevOSError(
-                "This persona isn't ready to narrate — it needs granted consent "
-                "and an uploaded voice sample.",
-                code="persona_not_ready", status_code=400,
-            )
-    else:
-        speaker = (
-            speaker_name.strip()
-            or settings.listing_video_default_voice
-            or settings.pitch_video_default_voice
-        )
-        if not speaker:
-            raise RevOSError(
-                "No narration voice configured (set LISTING_VIDEO_DEFAULT_VOICE).",
-                code="no_voice_configured", status_code=400,
-            )
+    voice_mode, speaker, persona = await _resolve_voice(
+        db, account_id, voice_mode=voice_mode, speaker_name=speaker_name,
+        persona_identity_id=persona_identity_id,
+    )
 
     job = ListingVideoJob(
         account_id=account_id,
@@ -406,6 +448,7 @@ async def create_job(
         details=details.model_dump(),
         script=script,
         music_track=music_track,
+        aspect_ratio=aspect_ratio,
         voice_mode=voice_mode,
         speaker_name=speaker,
         persona_identity_id=persona.id if persona else None,
@@ -430,13 +473,34 @@ async def create_job(
     return job
 
 
-async def retry_job(db: AsyncSession, job_id: uuid.UUID, account_id: uuid.UUID) -> ListingVideoJob:
+async def retry_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    account_id: uuid.UUID,
+    *,
+    voice_mode: str | None = None,
+    speaker_name: str | None = None,
+    persona_identity_id: uuid.UUID | None = None,
+) -> ListingVideoJob:
     """Re-queue a FAILED job through the full pipeline (same photos/script/
-    voice — validation already passed at creation). The audio stage's
-    idempotence gate requires status=queued, so resetting is sufficient."""
+    music). The voice may optionally be changed — a bad voice is the classic
+    reason a job failed in the first place. The audio stage's idempotence
+    gate requires status=queued, so resetting is sufficient."""
     job = await get_job(db, job_id, account_id)
     if job.status != ListingVideoJobStatus.failed:
         raise RevOSError("Only failed jobs can be retried.", code="not_failed", status_code=400)
+
+    if voice_mode is not None or speaker_name is not None or persona_identity_id is not None:
+        mode, speaker, persona = await _resolve_voice(
+            db, account_id,
+            voice_mode=voice_mode or job.voice_mode,
+            speaker_name=speaker_name if speaker_name is not None else "",
+            persona_identity_id=persona_identity_id,
+        )
+        job.voice_mode = mode
+        job.speaker_name = speaker
+        job.persona_identity_id = persona.id if persona else None
+
     job.status = ListingVideoJobStatus.queued
     job.error = None
     job.progress_note = None
@@ -565,7 +629,9 @@ async def run_audio_generation(db: AsyncSession, job: ListingVideoJob) -> None:
 # Stage 2 — render (runs in pitch-video-worker)
 # ---------------------------------------------------------------------------
 
-WIDTH, HEIGHT = 1080, 1920  # vertical 9:16 for TikTok / Instagram Reels
+# Landscape (default — listing photos are shot landscape, and it's the right
+# frame for YouTube/websites/Facebook) or portrait (TikTok/Reels).
+_ASPECT_DIMENSIONS = {"16:9": (1920, 1080), "9:16": (1080, 1920)}
 
 
 async def run_render(db: AsyncSession, job: ListingVideoJob) -> None:
@@ -615,8 +681,9 @@ async def run_render(db: AsyncSession, job: ListingVideoJob) -> None:
                     )
 
             details = job.details
+            width, height = _ASPECT_DIMENSIONS.get(job.aspect_ratio, _ASPECT_DIMENSIONS["16:9"])
             props = {
-                "fps": FPS, "width": WIDTH, "height": HEIGHT,
+                "fps": FPS, "width": width, "height": height,
                 "address": job.address,
                 "priceText": details.get("price_text", ""),
                 "listingType": details.get("listing_type", "For Sale"),

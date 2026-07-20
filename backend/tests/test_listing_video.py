@@ -136,7 +136,7 @@ async def _register_owner(api, email="owner@listing.com"):
 def _enable(monkeypatch, tmp_path=None):
     from app.config import settings as app_settings
     monkeypatch.setattr(app_settings, "listing_video_enabled", True)
-    monkeypatch.setattr(app_settings, "listing_video_default_voice", "default-speaker")
+    monkeypatch.setattr(app_settings, "listing_video_default_voice", "stub-speaker-1")
     monkeypatch.setattr(app_settings, "avatar_backend", "stub")
     if tmp_path is not None:
         monkeypatch.setattr(app_settings, "pitch_video_remotion_dir", str(tmp_path))
@@ -213,7 +213,7 @@ async def test_full_job_lifecycle(api, async_session_factory, monkeypatch, tmp_p
     job_id = created.json()["id"]
     assert created.json()["status"] == "queued"
     assert created.json()["photo_count"] == 5
-    assert created.json()["speaker_name"] == "default-speaker"
+    assert created.json()["speaker_name"] == "stub-speaker-1"
 
     # Stage 1: voiceover (as the avatar-worker's Celery task would run it).
     from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
@@ -364,10 +364,10 @@ async def test_stock_voice_override_is_stored(api, monkeypatch):
     _enable(monkeypatch)
     h = await _register_owner(api)
     await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
-    form = _form() | {"voice_mode": "stock", "speaker_name": "custom-speaker"}
+    form = _form() | {"voice_mode": "stock", "speaker_name": "stub-speaker-2"}
     created = await api.post("/api/listing-videos", headers=h, data=form, files=_photo_files(3))
     assert created.status_code == 201, created.text
-    assert created.json()["speaker_name"] == "custom-speaker"
+    assert created.json()["speaker_name"] == "stub-speaker-2"
 
 
 # ---------------------------------------------------------------------------
@@ -454,3 +454,86 @@ async def test_retry_requeues_failed_job_only(api, async_session_factory, monkey
         await svc.run_audio_generation(s, job)
         await s.commit()
         assert job.status == ListingVideoJobStatus.rendering, job.error
+
+
+# ---------------------------------------------------------------------------
+# Fail-fast voice validation + retry with a different voice
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_unknown_stock_voice_rejected_with_suggestion(api, monkeypatch):
+    """The 'Grace Wise' incident: a misspelled voice must fail at submission
+    with a did-you-mean, not minutes later in the queue."""
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
+    form = _form() | {"voice_mode": "stock", "speaker_name": "stub-speeker-1"}
+    r = await api.post("/api/listing-videos", headers=h, data=form, files=_photo_files(3))
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["code"] == "unknown_voice"
+    assert "stub-speaker-1" in r.json()["error"]["message"]  # the suggestion
+
+
+@pytest.mark.asyncio
+async def test_retry_with_a_different_voice(api, async_session_factory, monkeypatch):
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
+    created = await api.post("/api/listing-videos", headers=h, data=_form(), files=_photo_files(3))
+    job_id = created.json()["id"]
+    assert created.json()["speaker_name"] == "stub-speaker-1"
+
+    from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
+    async with async_session_factory() as s:
+        job = await s.get(ListingVideoJob, uuid.UUID(job_id))
+        job.status = ListingVideoJobStatus.failed
+        job.error = "voice failed"
+        s.add(job)
+        await s.commit()
+
+    # Retry with a bad override -> rejected, job stays failed.
+    r = await api.post(f"/api/listing-videos/{job_id}/retry", headers=h,
+                       json={"voice_mode": "stock", "speaker_name": "nope"})
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "unknown_voice"
+
+    # Retry with a valid override -> queued with the new voice.
+    r = await api.post(f"/api/listing-videos/{job_id}/retry", headers=h,
+                       json={"voice_mode": "stock", "speaker_name": "stub-speaker-2"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "queued"
+    assert r.json()["speaker_name"] == "stub-speaker-2"
+
+
+# ---------------------------------------------------------------------------
+# Orientation
+# ---------------------------------------------------------------------------
+
+def test_aspect_dimension_map():
+    assert svc._ASPECT_DIMENSIONS["16:9"] == (1920, 1080)
+    assert svc._ASPECT_DIMENSIONS["9:16"] == (1080, 1920)
+
+
+@pytest.mark.asyncio
+async def test_landscape_is_default_and_portrait_selectable(api, monkeypatch):
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
+
+    created = await api.post("/api/listing-videos", headers=h, data=_form(), files=_photo_files(3))
+    assert created.status_code == 201, created.text
+    assert created.json()["aspect_ratio"] == "16:9"
+
+    portrait = await api.post(
+        "/api/listing-videos", headers=h,
+        data=_form() | {"aspect_ratio": "9:16"}, files=_photo_files(3),
+    )
+    assert portrait.status_code == 201, portrait.text
+    assert portrait.json()["aspect_ratio"] == "9:16"
+
+    bad = await api.post(
+        "/api/listing-videos", headers=h,
+        data=_form() | {"aspect_ratio": "4:3"}, files=_photo_files(3),
+    )
+    assert bad.status_code == 400
+    assert bad.json()["error"]["code"] == "bad_aspect_ratio"
