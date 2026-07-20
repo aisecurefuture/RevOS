@@ -485,6 +485,19 @@ export default function ListingVideosPage() {
                         Download MP4
                       </a>
                     )}
+                    {j.status === "failed" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void listingVideoApi.retryJob(j.id).then(refreshJobs).catch((e) =>
+                            setError(e instanceof ApiError ? e.message : "Could not retry the job."),
+                          );
+                        }}
+                        className="rounded-lg border border-brand px-3 py-1.5 text-xs font-medium text-brand hover:bg-brand/5"
+                      >
+                        Retry
+                      </button>
+                    )}
                   </div>
                 </div>
               );

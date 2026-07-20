@@ -790,6 +790,8 @@ export const listingVideoApi = {
     return apiUpload<ListingVideoJob>("/listing-videos", fd);
   },
   getJob: (id: string) => apiFetch<ListingVideoJob>(`/listing-videos/${id}`),
+  retryJob: (id: string) =>
+    apiFetch<ListingVideoJob>(`/listing-videos/${id}/retry`, { method: "POST" }),
   videoUrl: (id: string) => `/api/listing-videos/${id}/video`,
 };
 

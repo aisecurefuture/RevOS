@@ -430,6 +430,25 @@ async def create_job(
     return job
 
 
+async def retry_job(db: AsyncSession, job_id: uuid.UUID, account_id: uuid.UUID) -> ListingVideoJob:
+    """Re-queue a FAILED job through the full pipeline (same photos/script/
+    voice — validation already passed at creation). The audio stage's
+    idempotence gate requires status=queued, so resetting is sufficient."""
+    job = await get_job(db, job_id, account_id)
+    if job.status != ListingVideoJobStatus.failed:
+        raise RevOSError("Only failed jobs can be retried.", code="not_failed", status_code=400)
+    job.status = ListingVideoJobStatus.queued
+    job.error = None
+    job.progress_note = None
+    job.started_at = None
+    job.finished_at = None
+    job.render_manifest = {}
+    db.add(job)
+    await db.flush()
+    await db.refresh(job)
+    return job
+
+
 def enqueue_audio_generation(job_id: uuid.UUID) -> None:
     try:
         from app.workers.celery_app import celery_app

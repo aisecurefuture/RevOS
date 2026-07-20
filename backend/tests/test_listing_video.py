@@ -416,3 +416,41 @@ def test_narration_uses_normalized_text():
     from app.services.tts_text import tts_normalize
     raw = "Welcome to 11033 S Washtenaw Ave. Offered at $489,000."
     assert svc.cache_key(tts_normalize(raw), "v") != svc.cache_key(raw, "v")
+
+
+# ---------------------------------------------------------------------------
+# Retry failed jobs
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_retry_requeues_failed_job_only(api, async_session_factory, monkeypatch):
+    _enable(monkeypatch)
+    h = await _register_owner(api)
+    await api.post("/api/brands", headers=h, json={"name": "Acme", "slug": "acme"})
+    created = await api.post("/api/listing-videos", headers=h, data=_form(), files=_photo_files(3))
+    job_id = created.json()["id"]
+
+    # Retrying a queued (non-failed) job is rejected.
+    r = await api.post(f"/api/listing-videos/{job_id}/retry", headers=h)
+    assert r.status_code == 400
+
+    # Force-fail it, then retry -> queued again with error cleared.
+    from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
+    async with async_session_factory() as s:
+        job = await s.get(ListingVideoJob, uuid.UUID(job_id))
+        job.status = ListingVideoJobStatus.failed
+        job.error = "voice failed: boom"
+        s.add(job)
+        await s.commit()
+
+    r = await api.post(f"/api/listing-videos/{job_id}/retry", headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "queued"
+    assert r.json()["error"] is None
+
+    # And the audio stage accepts the reset job (idempotence gate is queued).
+    async with async_session_factory() as s:
+        job = await s.get(ListingVideoJob, uuid.UUID(job_id))
+        await svc.run_audio_generation(s, job)
+        await s.commit()
+        assert job.status == ListingVideoJobStatus.rendering, job.error

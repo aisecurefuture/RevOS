@@ -158,6 +158,18 @@ async def create_job(
     return ListingVideoOut.from_job(job)
 
 
+@router.post("/{job_id}/retry", response_model=ListingVideoOut)
+async def retry_job(
+    job_id: uuid.UUID, request: Request, db: DbSession,
+    user: AdminUser = Depends(require_editor), _: None = Depends(verify_csrf),
+) -> ListingVideoOut:
+    """Re-queue a failed job (same photos/script/voice/music)."""
+    _require_enabled()
+    job = await svc.retry_job(db, job_id, _account_id(request))
+    svc.enqueue_audio_generation(job.id)
+    return ListingVideoOut.from_job(job)
+
+
 @router.get("/{job_id}", response_model=ListingVideoOut)
 async def get_job(
     job_id: uuid.UUID, request: Request, db: DbSession,
