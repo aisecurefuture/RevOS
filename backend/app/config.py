@@ -245,13 +245,15 @@ class Settings(BaseSettings):
     listing_video_min_photos: int = 3
     listing_video_max_photos: int = 15
     listing_video_max_photo_bytes: int = 12 * 1024 * 1024  # per uploaded photo
-    # Directory of LICENSED royalty-free music beds inside the render-worker
-    # image (see deploy/listing-video/music/README.md — MusicGen weights are
-    # CC-BY-NC and may NOT be used commercially; only drop cleared tracks
-    # here). Empty = render without music.
-    listing_video_music_dir: str = ""
-    # Comma-separated filenames from that dir, exposed to the UI dropdown.
-    # Kept in config because the API image does not mount the music dir.
+    # Directory of LICENSED royalty-free music beds (see app/music/README.md —
+    # MusicGen weights are CC-BY-NC and may NOT be used commercially; only
+    # drop cleared tracks here). The default lives inside backend/, so both
+    # the API image and the render-worker image carry it via `COPY backend/`.
+    # Relative paths resolve from the process CWD (backend/ in dev, /app in
+    # the images) — both land on the same folder. Empty = no music.
+    listing_video_music_dir: str = "app/music"
+    # Optional comma-separated allowlist of filenames for the UI dropdown.
+    # Empty = list the audio files actually present in the dir.
     listing_video_music_tracks: str = ""
     listing_video_music_volume: float = 0.14  # duck the bed under narration
 

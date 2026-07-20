@@ -234,8 +234,21 @@ def _estimate_seconds(script: str) -> int:
     return int(audio_gen + render)
 
 
+_MUSIC_EXTENSIONS = {".mp3", ".m4a", ".wav"}
+
+
 def music_track_names() -> list[str]:
-    return [t.strip() for t in settings.listing_video_music_tracks.split(",") if t.strip()]
+    """The dropdown list: the env allowlist if set, else whatever licensed
+    audio files are actually present in the music dir."""
+    if settings.listing_video_music_tracks:
+        return [t.strip() for t in settings.listing_video_music_tracks.split(",") if t.strip()]
+    music_dir = Path(settings.listing_video_music_dir) if settings.listing_video_music_dir else None
+    if music_dir is None or not music_dir.is_dir():
+        return []
+    return sorted(
+        f.name for f in music_dir.iterdir()
+        if f.is_file() and f.suffix.lower() in _MUSIC_EXTENSIONS
+    )
 
 
 # ---------------------------------------------------------------------------
