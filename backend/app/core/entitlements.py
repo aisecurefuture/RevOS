@@ -73,6 +73,15 @@ PLAN_LIMITS: dict[PlanName, PlanLimits] = {
         ai_drafts_per_month=2_000, landing_pages=50,
         api_access=True, client_workspaces=True, white_label=True,
     ),
+    # Complimentary internal access (platform-admin-granted, e.g. the founding
+    # team) — unlimited, same as enterprise. Email cap kept at Premium's level
+    # so comp accounts can't drain the shared Resend quota either.
+    PlanName.comp: PlanLimits(
+        seats=None, brands=None, contacts=None,
+        emails_per_month=5_000, social_connections=None,
+        ai_drafts_per_month=None, landing_pages=None,
+        api_access=True, client_workspaces=True, white_label=True,
+    ),
     # --- Legacy tiers (retained so old subscriptions resolve). --------------
     PlanName.agency: PlanLimits(
         seats=15, brands=None, contacts=100_000,

@@ -356,6 +356,7 @@ const PLAN_LABELS: Record<string, string> = {
   pro: "Pro",
   pro_max: "Pro Max",
   premium: "Premium",
+  comp: "Complimentary (team)",
   // Legacy tiers — shown only for accounts still on an old subscription.
   agency: "Agency",
   enterprise: "Enterprise",

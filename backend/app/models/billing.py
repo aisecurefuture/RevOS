@@ -22,6 +22,9 @@ class PlanName(StrEnum):
     pro = "pro"
     pro_max = "pro_max"
     premium = "premium"
+    # Complimentary internal access, granted only by a platform admin from the
+    # admin console — never offered at checkout, never touched by Stripe.
+    comp = "comp"
     # Legacy tiers — retained so subscriptions created before the 2026-07-14
     # pricing change still resolve their entitlements. Not offered at checkout.
     agency = "agency"

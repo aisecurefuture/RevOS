@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.account import Account, Membership
 from app.models.base import utcnow
+from app.models.billing import PlanName, Subscription, SubscriptionStatus
 from app.models.user import AdminUser, Role
 
 
@@ -30,12 +31,17 @@ async def list_accounts(db: AsyncSession) -> list[dict]:
                 Membership.account_id == acct.id, Membership.deleted_at.is_(None)
             )
         )
+        sub = (await db.execute(
+            select(Subscription).where(Subscription.account_id == acct.id)
+        )).scalar_one_or_none()
         out.append({
             "id": acct.id, "name": acct.name, "slug": acct.slug, "type": str(acct.type),
             "owner_email": owner.email if owner else None,
             "member_count": int(count or 0),
             "disabled": acct.disabled_at is not None,
             "disabled_reason": acct.disabled_reason,
+            "plan": str(sub.plan) if sub else None,
+            "billing_status": str(sub.status) if sub else None,
             "created_at": acct.created_at,
         })
     return out
@@ -74,6 +80,50 @@ async def set_account_disabled(
     db.add(acct)
     await db.flush()
     return acct
+
+
+async def set_account_comp(
+    db: AsyncSession, account_id: uuid.UUID, *, enabled: bool,
+) -> Subscription:
+    """Grant or revoke complimentary (no-billing) access for an account.
+
+    Granting upserts the account's subscription to plan=comp / status=active
+    with no period end — the paywall never triggers. Revoking only applies to
+    an account that is actually on comp (it will NOT touch a real paid Stripe
+    subscription) and drops it to canceled, which restores the normal paywall.
+    """
+    acct = await db.get(Account, account_id)
+    if acct is None or acct.deleted_at is not None:
+        raise NotFoundError("Account not found.")
+
+    sub = (await db.execute(
+        select(Subscription).where(Subscription.account_id == account_id)
+    )).scalar_one_or_none()
+
+    if enabled:
+        if sub is None:
+            sub = Subscription(account_id=account_id)
+        if sub.status == SubscriptionStatus.active and sub.plan not in (PlanName.trial, PlanName.comp):
+            raise ConflictError(
+                "This account has an active paid subscription — comp access "
+                "would be a downgrade of their paid plan. Cancel it in Stripe first."
+            )
+        sub.plan = PlanName.comp
+        sub.status = SubscriptionStatus.active
+        sub.trial_ends_at = None
+        sub.current_period_end = None
+        sub.billing_interval = None
+        sub.canceled_at = None
+        sub.cancel_at_period_end = False
+    else:
+        if sub is None or sub.plan != PlanName.comp:
+            raise ConflictError("This account is not on complimentary access.")
+        sub.status = SubscriptionStatus.canceled
+        sub.canceled_at = utcnow()
+
+    db.add(sub)
+    await db.flush()
+    return sub
 
 
 async def set_user_active(db: AsyncSession, user_id: uuid.UUID, *, active: bool) -> AdminUser:

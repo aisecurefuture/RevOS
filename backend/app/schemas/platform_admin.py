@@ -17,7 +17,13 @@ class AdminAccountOut(BaseModel):
     member_count: int
     disabled: bool
     disabled_reason: str | None = None
+    plan: str | None = None            # subscription plan ("comp" = complimentary)
+    billing_status: str | None = None  # trialing / active / canceled / …
     created_at: datetime
+
+
+class CompAccessRequest(BaseModel):
+    enabled: bool
 
 
 class AdminUserOut(BaseModel):

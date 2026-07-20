@@ -76,7 +76,7 @@ export default function AdminPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
-                    <th className="py-2">Name</th><th>Owner</th><th>Members</th><th>Status</th><th></th>
+                    <th className="py-2">Name</th><th>Owner</th><th>Members</th><th>Plan</th><th>Status</th><th></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -86,6 +86,15 @@ export default function AdminPage() {
                       <td className="text-slate-500">{a.owner_email ?? "—"}</td>
                       <td className="text-slate-500">{a.member_count}</td>
                       <td>
+                        {a.plan === "comp" ? (
+                          <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700">Comp</span>
+                        ) : (
+                          <span className="text-xs text-slate-500">
+                            {a.plan ?? "—"}{a.billing_status && a.plan ? ` · ${a.billing_status}` : ""}
+                          </span>
+                        )}
+                      </td>
+                      <td>
                         {a.disabled ? (
                           <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">Disabled</span>
                         ) : (
@@ -93,20 +102,39 @@ export default function AdminPage() {
                         )}
                       </td>
                       <td className="text-right">
-                        {a.disabled ? (
-                          <button className="text-xs text-brand hover:underline"
-                            onClick={() => run(() => platformAdminApi.enableAccount(a.id), "Tenant enabled")}>
-                            Enable
-                          </button>
-                        ) : (
-                          <button className="text-xs text-red-500 hover:underline"
-                            onClick={() => {
-                              const reason = prompt(`Disable "${a.name}"? Optional reason:`) ?? undefined;
-                              if (reason !== null) void run(() => platformAdminApi.disableAccount(a.id, reason), "Tenant disabled");
-                            }}>
-                            Disable
-                          </button>
-                        )}
+                        <span className="inline-flex items-center gap-3">
+                          {a.plan === "comp" && a.billing_status === "active" ? (
+                            <button className="text-xs text-amber-600 hover:underline"
+                              onClick={() => {
+                                if (confirm(`Revoke complimentary access for "${a.name}"? They'll hit the paywall unless they subscribe.`))
+                                  void run(() => platformAdminApi.setAccountComp(a.id, false), "Comp access revoked");
+                              }}>
+                              Revoke comp
+                            </button>
+                          ) : (
+                            <button className="text-xs text-purple-600 hover:underline"
+                              onClick={() => {
+                                if (confirm(`Grant "${a.name}" complimentary access? They bypass the trial/paywall entirely.`))
+                                  void run(() => platformAdminApi.setAccountComp(a.id, true), "Comp access granted");
+                              }}>
+                              Grant comp
+                            </button>
+                          )}
+                          {a.disabled ? (
+                            <button className="text-xs text-brand hover:underline"
+                              onClick={() => run(() => platformAdminApi.enableAccount(a.id), "Tenant enabled")}>
+                              Enable
+                            </button>
+                          ) : (
+                            <button className="text-xs text-red-500 hover:underline"
+                              onClick={() => {
+                                const reason = prompt(`Disable "${a.name}"? Optional reason:`) ?? undefined;
+                                if (reason !== null) void run(() => platformAdminApi.disableAccount(a.id, reason), "Tenant disabled");
+                              }}>
+                              Disable
+                            </button>
+                          )}
+                        </span>
                       </td>
                     </tr>
                   ))}

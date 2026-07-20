@@ -202,6 +202,8 @@ export interface AdminAccount {
   member_count: number;
   disabled: boolean;
   disabled_reason: string | null;
+  plan: string | null;
+  billing_status: string | null;
   created_at: string;
 }
 
@@ -228,6 +230,10 @@ export const platformAdminApi = {
     }),
   enableAccount: (id: string) =>
     apiFetch<AdminAccount>(`/admin/accounts/${id}/enable`, { method: "POST" }),
+  setAccountComp: (id: string, enabled: boolean) =>
+    apiFetch<AdminAccount>(`/admin/accounts/${id}/comp`, {
+      method: "POST", body: JSON.stringify({ enabled }),
+    }),
   listUsers: () => apiFetch<AdminUser[]>("/admin/users"),
   disableUser: (id: string) => apiFetch<{ status: string }>(`/admin/users/${id}/disable`, { method: "POST" }),
   enableUser: (id: string) => apiFetch<{ status: string }>(`/admin/users/${id}/enable`, { method: "POST" }),

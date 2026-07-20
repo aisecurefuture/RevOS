@@ -13,6 +13,7 @@ from app.models.user import AdminUser
 from app.schemas.platform_admin import (
     AdminAccountOut,
     AdminUserOut,
+    CompAccessRequest,
     CreateTenantOut,
     CreateTenantRequest,
     DisableAccountRequest,
@@ -63,6 +64,20 @@ async def enable_account(
     await svc.set_account_disabled(db, account_id, admin, disabled=False)
     await write_audit(db, action="admin.account_enable", user_id=admin.id,
                       entity_type="account", entity_id=str(account_id), request=request)
+    return await _account_out(db, account_id)
+
+
+@router.post("/accounts/{account_id}/comp", response_model=AdminAccountOut)
+async def set_comp_access(
+    account_id: uuid.UUID, body: CompAccessRequest, request: Request, db: DbSession,
+    admin: AdminUser = Depends(require_platform_admin), _c: None = Depends(verify_csrf),
+) -> AdminAccountOut:
+    """Grant/revoke complimentary access — the account bypasses the trial
+    paywall entirely (plan=comp, active, no expiry). For the internal team."""
+    await svc.set_account_comp(db, account_id, enabled=body.enabled)
+    await write_audit(db, action="admin.account_comp", user_id=admin.id,
+                      entity_type="account", entity_id=str(account_id), request=request,
+                      meta={"enabled": body.enabled})
     return await _account_out(db, account_id)
 
 

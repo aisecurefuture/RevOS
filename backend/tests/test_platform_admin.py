@@ -213,3 +213,76 @@ async def test_register_honeypot_blocks_bots(api):
         "email": "human@test.com", "password": "PassWord1234", "full_name": "Human",
     })
     assert clean.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# Complimentary (comp) access — team bypasses the trial paywall
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_comp_access_bypasses_expired_trial(api, make_client, async_session_factory, monkeypatch):
+    """Expired-trial account gets comp -> full access with unlimited-ish limits."""
+    _make_admin(monkeypatch, "boss@comp.com")
+    admin_h = await _register(api, "boss@comp.com")
+
+    team = await make_client()
+    r = await team.post("/api/auth/register", json={
+        "email": "teammate@comp.com", "password": "PassWord1234", "full_name": "Teammate",
+    })
+    team_h = {"X-CSRF-Token": r.json()["csrf_token"]}
+
+    # Expire the teammate's trial.
+    import datetime
+    import uuid as _uuid
+    from sqlalchemy import select as sa_select
+    from app.models.billing import Subscription
+    accounts = (await team.get("/api/accounts", headers=team_h)).json()
+    account_id = _uuid.UUID(accounts[0]["account"]["id"])
+    async with async_session_factory() as s:
+        sub = (await s.execute(sa_select(Subscription).where(Subscription.account_id == account_id))).scalar_one()
+        sub.trial_ends_at = sub.trial_ends_at - datetime.timedelta(days=30) if sub.trial_ends_at else None
+        s.add(sub)
+        await s.commit()
+
+    bs = (await team.get("/api/billing/status", headers=team_h)).json()
+    assert bs["is_trial_expired"] is True
+    assert bs["effective_plan"] is None  # locked
+
+    # Admin grants comp.
+    r = await api.post(f"/api/admin/accounts/{account_id}/comp", headers=admin_h, json={"enabled": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["plan"] == "comp"
+    assert r.json()["billing_status"] == "active"
+
+    bs = (await team.get("/api/billing/status", headers=team_h)).json()
+    assert bs["effective_plan"] == "comp"
+    assert bs["is_trial_expired"] is False
+    assert bs["limits"]["seats"] is None            # unlimited
+    assert bs["limits"]["white_label"] is True
+    assert bs["limits"]["emails_per_month"] == 5000  # shared-Resend cap still applies
+
+    # Admin revokes -> locked again.
+    r = await api.post(f"/api/admin/accounts/{account_id}/comp", headers=admin_h, json={"enabled": False})
+    assert r.status_code == 200
+    bs = (await team.get("/api/billing/status", headers=team_h)).json()
+    assert bs["effective_plan"] is None
+
+
+@pytest.mark.asyncio
+async def test_comp_revoke_requires_comp_plan(api, monkeypatch):
+    """Revoking comp on an account that isn't comp (e.g. still trialing) 409s."""
+    _make_admin(monkeypatch, "boss2@comp.com")
+    h = await _register(api, "boss2@comp.com")
+    accounts = (await api.get("/api/admin/accounts", headers=h)).json()
+    acct_id = accounts[0]["id"]
+    r = await api.post(f"/api/admin/accounts/{acct_id}/comp", headers=h, json={"enabled": False})
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_comp_requires_platform_admin(api, make_client):
+    h = await _register(api, "pleb@comp.com")
+    accounts = (await api.get("/api/accounts", headers=h)).json()
+    acct_id = accounts[0]["account"]["id"]
+    r = await api.post(f"/api/admin/accounts/{acct_id}/comp", headers=h, json={"enabled": True})
+    assert r.status_code == 403
