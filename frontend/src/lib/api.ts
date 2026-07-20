@@ -714,6 +714,70 @@ export const pitchVideoApi = {
   videoUrl: (id: string) => `/api/pitch-videos/${id}/video`,
 };
 
+// --- Listing Video Studio (real estate) --------------------------------------
+export interface ListingDetails {
+  street: string;
+  city: string;
+  state: string;
+  zip_code?: string;
+  beds?: number | null;
+  baths?: number | null;
+  sqft?: number | null;
+  lot?: string;
+  year_built?: number | null;
+  price_text?: string;
+  listing_type?: string;
+  features: string[];
+  hook?: string;
+  agent_name?: string;
+  agent_phone?: string;
+  brokerage?: string;
+}
+
+export interface ListingVideoJob {
+  id: string;
+  brand_id: string;
+  address: string;
+  status: "queued" | "generating_audio" | "rendering" | "succeeded" | "failed" | "cancelled";
+  music_track: string;
+  speaker_name: string;
+  script: string;
+  progress_note: string | null;
+  estimated_seconds: number | null;
+  error: string | null;
+  photo_count: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  has_output: boolean;
+}
+
+export const listingVideoApi = {
+  status: () =>
+    apiFetch<{ enabled: boolean; min_photos: number; max_photos: number }>("/listing-videos/status"),
+  musicTracks: () => apiFetch<{ tracks: string[] }>("/listing-videos/music-tracks"),
+  draftScript: (details: ListingDetails) =>
+    apiFetch<{ script: string; fair_housing_flags: string[]; estimated_spoken_seconds: number }>(
+      "/listing-videos/draft-script",
+      { method: "POST", body: JSON.stringify({ details }) },
+    ),
+  listJobs: () => apiFetch<ListingVideoJob[]>("/listing-videos"),
+  createJob: (args: {
+    brandSlug: string; details: ListingDetails; script: string;
+    musicTrack: string; photos: File[];
+  }) => {
+    const fd = new FormData();
+    fd.append("brand_slug", args.brandSlug);
+    fd.append("details", JSON.stringify(args.details));
+    fd.append("script", args.script);
+    fd.append("music_track", args.musicTrack);
+    for (const p of args.photos) fd.append("photos", p);
+    return apiUpload<ListingVideoJob>("/listing-videos", fd);
+  },
+  getJob: (id: string) => apiFetch<ListingVideoJob>(`/listing-videos/${id}`),
+  videoUrl: (id: string) => `/api/listing-videos/${id}/video`,
+};
+
 // --- Video script engine ----------------------------------------------------
 export interface VideoScript {
   id: string;

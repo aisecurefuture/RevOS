@@ -232,6 +232,29 @@ class Settings(BaseSettings):
     pitch_video_render_timeout_seconds: int = 30 * 60  # 30 min hard cap per render
     pitch_video_render_concurrency: int = 1  # Remotion's own worker concurrency, not job concurrency
 
+    # --- Listing Video Studio (real estate) ---------------------------------
+    # ~30s vertical (9:16) listing videos for TikTok/Instagram: Ken Burns
+    # slideshow over agent-uploaded photos + XTTS voiceover + licensed music
+    # bed. Rides the SAME two-stage pipeline as Pitch Video Studio (audio on
+    # the avatar queue, render on the pitch_video queue) — no new worker
+    # images, no GPU required.
+    listing_video_enabled: bool = False
+    # Stock XTTS speaker for the voiceover; falls back to
+    # pitch_video_default_voice when empty.
+    listing_video_default_voice: str = ""
+    listing_video_min_photos: int = 3
+    listing_video_max_photos: int = 15
+    listing_video_max_photo_bytes: int = 12 * 1024 * 1024  # per uploaded photo
+    # Directory of LICENSED royalty-free music beds inside the render-worker
+    # image (see deploy/listing-video/music/README.md — MusicGen weights are
+    # CC-BY-NC and may NOT be used commercially; only drop cleared tracks
+    # here). Empty = render without music.
+    listing_video_music_dir: str = ""
+    # Comma-separated filenames from that dir, exposed to the UI dropdown.
+    # Kept in config because the API image does not mount the music dir.
+    listing_video_music_tracks: str = ""
+    listing_video_music_volume: float = 0.14  # duck the bed under narration
+
     # Hard ceiling on any request body (bytes). Above the media upload cap so
     # that route's own limit applies first; this is the global DoS backstop.
     max_request_bytes: int = 256 * 1024 * 1024

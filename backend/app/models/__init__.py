@@ -74,6 +74,7 @@ from app.models.lead import (
     Tag,
     UTMCapture,
 )
+from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
 from app.models.media import MediaAsset, MediaKind, MediaStatus, MediaVariant
 from app.models.offer import Offer, OfferStatus, OfferType
 from app.models.pitch_video import PitchVideoJob, PitchVideoJobStatus, PitchVideoVoiceMode
@@ -124,6 +125,7 @@ __all__ = [
     # offer
     "Offer", "OfferType", "OfferStatus",
     # pitch video
+    "ListingVideoJob", "ListingVideoJobStatus",
     "PitchVideoJob", "PitchVideoJobStatus", "PitchVideoVoiceMode",
     # crm
     "Company", "Contact", "PipelineStage", "Deal", "DealStatus", "Note",
