@@ -495,7 +495,9 @@ export default function ListingVideosPage() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-800">{j.address}</p>
                     <p className="text-xs text-slate-500">
-                      {j.photo_count} photos · {new Date(j.created_at).toLocaleString()}
+                      {/* API timestamps are UTC but unmarked — tag them so
+                          they render in the viewer's local time. */}
+                      {j.photo_count} photos · {new Date(/[Z+]/.test(j.created_at.slice(-6)) ? j.created_at : j.created_at + "Z").toLocaleString()}
                       {j.progress_note ? ` · ${j.progress_note}` : ""}
                     </p>
                     {j.status === "failed" && j.error && (
