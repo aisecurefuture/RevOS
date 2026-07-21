@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { AddLeadModal } from "@/components/AddLeadModal";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -26,6 +27,7 @@ export default function LeadsPage() {
   const [error, setError] = useState<string | null>(null);
   const [consent, setConsent] = useState("");
   const [search, setSearch] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
 
   const filters = useCallback(() => {
     const p: Record<string, string> = {};
@@ -56,10 +58,21 @@ export default function LeadsPage() {
         title="Leads"
         description="Permission-based — only confirmed opt-ins are mailable."
         actions={
-          <Button variant="secondary" onClick={() => void leadsApi.exportCsv(filters())}>
-            Export CSV
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => void leadsApi.exportCsv(filters())}>
+              Export CSV
+            </Button>
+            <Button onClick={() => setShowAdd(true)}>Add lead</Button>
+          </div>
         }
+      />
+
+      <AddLeadModal
+        open={showAdd}
+        variant="lead"
+        brandId={selectedBrandId}
+        onClose={() => setShowAdd(false)}
+        onCreated={() => void load()}
       />
 
       {error ? (

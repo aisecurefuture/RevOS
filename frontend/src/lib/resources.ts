@@ -72,6 +72,9 @@ export const leadsApi = {
     const qs = new URLSearchParams(params).toString();
     return apiFetch<Lead[]>(`/leads${qs ? `?${qs}` : ""}`);
   },
+  // Manually add a lead (and optionally a linked contact) with an opt-in attestation.
+  create: (data: Record<string, unknown>) =>
+    apiFetch<Lead>("/leads", { method: "POST", body: JSON.stringify(data) }),
   // CSV export downloads via the browser (cookie-authenticated, same-origin).
   async exportCsv(params: Record<string, string> = {}): Promise<void> {
     const qs = new URLSearchParams(params).toString();

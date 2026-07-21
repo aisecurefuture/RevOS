@@ -148,6 +148,16 @@ export default function ContentPage() {
         <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       ) : null}
 
+      {canEdit && !selectedBrandId ? (
+        <Card className="mb-6 border-dashed">
+          <p className="text-sm text-slate-500">
+            Select a specific brand in the <span className="font-medium">Brand</span> menu above to
+            create content. Content items belong to one brand, so the composer is hidden while
+            “All Brands” is selected.
+          </p>
+        </Card>
+      ) : null}
+
       {canEdit && selectedBrandId ? (
         <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>

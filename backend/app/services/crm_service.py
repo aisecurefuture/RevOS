@@ -125,6 +125,40 @@ async def create_contact(db: AsyncSession, data: dict) -> Contact:
     return contact
 
 
+async def find_or_create_contact(
+    db: AsyncSession, *, brand_id: uuid.UUID, email: str,
+    first_name: str | None = None, last_name: str | None = None,
+    phone: str | None = None, title: str | None = None, source: str | None = None,
+) -> Contact:
+    """Return an existing contact for this brand+email (resurrecting a
+    soft-deleted one) or create a new one. Fills blanks only — never
+    overwrites known-good data with empties."""
+    email = email.lower().strip()
+    result = await db.execute(
+        select(Contact).where(Contact.brand_id == brand_id, Contact.email == email)
+    )
+    contact = result.scalar_one_or_none()
+    if contact is None:
+        contact = Contact(brand_id=brand_id, email=email, source=source)
+    elif contact.deleted_at is not None:
+        contact.deleted_at = None
+
+    contact.first_name = contact.first_name or clean_text(first_name)
+    contact.last_name = contact.last_name or clean_text(last_name)
+    contact.phone = contact.phone or clean_text(phone)
+    contact.title = contact.title or clean_text(title)
+    if source and not contact.source:
+        contact.source = source
+    contact.lead_score = score_contact(
+        email=contact.email, title=contact.title,
+        has_company=contact.company_id is not None, linkedin=contact.linkedin_url,
+    )
+    db.add(contact)
+    await db.flush()
+    await db.refresh(contact)
+    return contact
+
+
 async def list_contacts(
     db: AsyncSession, *, brand_id: uuid.UUID | None = None, source: str | None = None,
     search: str | None = None, limit: int = 50, offset: int = 0,

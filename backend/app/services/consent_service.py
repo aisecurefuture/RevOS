@@ -13,14 +13,16 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.exceptions import ComplianceError
+from app.core.exceptions import ComplianceError, NotFoundError
 from app.core.security import make_signed_token, read_signed_token
-from app.core.tenancy import set_active_account
+from app.core.tenancy import get_active_account, set_active_account
 from app.models.base import utcnow
+from app.models.brand import Brand
 from app.models.campaign import Form, FormSubmission
 from app.models.email import EmailCategory, Suppression, SuppressionReason
 from app.models.lead import ConsentRecord, ConsentStatus, Lead, UTMCapture
 from app.models.offer import Offer
+from app.schemas.lead import ConsentMode
 from app.services import lead_service, outbox
 
 _CONFIRM_SALT = "double-optin"
@@ -30,8 +32,11 @@ _UNSUB_MAX_AGE = 60 * 60 * 24 * 365 * 2       # 2 years
 
 
 # --- Tokens & URLs ----------------------------------------------------------
-def make_confirm_url(lead_id: uuid.UUID, form_id: uuid.UUID) -> str:
-    token = make_signed_token({"lead": str(lead_id), "form": str(form_id)}, salt=_CONFIRM_SALT)
+def make_confirm_url(lead_id: uuid.UUID, form_id: uuid.UUID | None = None) -> str:
+    payload = {"lead": str(lead_id)}
+    if form_id is not None:
+        payload["form"] = str(form_id)
+    token = make_signed_token(payload, salt=_CONFIRM_SALT)
     return f"{settings.public_base_url}/api/public/confirm?token={token}"
 
 
@@ -60,6 +65,116 @@ async def record_consent(
     await db.flush()
 
 
+# --- Manual add with opt-in attestation -------------------------------------
+async def _resolve_default_brand_id(db: AsyncSession) -> uuid.UUID:
+    """Pick the active account's first (oldest, active) brand when the caller
+    didn't specify one — leads always belong to exactly one brand."""
+    from sqlmodel import select
+
+    account_id = get_active_account()
+    result = await db.execute(
+        select(Brand).where(
+            Brand.account_id == account_id,
+            Brand.is_active == True,  # noqa: E712
+            Brand.deleted_at.is_(None),
+        ).order_by(Brand.created_at.asc()).limit(1)
+    )
+    brand = result.scalar_one_or_none()
+    if brand is None:
+        raise NotFoundError("No brand exists yet — create a brand before adding leads.")
+    return brand.id
+
+
+async def create_lead_with_attestation(
+    db: AsyncSession,
+    *,
+    actor_user_id: uuid.UUID,
+    actor_email: str | None,
+    brand_id: uuid.UUID | None,
+    email: str,
+    first_name: str | None,
+    last_name: str | None,
+    phone: str | None,
+    company_name: str | None,
+    title: str | None,
+    source: str | None,
+    tags: list[str],
+    consent_basis: str,
+    consent_mode: ConsentMode,
+    also_create_contact: bool,
+    ip: str | None,
+    ua: str | None,
+) -> Lead:
+    """Manually add a lead with a human attestation that the person opted in.
+
+    The attestation is captured as an immutable ConsentRecord (the legal basis
+    for mailing them). Suppressed addresses are refused — an opt-out can never
+    be silently overridden by a manual add.
+    """
+    email = email.lower().strip()
+    if brand_id is None:
+        brand_id = await _resolve_default_brand_id(db)
+
+    if await is_suppressed(db, brand_id, email):
+        raise ComplianceError("This email address has opted out and cannot be re-added.")
+
+    lead, _created = await lead_service.find_or_create_lead(
+        db, brand_id=brand_id, email=email, first_name=first_name, last_name=last_name,
+        phone=phone, company_name=company_name, source=source or "manual",
+    )
+
+    if lead.consent_status == ConsentStatus.unsubscribed:
+        raise ComplianceError("This lead previously unsubscribed and cannot be re-added.")
+
+    evidence = {
+        "method": "manual_attestation",
+        "attested_by_user_id": str(actor_user_id),
+        "attested_by_email": actor_email,
+        "attested_at": utcnow().isoformat(),
+        "basis": consent_basis,
+        "consent_mode": consent_mode.value,
+        "source": source or "manual",
+    }
+
+    if consent_mode == ConsentMode.express:
+        # Express consent — mailable immediately.
+        if lead.consent_status != ConsentStatus.confirmed:
+            lead.consent_status = ConsentStatus.confirmed
+            lead.consent_at = lead.consent_at or utcnow()
+            lead.confirmed_at = utcnow()
+        await record_consent(db, lead, status=ConsentStatus.confirmed,
+                             source="manual_attestation", ip=ip, ua=ua, evidence=evidence)
+    else:
+        # Double opt-in — send a confirmation email; mailable only after they click.
+        if lead.consent_status != ConsentStatus.confirmed:
+            lead.consent_status = ConsentStatus.pending_double_optin
+            lead.double_optin_sent_at = utcnow()
+            await record_consent(db, lead, status=ConsentStatus.pending_double_optin,
+                                 source="manual_attestation", ip=ip, ua=ua, evidence=evidence)
+            await _queue_manual_double_optin(db, lead)
+        else:
+            # Already confirmed — record the attestation but don't downgrade.
+            await record_consent(db, lead, status=ConsentStatus.confirmed,
+                                 source="manual_attestation", ip=ip, ua=ua, evidence=evidence)
+
+    if tags:
+        await lead_service.apply_tags(db, lead, tags, brand_id)
+
+    if also_create_contact:
+        from app.services import crm_service
+
+        contact = await crm_service.find_or_create_contact(
+            db, brand_id=brand_id, email=email, first_name=first_name,
+            last_name=last_name, phone=phone, title=title, source=source or "manual",
+        )
+        lead.contact_id = contact.id
+
+    db.add(lead)
+    await db.flush()
+    await db.refresh(lead)
+    return lead
+
+
 # --- Email content (minimal inline HTML; templatized in Module 7) -----------
 def _wrap(body: str, unsubscribe_url: str | None = None) -> str:
     footer = (
@@ -76,6 +191,24 @@ async def _queue_double_optin(db: AsyncSession, lead: Lead, form: Form) -> None:
         "<h2>Please confirm your subscription</h2>"
         "<p>Click below to confirm you want to hear from us. "
         "If you didn’t request this, you can ignore this email.</p>"
+        f'<p><a href="{url}">Confirm my subscription</a></p>'
+    )
+    await outbox.enqueue_email(
+        db, brand_id=lead.brand_id, to_email=lead.email,
+        subject="Confirm your subscription", html_body=_wrap(body),
+        category=EmailCategory.double_optin, lead_id=lead.id,
+    )
+
+
+async def _queue_manual_double_optin(db: AsyncSession, lead: Lead) -> None:
+    """Confirmation email for a manually-added lead (no originating form).
+    The confirm token carries no form_id, so no welcome/magnet is queued on
+    click — just the consent flip to ``confirmed``."""
+    url = make_confirm_url(lead.id)
+    body = (
+        "<h2>Please confirm your subscription</h2>"
+        "<p>You were added to our list. Click below to confirm you’d like to "
+        "hear from us. If this wasn’t you, just ignore this email.</p>"
         f'<p><a href="{url}">Confirm my subscription</a></p>'
     )
     await outbox.enqueue_email(

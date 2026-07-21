@@ -9,15 +9,57 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 
 from app.core.audit import write_audit
+from app.core.net import client_ip as _client_ip
 from app.deps import DbSession, require_authenticated, require_editor, verify_csrf
 from app.models.lead import ConsentStatus, Lead
 from app.models.user import AdminUser
 from app.schemas.common import Message
-from app.schemas.lead import LeadDetailOut, LeadOut, TagApply
-from app.services import lead_service
+from app.schemas.lead import LeadDetailOut, LeadManualCreate, LeadOut, TagApply
+from app.services import consent_service, lead_service
 from app.services.crud import get_active, soft_delete
 
 router = APIRouter(prefix="/leads", tags=["leads"])
+
+
+@router.post("", response_model=LeadDetailOut, status_code=201)
+async def create_lead_manual(
+    body: LeadManualCreate,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> LeadDetailOut:
+    """Manually add a lead with an opt-in attestation. Records the attestation
+    as an immutable ConsentRecord (the legal basis for mailing them)."""
+    if not body.opt_in_attested:
+        from app.core.exceptions import ComplianceError
+
+        raise ComplianceError("You must attest that this person opted in before adding them.")
+
+    lead = await consent_service.create_lead_with_attestation(
+        db,
+        actor_user_id=user.id,
+        actor_email=user.email,
+        brand_id=body.brand_id,
+        email=str(body.email),
+        first_name=body.first_name,
+        last_name=body.last_name,
+        phone=body.phone,
+        company_name=body.company_name,
+        title=body.title,
+        source=body.source,
+        tags=body.tags,
+        consent_basis=body.consent_basis,
+        consent_mode=body.consent_mode,
+        also_create_contact=body.also_create_contact,
+        ip=_client_ip(request),
+        ua=request.headers.get("user-agent", "")[:400] or None,
+    )
+    await write_audit(db, action="lead.create_manual", user_id=user.id,
+                      entity_type="lead", entity_id=str(lead.id), request=request)
+    detail = LeadDetailOut.model_validate(lead)
+    detail.tags = [t.name for t in await lead_service.list_lead_tags(db, lead.id)]
+    return detail
 
 
 @router.get("", response_model=list[LeadOut])
