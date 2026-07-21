@@ -352,3 +352,23 @@ async def test_disconnect_calls_bao_delete(monkeypatch):
 
     delete_mock.assert_called_once_with("revos/accounts/x/social/facebook/abc")
     assert conn.status == SocialConnectionStatus.revoked
+
+
+@pytest.mark.asyncio
+async def test_dispatch_selects_video_ref_for_tiktok_and_youtube():
+    """TikTok/YouTube pick the video from mixed media and give a clear error
+    when only images are attached (the Phase-3 hardening)."""
+    from app.core.exceptions import RevOSError
+    from app.models.social import SocialPlatform, SocialPost
+    from app.models.social_connection import SocialConnection
+    from app.services import social_connection_service as svc
+
+    # Only-images → clear missing-media error (no network).
+    for platform in (SocialPlatform.tiktok, SocialPlatform.youtube):
+        post = SocialPost(brand_id=uuid.uuid4(), platform=platform,
+                          caption="hi", media_urls=["media/a/original/x.jpg"])
+        conn = SocialConnection(account_id=ACCOUNT_ID, platform=platform, handle="h")
+        with pytest.raises(RevOSError) as exc:
+            await svc._dispatch_publish(post, conn, {"access_token": "t"})
+        assert exc.value.code == "missing_media"
+        assert "video" in exc.value.message.lower()

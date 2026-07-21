@@ -271,7 +271,13 @@ export default function SocialPage() {
                 </label>
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Live media: LinkedIn, X, Facebook, Instagram. X allows up to 4 photos or 1 video; Instagram needs at least one photo or video.
+                {platform === "tiktok" || platform === "youtube"
+                  ? `${platform === "tiktok" ? "TikTok" : "YouTube"} requires a video (MP4/MOV).`
+                  : platform === "instagram"
+                    ? "Instagram needs at least one photo or video (up to 10 photos as a carousel)."
+                    : platform === "twitter"
+                      ? "X allows up to 4 photos or 1 video."
+                      : "Attach photos or a video. Live media publishing is enabled for this platform."}
               </p>
             </div>
             <div className="flex items-center gap-2">

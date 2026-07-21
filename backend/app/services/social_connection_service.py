@@ -1012,9 +1012,12 @@ async def _dispatch_publish(post: SocialPost, conn: SocialConnection, token_data
             image_urls=image_urls, caption=post.caption,
         )
     if conn.platform == SocialPlatform.youtube:
-        video_url = post.media_urls[0] if post.media_urls else None
+        video_url = next((r for r in post.media_urls if _is_video_ref(r)), None)
         if not video_url:
-            raise RevOSError("YouTube posts require a video URL in media_urls.", code="missing_media", status_code=400)
+            raise RevOSError(
+                "YouTube needs a video — attach an MP4/MOV to this post.",
+                code="missing_media", status_code=400,
+            )
         access_token = await _youtube_access_token(conn, token_data)
         video_bytes = await _fetch_media_bytes(video_url)
         title = (post.caption or "Untitled").strip().splitlines()[0][:100] if post.caption else "Untitled"
@@ -1063,9 +1066,12 @@ async def _dispatch_publish(post: SocialPost, conn: SocialConnection, token_data
             media=media_urns or None, media_is_video=is_video,
         )
     if conn.platform == SocialPlatform.tiktok:
-        video_url = post.media_urls[0] if post.media_urls else None
+        video_url = next((r for r in post.media_urls if _is_video_ref(r)), None)
         if not video_url:
-            raise RevOSError("TikTok posts require a video URL in media_urls.", code="missing_media", status_code=400)
+            raise RevOSError(
+                "TikTok needs a video — attach an MP4/MOV to this post.",
+                code="missing_media", status_code=400,
+            )
         access_token = await _tiktok_access_token(conn, token_data)
         video_bytes = await _fetch_media_bytes(video_url)
         title = (post.caption or "").strip() or "RevOS post"
