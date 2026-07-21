@@ -180,6 +180,77 @@ export interface Contact {
   lead_score: number;
 }
 
+// --- Matching engine + marketplace -----------------------------------------
+export interface MatchDimension {
+  key: string;
+  score: number;
+  weight: number;
+  available: boolean;
+  detail: string;
+}
+
+export interface MatchScore {
+  overall: number;
+  coverage: number;
+  rationale: string;
+  dimensions: MatchDimension[];
+}
+
+export interface MatchCreator {
+  id: string;
+  display_name: string;
+  handle?: string | null;
+  primary_platform?: string | null;
+  industry?: string | null;
+  size_tier?: string | null;
+  category?: string | null;
+  topics?: string[];
+  follower_count?: number | null;
+  engagement_rate?: number | null;
+  discoverable: boolean;
+  status: string;
+}
+
+export interface MatchProduct {
+  id: string;
+  name: string;
+  industry?: string | null;
+  category?: string | null;
+  description?: string | null;
+  status: string;
+  discoverable: boolean;
+}
+
+export interface CreatorDiscovery {
+  creator: MatchCreator;
+  score: MatchScore | null;
+}
+
+export interface ProductDiscovery {
+  product: MatchProduct;
+  score: MatchScore | null;
+}
+
+export type CollaborationDirection = "brand_to_creator" | "creator_to_brand";
+export type CollaborationStatus =
+  | "pending"
+  | "accepted"
+  | "declined"
+  | "withdrawn"
+  | "expired";
+
+export interface CollaborationRequest {
+  id: string;
+  direction: CollaborationDirection;
+  status: CollaborationStatus;
+  initiator_account_id: string;
+  creator_id: string;
+  product_id?: string | null;
+  message: string;
+  response_note?: string | null;
+  created_at: string;
+}
+
 export interface PipelineStage {
   id: string;
   name: string;

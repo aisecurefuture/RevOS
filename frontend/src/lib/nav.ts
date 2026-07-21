@@ -67,6 +67,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Listing Videos", href: "/dashboard/listing-videos", icon: "🏡", minRole: "editor" },
       { label: "Social", href: "/dashboard/social", icon: "📣" },
       { label: "Scheduler", href: "/dashboard/scheduler", icon: "📅" },
+      { label: "Marketplace", href: "/dashboard/marketplace", icon: "🤝", subGroup: "Collaborate" },
     ],
   },
   {

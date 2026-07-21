@@ -5,19 +5,24 @@ import type {
   Approval,
   Brand,
   Campaign,
+  CollaborationRequest,
   Contact,
   ContactImportResult,
   ContentItem,
+  CreatorDiscovery,
   Deal,
   AnalyticsOverview,
   EmailMessage,
   Form,
   IntegrationStatus,
   Lead,
+  MatchCreator,
+  MatchProduct,
   MediaAsset,
   MediaVariant,
   Offer,
   PipelineStage,
+  ProductDiscovery,
   PublishResult,
   Sequence,
   SocialCampaign,
@@ -318,4 +323,49 @@ export const aiApi = {
       method: "POST",
       body: JSON.stringify({ brand_id: brandId, goal }),
     }),
+};
+
+function qs(params: Record<string, string | undefined>): string {
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v));
+  const s = new URLSearchParams(clean as Record<string, string>).toString();
+  return s ? `?${s}` : "";
+}
+
+export const marketplaceApi = {
+  // Your own roster (for the "rank against" + request pickers, and management).
+  myCreators: (params: Record<string, string | undefined> = {}) =>
+    apiFetch<MatchCreator[]>(`/matching/creators${qs(params)}`),
+  createCreator: (data: Record<string, unknown>) =>
+    apiFetch<MatchCreator>("/matching/creators", { method: "POST", body: JSON.stringify(data) }),
+  updateCreator: (id: string, data: Record<string, unknown>) =>
+    apiFetch<MatchCreator>(`/matching/creators/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  myProducts: (params: Record<string, string | undefined> = {}) =>
+    apiFetch<MatchProduct[]>(`/matching/products${qs(params)}`),
+  createProduct: (data: Record<string, unknown>) =>
+    apiFetch<MatchProduct>("/matching/products", { method: "POST", body: JSON.stringify(data) }),
+  updateProduct: (id: string, data: Record<string, unknown>) =>
+    apiFetch<MatchProduct>(`/matching/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Cross-tenant, consent-gated discovery.
+  discoverCreators: (params: Record<string, string | undefined> = {}) =>
+    apiFetch<CreatorDiscovery[]>(`/matching/discover/creators${qs(params)}`),
+  discoverProducts: (params: Record<string, string | undefined> = {}) =>
+    apiFetch<ProductDiscovery[]>(`/matching/discover/products${qs(params)}`),
+
+  // Collaboration requests.
+  createCollaboration: (data: Record<string, unknown>) =>
+    apiFetch<CollaborationRequest>("/matching/collaborations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  collaborations: (box: "incoming" | "outgoing", status?: string) =>
+    apiFetch<CollaborationRequest[]>(`/matching/collaborations${qs({ box, status })}`),
+  respond: (id: string, accept: boolean, note?: string) =>
+    apiFetch<CollaborationRequest>(`/matching/collaborations/${id}/respond`, {
+      method: "POST",
+      body: JSON.stringify({ accept, note }),
+    }),
+  withdraw: (id: string) =>
+    apiFetch<CollaborationRequest>(`/matching/collaborations/${id}/withdraw`, { method: "POST" }),
 };

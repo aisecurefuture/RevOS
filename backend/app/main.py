@@ -66,6 +66,7 @@ def register_routers(app: FastAPI) -> None:
         landing_pages,
         leads,
         listing_video,
+        matching,
         media,
         notes_tasks,
         offers,
@@ -119,6 +120,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(social_comments.router, prefix="/api")
     app.include_router(social_oauth.router, prefix="/api")
     app.include_router(media.router, prefix="/api")
+    app.include_router(matching.router, prefix="/api")
     app.include_router(analytics.router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
     app.include_router(integration_credentials.router, prefix="/api")
