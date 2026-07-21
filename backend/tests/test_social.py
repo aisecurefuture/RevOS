@@ -99,3 +99,19 @@ async def test_upload_post_media_rejects_bad_type(api, make_user):
     r = await api.post("/api/social/upload-media", headers=h, data={"brand_id": bid}, files=files)
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "bad_media_type"
+
+
+@pytest.mark.asyncio
+async def test_scheduling_accepts_timezone_aware_time(api, make_user):
+    """A tz-aware ISO instant (…Z from the browser) must not 500 — the naive
+    UTC column would otherwise reject it (asyncpg)."""
+    h = await _login(api, **await make_user("sched@test.com", "AdminPass123", Role.admin))
+    bid = (await api.post("/api/brands", headers=h, json={"name": "Sched Brand"})).json()["id"]
+    r = await api.post("/api/social/posts", headers=h, json={
+        "brand_id": bid, "platform": "linkedin", "caption": "later",
+        "scheduled_at": "2026-08-01T15:30:00Z",
+    })
+    assert r.status_code == 201, r.text
+    # Stored/returned as naive UTC (no offset).
+    assert r.json()["scheduled_at"].startswith("2026-08-01T15:30:00")
+    assert "+00:00" not in r.json()["scheduled_at"]

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.content import ContentChannel
 from app.models.social import SocialPlatform
@@ -208,6 +208,16 @@ class SocialPostCreate(BaseModel):
     media_urls: list[str] = Field(default_factory=list)
     hashtags: list[str] = Field(default_factory=list)
     scheduled_at: datetime | None = None
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def _naive_utc(cls, v: datetime | None) -> datetime | None:
+        # The DB stores naive UTC (TIMESTAMP WITHOUT TIME ZONE); asyncpg
+        # rejects tz-aware values. The client sends an ISO instant with a
+        # zone (…Z), so normalize it to naive UTC here.
+        if v is not None and v.tzinfo is not None:
+            return v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
 
 
 class SocialPostOut(BaseModel):
