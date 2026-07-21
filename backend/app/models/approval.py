@@ -25,6 +25,7 @@ class ApprovalAction(StrEnum):
     sequence_step_send = "sequence_step_send"
     content_publish = "content_publish"
     social_publish = "social_publish"
+    social_comment_reply = "social_comment_reply"  # post an AI-drafted reply to a comment
     ai_apply = "ai_apply"                       # apply an AI-generated change
     lead_import = "lead_import"
 

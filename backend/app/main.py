@@ -77,6 +77,7 @@ def register_routers(app: FastAPI) -> None:
         scheduler,
         sequences,
         social,
+        social_comments,
         social_oauth,
         suppressions,
         video_script,
@@ -115,6 +116,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(content.router, prefix="/api")
     app.include_router(content_library.router, prefix="/api")
     app.include_router(social.router, prefix="/api")
+    app.include_router(social_comments.router, prefix="/api")
     app.include_router(social_oauth.router, prefix="/api")
     app.include_router(media.router, prefix="/api")
     app.include_router(analytics.router, prefix="/api")

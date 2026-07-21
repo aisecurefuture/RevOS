@@ -30,8 +30,10 @@ _TIMEOUT = 15.0
 _META_SCOPES = ",".join([
     "pages_manage_posts",
     "pages_read_engagement",
+    "pages_manage_engagement",     # read/reply/like/hide comments on Page posts
     "instagram_basic",
     "instagram_content_publish",
+    "instagram_manage_comments",   # read/reply to comments on IG media
     "business_management",
 ])
 
@@ -317,3 +319,98 @@ async def publish_to_instagram(
             media_id = await _ig_publish_container(client, ig_user_id, user_token, create.json()["id"])
 
     return PublishResult(external_id=media_id, url=f"https://www.instagram.com/p/{media_id}/")
+
+
+# ---------------------------------------------------------------------------
+# Comment engagement (Facebook Pages + Instagram) — read / reply / like.
+# Requires the pages_manage_engagement + instagram_manage_comments scopes.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class IncomingComment:
+    post_id: str
+    comment_id: str
+    text: str
+    author_name: str | None
+    author_id: str | None
+    permalink: str | None
+    created_time: str | None
+
+
+async def list_page_comments(page_id: str, page_token: str, *, posts: int = 15, per_post: int = 30) -> list[IncomingComment]:
+    """Recent comments across a Facebook Page's recent posts, flattened."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            f"{_GRAPH}/{page_id}/feed",
+            params={
+                "fields": f"id,permalink_url,comments.limit({per_post}){{id,message,from,created_time,permalink_url}}",
+                "limit": posts,
+                "access_token": page_token,
+            },
+        )
+    _raise_graph_error(resp, "page comments")
+    out: list[IncomingComment] = []
+    for post in resp.json().get("data", []):
+        for c in (post.get("comments", {}) or {}).get("data", []):
+            frm = c.get("from") or {}
+            out.append(IncomingComment(
+                post_id=post["id"], comment_id=c["id"], text=c.get("message", "") or "",
+                author_name=frm.get("name"), author_id=frm.get("id"),
+                permalink=c.get("permalink_url") or post.get("permalink_url"),
+                created_time=c.get("created_time"),
+            ))
+    return out
+
+
+async def list_ig_comments(ig_user_id: str, token: str, *, media: int = 15, per_media: int = 30) -> list[IncomingComment]:
+    """Recent comments across an Instagram Business account's recent media."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            f"{_GRAPH}/{ig_user_id}/media",
+            params={
+                "fields": f"id,permalink,comments.limit({per_media}){{id,text,username,timestamp}}",
+                "limit": media,
+                "access_token": token,
+            },
+        )
+    _raise_graph_error(resp, "ig comments")
+    out: list[IncomingComment] = []
+    for m in resp.json().get("data", []):
+        for c in (m.get("comments", {}) or {}).get("data", []):
+            out.append(IncomingComment(
+                post_id=m["id"], comment_id=c["id"], text=c.get("text", "") or "",
+                author_name=c.get("username"), author_id=None,
+                permalink=m.get("permalink"), created_time=c.get("timestamp"),
+            ))
+    return out
+
+
+async def reply_to_page_comment(comment_id: str, page_token: str, message: str) -> str:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.post(
+            f"{_GRAPH}/{comment_id}/comments",
+            data={"message": message, "access_token": page_token},
+        )
+    _raise_graph_error(resp, "page comment reply")
+    return resp.json()["id"]
+
+
+async def reply_to_ig_comment(comment_id: str, token: str, message: str) -> str:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.post(
+            f"{_GRAPH}/{comment_id}/replies",
+            data={"message": message, "access_token": token},
+        )
+    _raise_graph_error(resp, "ig comment reply")
+    return resp.json()["id"]
+
+
+async def like_page_comment(comment_id: str, page_token: str) -> None:
+    """Like a Facebook Page comment. Instagram has no like-comment API — the
+    service treats a like request on an IG comment as unsupported."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.post(
+            f"{_GRAPH}/{comment_id}/likes",
+            data={"access_token": page_token},
+        )
+    _raise_graph_error(resp, "page comment like")

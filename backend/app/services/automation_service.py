@@ -54,6 +54,13 @@ async def execute_approval(
         )
         return None
 
+    if approval.action_type == ApprovalAction.social_comment_reply:
+        from app.services import social_comment_service
+        # Post the reply first; only mark approved if it succeeded.
+        await social_comment_service.execute_reply(db, approval, actor)
+        await approval_service.mark_approved(db, approval, user_id=actor.id)
+        return None
+
     await approval_service.mark_approved(db, approval, user_id=actor.id)
     if approval.action_type == ApprovalAction.campaign_send and approval.entity_id:
         from app.services import campaign_email_service

@@ -34,4 +34,10 @@ BEAT_SCHEDULE: dict = {
         "task": "revos.content_autopilot",
         "schedule": 3600.0,
     },
+    # Poll connected FB/IG accounts for new comments → draft approval-gated
+    # replies. No-op unless SOCIAL_COMMENT_REPLIES_ENABLED.
+    "ingest-social-comments": {
+        "task": "revos.ingest_social_comments",
+        "schedule": 900.0,  # every 15 minutes
+    },
 }

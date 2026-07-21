@@ -115,6 +115,25 @@ def auto_approve_sweep() -> dict:
     return asyncio.run(_run_auto_approvals())
 
 
+async def _run_ingest_social_comments() -> dict:
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            from app.services import social_comment_service
+
+            return await social_comment_service.ingest_all(session)
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="revos.ingest_social_comments")
+def ingest_social_comments() -> dict:
+    """Poll connected Facebook/Instagram accounts for new comments and draft
+    approval-gated replies. No-op unless SOCIAL_COMMENT_REPLIES_ENABLED."""
+    return asyncio.run(_run_ingest_social_comments())
+
+
 async def _run_scheduled_posts() -> dict:
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     factory = async_sessionmaker(engine, expire_on_commit=False)

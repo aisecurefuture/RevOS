@@ -257,6 +257,20 @@ class Settings(BaseSettings):
     listing_video_music_tracks: str = ""
     listing_video_music_volume: float = 0.14  # duck the bed under narration
 
+    # --- Social comment replies (approval-gated) ----------------------------
+    # Poll connected Facebook Pages + Instagram accounts for new comments,
+    # AI-draft a reply grounded in the brand voice + persona, and route it to
+    # the Approvals page. Nothing posts without a human approval. Off by
+    # default — requires the pages_manage_engagement + instagram_manage_comments
+    # scopes (Meta App Review) to be granted on the connected accounts.
+    social_comment_replies_enabled: bool = False
+    # Only comments newer than this many hours are ingested (avoids back-filling
+    # an entire history on first run).
+    social_comment_lookback_hours: int = 48
+    # Cap drafts created per connection per poll — keeps the approval queue and
+    # AI usage bounded.
+    social_comment_max_drafts_per_poll: int = 15
+
     # Hard ceiling on any request body (bytes). Above the media upload cap so
     # that route's own limit applies first; this is the global DoS backstop.
     max_request_bytes: int = 256 * 1024 * 1024

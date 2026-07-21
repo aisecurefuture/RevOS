@@ -107,6 +107,7 @@ from app.models.social import (
     SocialPlatform,
     SocialPost,
 )
+from app.models.social_comment import SocialComment, SocialCommentStatus
 from app.models.social_connection import SocialConnection, SocialConnectionStatus
 from app.models.video_script import VideoScript
 from app.models.user import AdminUser, ApiKey, AuditLog, RecoveryCode, Role
@@ -148,6 +149,7 @@ __all__ = [
     # social
     "SocialAccount", "SocialCampaign", "SocialCampaignStatus", "SocialPost",
     "SocialPlatform", "SocialConnection", "SocialConnectionStatus",
+    "SocialComment", "SocialCommentStatus",
     # analytics
     "Event", "UTMLink", "ConversionGoal", "RevenueRecord", "RevenueGoal",
     "RevenueStatus",
