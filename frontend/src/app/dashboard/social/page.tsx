@@ -9,7 +9,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ApiError, socialApi as connectionsApi, type SocialConnection } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
-import { socialApi } from "@/lib/resources";
+import { aiApi, socialApi } from "@/lib/resources";
 import type { SocialPost } from "@/lib/types";
 
 const PLATFORMS = ["linkedin", "instagram", "facebook", "twitter", "youtube", "tiktok"];
@@ -39,6 +39,7 @@ export default function SocialPage() {
   // Attached media: uploaded storage keys + local preview URLs.
   const [media, setMedia] = useState<{ url: string; kind: string; filename: string; preview: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [drafting, setDrafting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,6 +89,25 @@ export default function SocialPage() {
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Create failed");
+    }
+  }
+
+  async function draftWithAI() {
+    if (!selectedBrandId) return;
+    const topic = caption.trim();
+    if (!topic) {
+      setError("Type a topic or a rough idea in the caption first, then Draft with AI.");
+      return;
+    }
+    setError(null);
+    setDrafting(true);
+    try {
+      const r = await aiApi.draftSocial(selectedBrandId, platform, topic);
+      setCaption(r.text);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "AI draft failed");
+    } finally {
+      setDrafting(false);
     }
   }
 
@@ -221,7 +241,7 @@ export default function SocialPage() {
         <Card className="mb-6">
           <CardTitle>New post</CardTitle>
           <form onSubmit={create} className="space-y-2">
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <select
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value)}
@@ -233,14 +253,23 @@ export default function SocialPage() {
                   </option>
                 ))}
               </select>
-              <input
-                required
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                placeholder="Caption…"
-                className="grow rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
+              <button
+                type="button"
+                onClick={() => void draftWithAI()}
+                disabled={drafting}
+                className="rounded-lg border border-brand px-3 py-2 text-sm font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
+              >
+                {drafting ? "Drafting…" : "✨ Draft with AI"}
+              </button>
             </div>
+            <textarea
+              required
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              rows={4}
+              placeholder="Caption — type a topic or rough idea, then ✨ Draft with AI to expand it…"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
             <div>
               <label className="text-xs text-slate-500">Photos / videos (optional):</label>
               <div className="mt-1 flex flex-wrap items-center gap-2">
