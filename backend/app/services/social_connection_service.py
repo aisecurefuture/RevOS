@@ -982,12 +982,15 @@ async def _dispatch_publish(post: SocialPost, conn: SocialConnection, token_data
             return await meta_client.publish_video_to_page(
                 page_id=token_data["page_id"], page_token=token_data["access_token"],
                 video=await _fetch_media_bytes(video), caption=post.caption,
+                content_type=_media_mime(video),
             )
         if refs:
-            photos = [await _fetch_media_bytes(r) for r in refs[:10]]
+            selected = refs[:10]
+            photos = [await _fetch_media_bytes(r) for r in selected]
             return await meta_client.publish_photos_to_page(
                 page_id=token_data["page_id"], page_token=token_data["access_token"],
                 photos=photos, caption=post.caption,
+                content_types=[_media_mime(r) for r in selected],
             )
         return await meta_client.publish_to_page(
             page_id=token_data["page_id"],

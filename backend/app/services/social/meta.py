@@ -193,34 +193,54 @@ async def publish_to_page(
     )
 
 
+# Extension Facebook expects for each media content-type. A generic
+# octet-stream blob with no extension makes Graph reject the upload as an
+# "unsupported format" — the format is inferred from the filename/type.
+_EXT_FOR_MIME = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp",
+    "video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm",
+}
+
+
+def _upload_part(name: str, data: bytes, content_type: str) -> tuple[str, bytes, str]:
+    ext = _EXT_FOR_MIME.get(content_type, "")
+    return (f"{name}{ext}", data, content_type)
+
+
 async def publish_photos_to_page(
     page_id: str,
     page_token: str,
     photos: list[bytes],
     *,
     caption: str | None,
+    content_types: list[str] | None = None,
 ) -> PublishResult:
     """Post one or more photos to a Facebook Page (bytes uploaded directly).
 
     A single photo publishes straight to /photos. Multiple photos upload
-    unpublished first, then attach to a single feed post."""
+    unpublished first, then attach to a single feed post. ``content_types``
+    (one per photo) drives the filename+MIME sent to Graph — default JPEG."""
+    def _part(i: int, data: bytes) -> tuple[str, bytes, str]:
+        ct = content_types[i] if content_types and i < len(content_types) else "image/jpeg"
+        return _upload_part("photo", data, ct)
+
     async with httpx.AsyncClient(timeout=120.0) as client:
         if len(photos) == 1:
             resp = await client.post(
                 f"{_GRAPH}/{page_id}/photos",
                 data={"access_token": page_token, "caption": caption or "", "published": "true"},
-                files={"source": ("photo", photos[0], "application/octet-stream")},
+                files={"source": _part(0, photos[0])},
             )
             _raise_graph_error(resp, "page photo publish")
             pid = resp.json().get("post_id") or resp.json()["id"]
             return PublishResult(external_id=pid, url=f"https://www.facebook.com/{pid.replace('_', '/posts/')}")
 
         media_fbids: list[str] = []
-        for data in photos:
+        for i, data in enumerate(photos):
             up = await client.post(
                 f"{_GRAPH}/{page_id}/photos",
                 data={"access_token": page_token, "published": "false"},
-                files={"source": ("photo", data, "application/octet-stream")},
+                files={"source": _part(i, data)},
             )
             _raise_graph_error(up, "page photo upload")
             media_fbids.append(up.json()["id"])
@@ -244,13 +264,18 @@ async def publish_video_to_page(
     video: bytes,
     *,
     caption: str | None,
+    content_type: str = "video/mp4",
 ) -> PublishResult:
-    """Upload a video to a Facebook Page (bytes uploaded directly)."""
+    """Upload a video to a Facebook Page (bytes uploaded directly).
+
+    ``content_type`` sets the filename+MIME sent to Graph. A generic
+    octet-stream with no extension is rejected as an "unsupported format"
+    even for a valid MP4 — that was the bug this parameter fixes."""
     async with httpx.AsyncClient(timeout=300.0) as client:
         resp = await client.post(
             f"{_GRAPH}/{page_id}/videos",
             data={"access_token": page_token, "description": caption or ""},
-            files={"source": ("video", video, "application/octet-stream")},
+            files={"source": _upload_part("video", video, content_type)},
         )
     _raise_graph_error(resp, "page video publish")
     vid = resp.json()["id"]

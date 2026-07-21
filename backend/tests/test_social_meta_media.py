@@ -43,9 +43,24 @@ async def test_fb_multi_photo_uploads_unpublished_then_feeds():
 @pytest.mark.asyncio
 async def test_fb_video_uses_videos_endpoint():
     with respx.mock(base_url=GRAPH) as mock:
-        mock.post("/page-1/videos").mock(return_value=httpx.Response(200, json={"id": "vid-7"}))
+        videos = mock.post("/page-1/videos").mock(return_value=httpx.Response(200, json={"id": "vid-7"}))
         res = await meta_client.publish_video_to_page("page-1", "tok", b"movie", caption="tour")
     assert res.external_id == "vid-7"
+    # The multipart part must carry a real filename+MIME, else Graph rejects a
+    # valid MP4 as "unsupported format".
+    body = videos.calls.last.request.content
+    assert b'filename="video.mp4"' in body
+    assert b"video/mp4" in body
+
+
+@pytest.mark.asyncio
+async def test_fb_video_honors_content_type():
+    with respx.mock(base_url=GRAPH) as mock:
+        videos = mock.post("/page-1/videos").mock(return_value=httpx.Response(200, json={"id": "v"}))
+        await meta_client.publish_video_to_page("page-1", "tok", b"mov", caption="", content_type="video/quicktime")
+    body = videos.calls.last.request.content
+    assert b'filename="video.mov"' in body
+    assert b"video/quicktime" in body
 
 
 # ---------------------------------------------------------------------------
