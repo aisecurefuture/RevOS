@@ -235,3 +235,84 @@ async def test_like_is_facebook_only(api, async_session_factory, monkeypatch):
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "like_unsupported"
     like_mock.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# YouTube comment replies (Phase 2)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_youtube_ingest_draft_approve_reply(api, async_session_factory, monkeypatch):
+    from app.services.social import youtube as youtube_client
+    from app.services.social.base import IncomingComment as YTComment
+
+    monkeypatch.setattr(svc.settings, "social_comment_replies_enabled", True)
+    monkeypatch.setattr(svc.ai_service, "generate", lambda **_: "Thanks for watching — glad it helped!")
+    monkeypatch.setattr(svc.secrets_service, "get_secret", AsyncMock(return_value={
+        "access_token": "YT_ACCESS", "refresh_token": "YT_REFRESH", "channel_id": "CHAN1",
+    }))
+    # Fresh-token helper: return the stored access token unchanged.
+    monkeypatch.setattr(svc, "_youtube_access_token", AsyncMock(return_value="YT_ACCESS"))
+    monkeypatch.setattr(youtube_client, "list_channel_comments", AsyncMock(return_value=[
+        YTComment("VID1", "YTC_GOOD", "Is this property still on the market?", "Viewer", "UCviewer", "http://yt/x", None),
+        YTComment("VID1", "YTC_OWN", "great video", "RevOS", "CHAN1", None, None),  # own comment → skipped
+    ]))
+    reply_mock = AsyncMock(return_value="YT_REPLY_9")
+    monkeypatch.setattr(youtube_client, "reply_to_comment", reply_mock)
+
+    h = await _register_owner(api, async_session_factory, "yt@comments.com")
+    account_id = uuid.UUID((await api.get("/api/accounts", headers=h)).json()[0]["account"]["id"])
+    async with async_session_factory() as s:
+        conn = SocialConnection(
+            account_id=account_id, platform=SocialPlatform.youtube, external_id="CHAN1",
+            status=SocialConnectionStatus.active, token_ref="revos/x/yt/1", connected_by=uuid.uuid4(),
+            platform_meta={"channel_id": "CHAN1"},
+        )
+        s.add(conn)
+        await s.commit()
+        await s.refresh(conn)
+        drafts = await svc.ingest_for_connection(s, conn)
+        await s.commit()
+        assert drafts == 1  # question drafted, own comment skipped
+
+    pending = (await api.get("/api/approvals", headers=h)).json()
+    reply_approvals = [a for a in pending if a["action_type"] == "social_comment_reply"]
+    assert len(reply_approvals) == 1
+    assert "Youtube" in reply_approvals[0]["title"] or "YouTube" in reply_approvals[0]["title"]
+
+    r = await api.post(f"/api/approvals/{reply_approvals[0]['id']}/approve", headers=h)
+    assert r.status_code == 200, r.text
+    reply_mock.assert_awaited_once()
+    assert reply_mock.await_args.args[0] == "YTC_GOOD"
+
+    async with async_session_factory() as s:
+        row = (await s.execute(
+            __import__("sqlalchemy").select(SocialComment).where(SocialComment.external_comment_id == "YTC_GOOD")
+        )).scalar_one()
+        assert row.status == SocialCommentStatus.replied
+        assert row.reply_external_id == "YT_REPLY_9"
+
+
+@pytest.mark.asyncio
+async def test_like_unsupported_on_youtube(api, async_session_factory, monkeypatch):
+    monkeypatch.setattr(svc.secrets_service, "get_secret", AsyncMock(return_value={"access_token": "T", "channel_id": "C"}))
+    h = await _register_owner(api, async_session_factory, "yt2@comments.com")
+    account_id = uuid.UUID((await api.get("/api/accounts", headers=h)).json()[0]["account"]["id"])
+    async with async_session_factory() as s:
+        conn = SocialConnection(
+            account_id=account_id, platform=SocialPlatform.youtube, external_id="C",
+            status=SocialConnectionStatus.active, token_ref="revos/x/yt/2", connected_by=uuid.uuid4(),
+        )
+        s.add(conn)
+        await s.flush()
+        c = SocialComment(
+            account_id=account_id, connection_id=conn.id, platform=str(SocialPlatform.youtube),
+            external_post_id="V", external_comment_id="YTC", text="nice",
+            status=SocialCommentStatus.drafted,
+        )
+        s.add(c)
+        await s.commit()
+        cid = c.id
+    r = await api.post(f"/api/social-comments/{cid}/like", headers=h)
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "like_unsupported"

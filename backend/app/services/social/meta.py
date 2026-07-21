@@ -338,15 +338,8 @@ async def publish_to_instagram(
 # Requires the pages_manage_engagement + instagram_manage_comments scopes.
 # ---------------------------------------------------------------------------
 
-@dataclass
-class IncomingComment:
-    post_id: str
-    comment_id: str
-    text: str
-    author_name: str | None
-    author_id: str | None
-    permalink: str | None
-    created_time: str | None
+# Shared, platform-neutral comment shape (also used by the YouTube adapter).
+from app.services.social.base import IncomingComment  # noqa: E402
 
 
 async def list_page_comments(page_id: str, page_token: str, *, posts: int = 15, per_post: int = 30) -> list[IncomingComment]:

@@ -23,6 +23,20 @@ class PublishOutcome:
     external_id: str | None = None
 
 
+@dataclass
+class IncomingComment:
+    """A comment fetched from any platform, normalized for the comment-reply
+    pipeline (see social_comment_service)."""
+
+    post_id: str
+    comment_id: str
+    text: str
+    author_name: str | None
+    author_id: str | None
+    permalink: str | None
+    created_time: str | None
+
+
 class SocialAdapter:
     platform = "base"
 

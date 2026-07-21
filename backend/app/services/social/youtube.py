@@ -36,6 +36,9 @@ _TIMEOUT = 30.0
 _SCOPES = " ".join([
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
+    # Read comment threads + post replies (comments.insert). Adding this
+    # requires reconnecting existing YouTube accounts to re-consent.
+    "https://www.googleapis.com/auth/youtube.force-ssl",
 ])
 
 
@@ -212,3 +215,56 @@ async def upload_video(
         )
         _raise_api_error(put, "upload_bytes")
         return PublishResult(external_id=put.json()["id"])
+
+
+# ---------------------------------------------------------------------------
+# Comment engagement (read + reply). Requires the youtube.force-ssl scope.
+# YouTube has no API to "like" a comment, so only read + reply are supported.
+# ---------------------------------------------------------------------------
+
+from app.services.social.base import IncomingComment  # noqa: E402
+
+
+async def list_channel_comments(channel_id: str, access_token: str, *, max_results: int = 50) -> list[IncomingComment]:
+    """Top-level comments across all of a channel's videos, newest first."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            f"{_API}/commentThreads",
+            params={
+                "part": "snippet",
+                "allThreadsRelatedToChannelId": channel_id,
+                "maxResults": min(max_results, 100),
+                "order": "time",
+            },
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    _raise_api_error(resp, "list_comments")
+    out: list[IncomingComment] = []
+    for thread in resp.json().get("items", []):
+        top = thread.get("snippet", {}).get("topLevelComment", {})
+        s = top.get("snippet", {})
+        author_channel = s.get("authorChannelId", {}) or {}
+        out.append(IncomingComment(
+            post_id=thread.get("snippet", {}).get("videoId", ""),
+            comment_id=top.get("id", ""),
+            text=s.get("textOriginal", "") or "",
+            author_name=s.get("authorDisplayName"),
+            author_id=author_channel.get("value"),
+            permalink=(f"https://www.youtube.com/watch?v={thread['snippet']['videoId']}"
+                       if thread.get("snippet", {}).get("videoId") else None),
+            created_time=s.get("publishedAt"),
+        ))
+    return out
+
+
+async def reply_to_comment(parent_comment_id: str, access_token: str, text: str) -> str:
+    """Post a reply to a top-level comment. Returns the new comment id."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.post(
+            f"{_API}/comments",
+            params={"part": "snippet"},
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            content=json.dumps({"snippet": {"parentId": parent_comment_id, "textOriginal": text}}),
+        )
+    _raise_api_error(resp, "reply_comment")
+    return resp.json()["id"]

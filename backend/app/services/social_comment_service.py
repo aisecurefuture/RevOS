@@ -1,4 +1,4 @@
-"""Approval-gated social comment replies (Facebook Pages + Instagram).
+"""Approval-gated social comment replies (Facebook Pages + Instagram + YouTube).
 
 Pipeline, all human-gated:
 
@@ -12,8 +12,8 @@ Pipeline, all human-gated:
      posted yet.
   3. ``execute_reply`` — called by the approval dispatcher AFTER a human
      approves; posts the reply via the adapter.
-  4. ``like_comment`` — one-click like (Facebook only; IG has no like-comment
-     API).
+  4. ``like_comment`` — one-click like (Facebook only; Instagram and YouTube
+     have no like-comment API).
 
 Reuses the exact token/secret + adapter plumbing publishing already uses.
 """
@@ -39,6 +39,7 @@ from app.models.social_comment import SocialComment, SocialCommentStatus
 from app.models.social_connection import SocialConnection, SocialConnectionStatus
 from app.services import ai_service, brand_service, secrets_service
 from app.services.social import meta as meta_client
+from app.services.social import youtube as youtube_client
 from app.services.social.meta import IncomingComment
 
 logger = logging.getLogger("revos.social.comments")
@@ -117,15 +118,25 @@ async def _token_data(conn: SocialConnection) -> dict:
     return data
 
 
-async def _active_meta_connections(db: AsyncSession, *, account_id: uuid.UUID | None = None) -> list[SocialConnection]:
+_COMMENT_PLATFORMS = [SocialPlatform.facebook, SocialPlatform.instagram, SocialPlatform.youtube]
+
+
+async def _active_comment_connections(db: AsyncSession, *, account_id: uuid.UUID | None = None) -> list[SocialConnection]:
     q = select(SocialConnection).where(
-        SocialConnection.platform.in_([SocialPlatform.facebook, SocialPlatform.instagram]),
+        SocialConnection.platform.in_(_COMMENT_PLATFORMS),
         SocialConnection.status == SocialConnectionStatus.active,
         SocialConnection.deleted_at.is_(None),
     )
     if account_id is not None:
         q = q.where(SocialConnection.account_id == account_id)
     return list((await db.execute(q)).scalars().all())
+
+
+async def _youtube_access_token(conn: SocialConnection, token_data: dict) -> str:
+    """A fresh YouTube access token (refreshes + re-stores if expired). Reuses
+    the connection service's refresh custody so tokens never diverge."""
+    from app.services import social_connection_service
+    return await social_connection_service._youtube_access_token(conn, token_data)
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +147,17 @@ async def ingest_for_connection(db: AsyncSession, conn: SocialConnection) -> int
     """Poll one connection, store new relevant comments, draft replies. Returns
     the number of new drafts created."""
     token = await _token_data(conn)
-    page_ids = {str(token.get("page_id", "")), str(token.get("ig_user_id", ""))}
+    channel_id = str((conn.platform_meta or {}).get("channel_id", "")) if isinstance(conn.platform_meta, dict) else ""
+    # Comments authored by the brand itself are skipped (don't reply to yourself).
+    own_ids = {str(token.get("page_id", "")), str(token.get("ig_user_id", "")), channel_id}
 
     if conn.platform == SocialPlatform.facebook:
         incoming = await meta_client.list_page_comments(token["page_id"], token["access_token"])
     elif conn.platform == SocialPlatform.instagram:
         incoming = await meta_client.list_ig_comments(token["ig_user_id"], token["access_token"])
+    elif conn.platform == SocialPlatform.youtube:
+        access = await _youtube_access_token(conn, token)
+        incoming = await youtube_client.list_channel_comments(channel_id, access)
     else:
         return 0
 
@@ -164,7 +180,7 @@ async def ingest_for_connection(db: AsyncSession, conn: SocialConnection) -> int
         if posted_at and posted_at < cutoff:
             continue
 
-        keep, note = is_relevant(c.text, author_id=c.author_id, page_ids=page_ids)
+        keep, note = is_relevant(c.text, author_id=c.author_id, page_ids=own_ids)
         comment = SocialComment(
             account_id=conn.account_id,
             connection_id=conn.id,
@@ -330,6 +346,9 @@ async def execute_reply(db: AsyncSession, approval: ApprovalRequest, actor) -> N
             reply_id = await meta_client.reply_to_page_comment(comment.external_comment_id, token["access_token"], reply_text)
         elif comment.platform == str(SocialPlatform.instagram):
             reply_id = await meta_client.reply_to_ig_comment(comment.external_comment_id, token["access_token"], reply_text)
+        elif comment.platform == str(SocialPlatform.youtube):
+            access = await _youtube_access_token(conn, token)
+            reply_id = await youtube_client.reply_to_comment(comment.external_comment_id, access, reply_text)
         else:
             raise RevOSError("Unsupported platform for comment replies.", code="unsupported", status_code=400)
     except Exception as exc:  # noqa: BLE001 — record failure on the row
@@ -408,7 +427,7 @@ async def ingest_all(db: AsyncSession) -> dict:
     if not settings.social_comment_replies_enabled:
         return {"enabled": False, "drafts": 0}
     total = 0
-    conns = await _active_meta_connections(db)
+    conns = await _active_comment_connections(db)
     for conn in conns:
         try:
             total += await ingest_for_connection(db, conn)
@@ -427,7 +446,7 @@ async def ingest_for_account(db: AsyncSession, account_id: uuid.UUID) -> dict:
     """
     total = 0
     errors = 0
-    conns = await _active_meta_connections(db, account_id=account_id)
+    conns = await _active_comment_connections(db, account_id=account_id)
     for conn in conns:
         try:
             total += await ingest_for_connection(db, conn)
