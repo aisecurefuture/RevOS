@@ -45,6 +45,7 @@ class CreatorCreate(BaseModel):
     industries: list[IndustryAffinity] = Field(default_factory=list)
     category: str | None = Field(default=None, max_length=120)
     topics: list[str] = Field(default_factory=list)
+    discoverable: bool = False
     location: str | None = Field(default=None, max_length=160)
     management: CreatorManagement = CreatorManagement.self_managed
     follower_count: int | None = Field(default=None, ge=0)
@@ -115,6 +116,7 @@ class MatchProductCreate(BaseModel):
     industry: str | None = Field(default=None, max_length=80)
     industries: list[IndustryAffinity] = Field(default_factory=list)
     status: MatchProductStatus = MatchProductStatus.draft
+    discoverable: bool = False
     target_audience: TargetAudience = Field(default_factory=TargetAudience)
     budget_cents: int | None = Field(default=None, ge=0)
     currency: str = Field(default="USD", max_length=3)
@@ -181,12 +183,29 @@ class ProductMatchOut(BaseModel):
     score: MatchScoreOut
 
 
+# --- Discovery (cross-tenant, consent-gated; score present only when ranked) --
+class CreatorDiscoveryOut(BaseModel):
+    creator: CreatorOut
+    score: MatchScoreOut | None = None
+
+
+class ProductDiscoveryOut(BaseModel):
+    product: MatchProductOut
+    score: MatchScoreOut | None = None
+
+
 # --- Collaboration requests -------------------------------------------------
 class CollaborationRequestCreate(BaseModel):
     direction: CollaborationDirection
     creator_id: uuid.UUID
     product_id: uuid.UUID | None = None      # required for brand→creator; context for creator→brand
     message: str = Field(min_length=1, max_length=2000)
+
+
+class BrokerCollaborationCreate(CollaborationRequestCreate):
+    """A platform admin brokering a request between two parties."""
+
+    initiator_account_id: uuid.UUID
 
 
 class CollaborationRespond(BaseModel):

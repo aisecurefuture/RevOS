@@ -163,6 +163,20 @@ async def unsubscribe(token: str, db: DbSession) -> HTMLResponse:
         headers=_LANDING_HEADERS)
 
 
+@router.get("/collab/respond", response_class=HTMLResponse)
+async def collab_respond(token: str, db: DbSession) -> HTMLResponse:
+    """Emailed accept/decline for a collaboration request (channel 1 of 3)."""
+    from app.services import collaboration_service
+
+    req = await collaboration_service.respond_via_token(db, token)
+    accepted = req.status == "accepted"
+    return HTMLResponse(public_render.render_notice(
+        "Request accepted" if accepted else "Request declined",
+        "The collaboration has been accepted — the other side has been notified."
+        if accepted else "You’ve declined this collaboration request."),
+        headers=_LANDING_HEADERS)
+
+
 @router.get("/forms/{slug}", response_class=HTMLResponse)
 async def render_form(slug: str, request: Request, db: DbSession,
                       _rl: None = Depends(_read_limit)) -> HTMLResponse:
