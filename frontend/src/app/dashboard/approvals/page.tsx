@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { approvalsApi } from "@/lib/resources";
+import { approvalsApi, socialCommentsApi } from "@/lib/resources";
 import type { Approval } from "@/lib/types";
 
 export default function ApprovalsPage() {
@@ -45,6 +45,19 @@ export default function ApprovalsPage() {
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Approve failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function likeComment(commentId: string) {
+    setBusy(commentId);
+    setError(null);
+    try {
+      await socialCommentsApi.like(commentId);
+      setNotice("Liked the comment. 👍");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not like the comment.");
     } finally {
       setBusy(null);
     }
@@ -100,10 +113,21 @@ export default function ApprovalsPage() {
                   ) : null}
                 </div>
                 {canDecide ? (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button disabled={busy === a.id} onClick={() => void approve(a.id)}>
-                      Approve
+                      {a.action_type === "social_comment_reply" ? "Approve & post reply" : "Approve"}
                     </Button>
+                    {/* Like the underlying comment (Facebook only — IG has no
+                        like-comment API). Title carries the platform. */}
+                    {a.action_type === "social_comment_reply" && a.entity_id && a.title.includes("Facebook") ? (
+                      <Button
+                        variant="secondary"
+                        disabled={busy === a.entity_id}
+                        onClick={() => void likeComment(a.entity_id!)}
+                      >
+                        👍 Like comment
+                      </Button>
+                    ) : null}
                     <Button
                       variant="danger"
                       disabled={busy === a.id}

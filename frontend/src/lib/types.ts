@@ -116,6 +116,8 @@ export interface Approval {
   title: string;
   summary?: string | null;
   risk_notes?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
   created_at: string;
 }
 

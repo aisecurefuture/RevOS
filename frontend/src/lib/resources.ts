@@ -123,6 +123,13 @@ export const approvalsApi = {
     }),
 };
 
+export const socialCommentsApi = {
+  like: (commentId: string) =>
+    apiFetch<{ liked: boolean }>(`/social-comments/${commentId}/like`, { method: "POST" }),
+  dismiss: (commentId: string) =>
+    apiFetch<{ status: string }>(`/social-comments/${commentId}/dismiss`, { method: "POST" }),
+};
+
 export const sequencesApi = {
   list: (brandId?: string | null) =>
     apiFetch<Sequence[]>(`/sequences${brandId ? `?brand_id=${brandId}` : ""}`),
