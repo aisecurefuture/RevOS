@@ -237,6 +237,16 @@ export default function SocialPage() {
         </div>
       </Card>
 
+      {canEdit && !selectedBrandId ? (
+        <Card className="mb-6 border-dashed">
+          <p className="text-sm text-slate-500">
+            Select a specific brand in the <span className="font-medium">Brand</span> menu above to
+            create a post. Posts belong to one brand, so the composer is hidden while
+            “All Brands” is selected.
+          </p>
+        </Card>
+      ) : null}
+
       {canEdit && selectedBrandId ? (
         <Card className="mb-6">
           <CardTitle>New post</CardTitle>

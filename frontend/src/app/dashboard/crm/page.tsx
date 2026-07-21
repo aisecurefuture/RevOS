@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AddLeadModal } from "@/components/AddLeadModal";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -80,6 +81,7 @@ function Contacts({
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const params = useCallback(() => {
@@ -150,10 +152,19 @@ function Contacts({
                 className="hidden"
               />
               <Button onClick={() => fileRef.current?.click()}>Import LinkedIn CSV</Button>
+              <Button onClick={() => setShowAdd(true)}>Add contact</Button>
             </>
           ) : null}
         </div>
       </Card>
+
+      <AddLeadModal
+        open={showAdd}
+        variant="contact"
+        brandId={brandId}
+        onClose={() => setShowAdd(false)}
+        onCreated={() => void load()}
+      />
 
       {loading ? (
         <Spinner />
