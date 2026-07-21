@@ -1079,6 +1079,16 @@ async def _dispatch_publish(post: SocialPost, conn: SocialConnection, token_data
         video_bytes = await _fetch_media_bytes(video_url)
         title = (post.caption or "").strip() or "RevOS post"
         return await tiktok_client.publish_video(access_token, video_bytes, title)
+    if conn.platform == SocialPlatform.threads:
+        # Text posts (the common case); Threads media publishing is a follow-up.
+        text = (post.caption or "").strip()
+        if not text:
+            raise RevOSError("A Threads post requires text.", code="missing_text", status_code=400)
+        return await threads_client.publish_text(
+            token_data.get("threads_user_id") or conn.external_id,
+            token_data["access_token"],
+            text,
+        )
     raise RevOSError(f"Platform '{conn.platform}' publishing not yet implemented.", code="unsupported_platform", status_code=400)
 
 

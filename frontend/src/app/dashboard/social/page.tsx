@@ -13,7 +13,7 @@ import { platformLabel } from "@/lib/platforms";
 import { aiApi, socialApi } from "@/lib/resources";
 import type { SocialPost } from "@/lib/types";
 
-const PLATFORMS = ["linkedin", "instagram", "facebook", "twitter", "youtube", "tiktok"];
+const PLATFORMS = ["linkedin", "instagram", "facebook", "threads", "twitter", "youtube", "tiktok"];
 
 export default function SocialPage() {
   const { user } = useAuth();
@@ -231,7 +231,7 @@ export default function SocialPage() {
                 adapters[p] ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"
               }`}
             >
-              {p}: {adapters[p] ? "available" : "not configured"}
+              {platformLabel(p)}: {adapters[p] ? "available" : "not configured"}
             </span>
           ))}
         </div>
