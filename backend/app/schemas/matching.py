@@ -129,6 +129,7 @@ class MatchProductUpdate(BaseModel):
     industry: str | None = Field(default=None, max_length=80)
     industries: list[IndustryAffinity] | None = None
     status: MatchProductStatus | None = None
+    discoverable: bool | None = None
     target_audience: TargetAudience | None = None
     budget_cents: int | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, max_length=3)
@@ -146,6 +147,7 @@ class MatchProductOut(BaseModel):
     industry: str | None = None
     industries: list[IndustryAffinity] = Field(default_factory=list)
     status: str
+    discoverable: bool = False
     target_audience: dict = Field(default_factory=dict)
     budget_cents: int | None = None
     currency: str

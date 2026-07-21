@@ -81,7 +81,10 @@ async def list_creators(
 
 # --- Products ---------------------------------------------------------------
 async def create_product(db: AsyncSession, data: dict) -> MatchProduct:
-    product = MatchProduct(**_derive_cohort_fields(dict(data)))
+    data = _derive_cohort_fields(dict(data))
+    if data.get("discoverable"):
+        data["discoverable_at"] = utcnow()
+    product = MatchProduct(**data)
     db.add(product)
     await db.flush()
     await db.refresh(product)
@@ -90,6 +93,8 @@ async def create_product(db: AsyncSession, data: dict) -> MatchProduct:
 
 async def update_product(db: AsyncSession, product: MatchProduct, data: dict) -> MatchProduct:
     data = _derive_cohort_fields(dict(data))
+    if data.get("discoverable") and not product.discoverable:
+        product.discoverable_at = utcnow()
     for key, value in data.items():
         setattr(product, key, value)
     db.add(product)
@@ -108,6 +113,58 @@ async def list_products(
     if search:
         filters.append(MatchProduct.name.ilike(f"%{search.lower()}%"))
     return await list_active(db, MatchProduct, filters=filters, limit=limit, offset=offset)
+
+
+# --- Cross-tenant marketplace discovery -------------------------------------
+# These deliberately BYPASS tenant scoping (no scope_stmt / account filter) —
+# the one carve-out in the app. It is gated entirely by the `discoverable`
+# opt-in flag: only creators/products that opted into the marketplace are
+# visible across tenants. Results carry the public match profile, never raw
+# contact details (those are revealed only after a request is accepted).
+async def search_discoverable_creators(
+    db: AsyncSession, *, industry: str | None = None, size_tier: str | None = None,
+    search: str | None = None, rank_product: MatchProduct | None = None,
+    include_hidden: bool = False, limit: int = 50,
+) -> list[dict]:
+    stmt = select(Creator).where(
+        Creator.deleted_at.is_(None), Creator.status == CreatorStatus.active,
+    )
+    if not include_hidden:                       # include_hidden = platform-admin broker view
+        stmt = stmt.where(Creator.discoverable == True)  # noqa: E712
+    if industry:
+        stmt = stmt.where(Creator.industry == industry)
+    if size_tier:
+        stmt = stmt.where(Creator.size_tier == size_tier)
+    if search:
+        like = f"%{search.lower()}%"
+        stmt = stmt.where((Creator.display_name.ilike(like)) | (Creator.handle.ilike(like)))
+    stmt = stmt.order_by(Creator.follower_count.desc()).limit(_MATCH_POOL_CAP)
+    creators = list((await db.execute(stmt)).scalars().all())
+    if rank_product is not None:
+        ranked = matching_service.rank_creators(rank_product, creators)
+        return [{"creator": c, "score": s.as_dict()} for c, s in ranked[:limit]]
+    return [{"creator": c, "score": None} for c in creators[:limit]]
+
+
+async def search_discoverable_products(
+    db: AsyncSession, *, industry: str | None = None, search: str | None = None,
+    rank_creator: Creator | None = None, include_hidden: bool = False, limit: int = 50,
+) -> list[dict]:
+    stmt = select(MatchProduct).where(
+        MatchProduct.deleted_at.is_(None), MatchProduct.status == MatchProductStatus.active,
+    )
+    if not include_hidden:
+        stmt = stmt.where(MatchProduct.discoverable == True)  # noqa: E712
+    if industry:
+        stmt = stmt.where(MatchProduct.industry == industry)
+    if search:
+        stmt = stmt.where(MatchProduct.name.ilike(f"%{search.lower()}%"))
+    stmt = stmt.limit(_MATCH_POOL_CAP)
+    products = list((await db.execute(stmt)).scalars().all())
+    if rank_creator is not None:
+        ranked = matching_service.rank_products(rank_creator, products)
+        return [{"product": p, "score": s.as_dict()} for p, s in ranked[:limit]]
+    return [{"product": p, "score": None} for p in products[:limit]]
 
 
 # --- Matching ---------------------------------------------------------------

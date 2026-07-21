@@ -133,6 +133,11 @@ class MatchProduct(TenantModel, table=True):
     currency: str = Field(default="USD", max_length=3)
     offer_id: uuid.UUID | None = Field(default=None, foreign_key="offers.id", index=True)  # optional link
 
+    # Marketplace opt-in (mirror of Creator.discoverable): only discoverable
+    # products appear when creators search across tenants.
+    discoverable: bool = Field(default=False, index=True)
+    discoverable_at: datetime | None = Field(default=None)
+
 
 class CollaborationDirection(StrEnum):
     brand_to_creator = "brand_to_creator"   # a brand/product reaches out to a creator
