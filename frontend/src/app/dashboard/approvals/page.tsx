@@ -20,6 +20,8 @@ export default function ApprovalsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Per-approval edited reply text for social_comment_reply cards.
+  const [replyEdits, setReplyEdits] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +44,25 @@ export default function ApprovalsPage() {
     try {
       const res = await approvalsApi.approve(id);
       setNotice(res.sent != null ? `Approved — ${res.sent} emails dispatched.` : "Approved.");
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Approve failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function approveCommentReply(a: Approval) {
+    setBusy(a.id);
+    setError(null);
+    try {
+      const original = String(a.payload?.reply_text ?? "");
+      const edited = replyEdits[a.id];
+      if (a.entity_id && edited != null && edited.trim() && edited !== original) {
+        await socialCommentsApi.updateDraft(a.entity_id, edited);
+      }
+      await approvalsApi.approve(a.id);
+      setNotice("Reply approved and posted. 💬");
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Approve failed");
@@ -107,14 +128,45 @@ export default function ApprovalsPage() {
                     {a.action_type.replace(/_/g, " ")}
                   </span>
                   <p className="mt-2 font-medium text-slate-800">{a.title}</p>
-                  {a.summary ? <p className="text-sm text-slate-500">{a.summary}</p> : null}
-                  {a.risk_notes ? (
-                    <p className="mt-1 text-xs text-slate-400">{a.risk_notes}</p>
-                  ) : null}
+                  {a.action_type === "social_comment_reply" ? (
+                    <div className="mt-1">
+                      <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                        💬 <span className="font-medium">{String(a.payload?.author_name ?? "Commenter")}</span>:{" "}
+                        {String(a.payload?.comment_text ?? "")}
+                      </p>
+                      <label className="mt-2 block text-xs font-medium text-slate-500">
+                        Your reply (edit before approving)
+                      </label>
+                      <textarea
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                        rows={3}
+                        disabled={!canDecide || busy === a.id}
+                        value={replyEdits[a.id] ?? String(a.payload?.reply_text ?? "")}
+                        onChange={(e) => setReplyEdits((m) => ({ ...m, [a.id]: e.target.value }))}
+                      />
+                      {a.risk_notes ? (
+                        <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">{a.risk_notes}</p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <>
+                      {a.summary ? <p className="text-sm text-slate-500">{a.summary}</p> : null}
+                      {a.risk_notes ? (
+                        <p className="mt-1 text-xs text-slate-400">{a.risk_notes}</p>
+                      ) : null}
+                    </>
+                  )}
                 </div>
                 {canDecide ? (
                   <div className="flex flex-wrap gap-2">
-                    <Button disabled={busy === a.id} onClick={() => void approve(a.id)}>
+                    <Button
+                      disabled={busy === a.id}
+                      onClick={() =>
+                        a.action_type === "social_comment_reply"
+                          ? void approveCommentReply(a)
+                          : void approve(a.id)
+                      }
+                    >
                       {a.action_type === "social_comment_reply" ? "Approve & post reply" : "Approve"}
                     </Button>
                     {/* Like the underlying comment (Facebook only — IG has no

@@ -118,6 +118,7 @@ export interface Approval {
   risk_notes?: string | null;
   entity_type?: string | null;
   entity_id?: string | null;
+  payload?: Record<string, unknown>;
   created_at: string;
 }
 

@@ -238,7 +238,13 @@ async def draft_reply(db: AsyncSession, comment: SocialComment) -> ApprovalReque
         title=f"Reply to {comment.author_name or 'a commenter'} on {comment.platform.capitalize()}",
         summary=f"Comment: “{comment.text[:200]}”\n\nDrafted reply: “{text}”",
         risk_notes=risk,
-        payload={"comment_id": str(comment.id), "reply_text": text},
+        payload={
+            "comment_id": str(comment.id),
+            "reply_text": text,
+            "comment_text": comment.text,
+            "platform": comment.platform,
+            "author_name": comment.author_name,
+        },
     )
     db.add(approval)
     await db.flush()
@@ -249,6 +255,43 @@ async def draft_reply(db: AsyncSession, comment: SocialComment) -> ApprovalReque
     db.add(comment)
     await db.flush()
     return approval
+
+
+_MAX_REPLY_CHARS = 1500
+
+
+async def update_draft(db: AsyncSession, comment_id: uuid.UUID, account_id: uuid.UUID, new_text: str) -> SocialComment:
+    """Let a reviewer edit the drafted reply before approving. Rewrites the
+    reply on both the comment and its pending ApprovalRequest, and re-runs the
+    Fair Housing screen so the risk note reflects the edited text."""
+    comment = await _get_comment(db, comment_id, account_id)
+    if comment.status != SocialCommentStatus.drafted or not comment.approval_id:
+        raise RevOSError("This comment has no editable draft.", code="not_drafted", status_code=400)
+
+    text = (new_text or "").strip()
+    if not text:
+        raise RevOSError("The reply can't be empty.", code="empty_reply", status_code=400)
+    if len(text) > _MAX_REPLY_CHARS:
+        raise RevOSError(f"The reply must be under {_MAX_REPLY_CHARS} characters.", code="reply_too_long", status_code=400)
+
+    approval = await db.get(ApprovalRequest, comment.approval_id)
+    if approval is None or approval.status != ApprovalStatus.pending:
+        raise RevOSError("The approval for this reply is no longer pending.", code="not_pending", status_code=400)
+
+    flags = fair_housing_flags(text)
+    approval.risk_notes = (
+        "Fair Housing review — edited reply contains: " + ", ".join(flags) + ". Fix before approving."
+        if flags else None
+    )
+    approval.summary = f"Comment: “{comment.text[:200]}”\n\nEdited reply: “{text}”"
+    # Reassign so SQLAlchemy detects the JSON change.
+    approval.payload = {**approval.payload, "reply_text": text}
+    db.add(approval)
+
+    comment.drafted_reply = text
+    db.add(comment)
+    await db.flush()
+    return comment
 
 
 async def _default_persona_voice(db, account_id, brand_id) -> str | None:

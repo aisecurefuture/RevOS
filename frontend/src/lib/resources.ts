@@ -124,6 +124,11 @@ export const approvalsApi = {
 };
 
 export const socialCommentsApi = {
+  updateDraft: (commentId: string, replyText: string) =>
+    apiFetch<{ drafted_reply: string | null }>(`/social-comments/${commentId}/draft`, {
+      method: "POST",
+      body: JSON.stringify({ reply_text: replyText }),
+    }),
   like: (commentId: string) =>
     apiFetch<{ liked: boolean }>(`/social-comments/${commentId}/like`, { method: "POST" }),
   dismiss: (commentId: string) =>

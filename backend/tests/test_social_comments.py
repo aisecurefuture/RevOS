@@ -124,6 +124,54 @@ async def test_full_comment_reply_lifecycle(api, async_session_factory, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_edit_draft_then_approve_posts_edited_text(api, async_session_factory, monkeypatch):
+    monkeypatch.setattr(svc.settings, "social_comment_replies_enabled", True)
+    monkeypatch.setattr(svc.ai_service, "generate", lambda **_: "Original drafted reply.")
+    monkeypatch.setattr(svc.secrets_service, "get_secret", AsyncMock(return_value={
+        "access_token": "PAGE_TOKEN", "page_id": "PAGE1",
+    }))
+    monkeypatch.setattr(svc.meta_client, "list_page_comments", AsyncMock(return_value=[
+        IncomingComment("POST1", "CMT_EDIT", "When can I tour it?", "Sam", "S1", None, None),
+    ]))
+    reply_mock = AsyncMock(return_value="REPLY_EDITED")
+    monkeypatch.setattr(svc.meta_client, "reply_to_page_comment", reply_mock)
+
+    h = await _register_owner(api, async_session_factory, "editor@comments.com")
+    account_id = uuid.UUID((await api.get("/api/accounts", headers=h)).json()[0]["account"]["id"])
+
+    async with async_session_factory() as s:
+        conn = SocialConnection(
+            account_id=account_id, platform=SocialPlatform.facebook, external_id="PAGE1",
+            status=SocialConnectionStatus.active, token_ref="revos/x/fb/2", connected_by=uuid.uuid4(),
+        )
+        s.add(conn)
+        await s.commit()
+        await s.refresh(conn)
+        await svc.ingest_for_connection(s, conn)
+        await s.commit()
+        comment_id = (await s.execute(
+            __import__("sqlalchemy").select(SocialComment).where(SocialComment.external_comment_id == "CMT_EDIT")
+        )).scalar_one().id
+
+    # Edit the draft.
+    r = await api.post(f"/api/social-comments/{comment_id}/draft", headers=h,
+                       json={"reply_text": "Happy to help — tours are available this Saturday, just DM us!"})
+    assert r.status_code == 200, r.text
+    assert "Saturday" in r.json()["drafted_reply"]
+
+    # Empty edit rejected.
+    assert (await api.post(f"/api/social-comments/{comment_id}/draft", headers=h,
+                           json={"reply_text": "   "})).status_code == 400
+
+    # Approve → the EDITED text is what posts.
+    pending = (await api.get("/api/approvals", headers=h)).json()
+    approval_id = [a for a in pending if a["action_type"] == "social_comment_reply"][0]["id"]
+    r = await api.post(f"/api/approvals/{approval_id}/approve", headers=h)
+    assert r.status_code == 200, r.text
+    assert "Saturday" in reply_mock.await_args.args[2]  # edited text, not the original draft
+
+
+@pytest.mark.asyncio
 async def test_like_is_facebook_only(api, async_session_factory, monkeypatch):
     monkeypatch.setattr(svc.secrets_service, "get_secret", AsyncMock(return_value={"access_token": "T", "page_id": "P"}))
     like_mock = AsyncMock()

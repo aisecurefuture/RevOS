@@ -62,6 +62,20 @@ async def list_comments(
     return [SocialCommentOut.model_validate(c) for c in comments]
 
 
+class UpdateDraftRequest(BaseModel):
+    reply_text: str
+
+
+@router.post("/{comment_id}/draft", response_model=SocialCommentOut)
+async def update_draft(
+    comment_id: uuid.UUID, body: UpdateDraftRequest, request: Request, db: DbSession,
+    _user: AdminUser = Depends(require_editor), _c: None = Depends(verify_csrf),
+) -> SocialCommentOut:
+    """Edit the drafted reply before it's approved."""
+    comment = await svc.update_draft(db, comment_id, _account_id(request), body.reply_text)
+    return SocialCommentOut.model_validate(comment)
+
+
 @router.post("/{comment_id}/like", response_model=SocialCommentOut)
 async def like(
     comment_id: uuid.UUID, request: Request, db: DbSession,
