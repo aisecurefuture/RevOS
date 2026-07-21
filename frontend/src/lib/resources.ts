@@ -124,6 +124,9 @@ export const approvalsApi = {
 };
 
 export const socialCommentsApi = {
+  status: () => apiFetch<{ enabled: boolean }>("/social-comments/status"),
+  sync: () =>
+    apiFetch<{ connections: number; drafts: number; errors: number }>("/social-comments/sync", { method: "POST" }),
   updateDraft: (commentId: string, replyText: string) =>
     apiFetch<{ drafted_reply: string | null }>(`/social-comments/${commentId}/draft`, {
       method: "POST",

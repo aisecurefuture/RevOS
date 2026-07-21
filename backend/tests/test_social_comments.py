@@ -172,6 +172,40 @@ async def test_edit_draft_then_approve_posts_edited_text(api, async_session_fact
 
 
 @pytest.mark.asyncio
+async def test_sync_now_pulls_and_drafts_on_demand(api, async_session_factory, monkeypatch):
+    """The 'Sync comments now' button runs ingest immediately, ignoring the
+    global beat flag (explicit admin action)."""
+    monkeypatch.setattr(svc.settings, "social_comment_replies_enabled", False)  # beat off
+    monkeypatch.setattr(svc.ai_service, "generate", lambda **_: "Great question — yes!")
+    monkeypatch.setattr(svc.secrets_service, "get_secret", AsyncMock(return_value={
+        "access_token": "T", "page_id": "PAGE1",
+    }))
+    monkeypatch.setattr(svc.meta_client, "list_page_comments", AsyncMock(return_value=[
+        IncomingComment("POST1", "CMT_SYNC", "Do you offer virtual tours?", "Kim", "K1", None, None),
+    ]))
+
+    h = await _register_owner(api, async_session_factory, "sync@comments.com")
+    account_id = uuid.UUID((await api.get("/api/accounts", headers=h)).json()[0]["account"]["id"])
+    async with async_session_factory() as s:
+        s.add(SocialConnection(
+            account_id=account_id, platform=SocialPlatform.facebook, external_id="PAGE1",
+            status=SocialConnectionStatus.active, token_ref="revos/x/fb/sync", connected_by=uuid.uuid4(),
+        ))
+        await s.commit()
+
+    r = await api.post("/api/social-comments/sync", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["connections"] == 1
+    assert body["drafts"] == 1
+    assert body["errors"] == 0
+
+    # The draft is now a pending approval, even though the beat flag was off.
+    pending = (await api.get("/api/approvals", headers=h)).json()
+    assert any(a["action_type"] == "social_comment_reply" for a in pending)
+
+
+@pytest.mark.asyncio
 async def test_like_is_facebook_only(api, async_session_factory, monkeypatch):
     monkeypatch.setattr(svc.secrets_service, "get_secret", AsyncMock(return_value={"access_token": "T", "page_id": "P"}))
     like_mock = AsyncMock()

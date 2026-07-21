@@ -22,6 +22,8 @@ export default function ApprovalsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   // Per-approval edited reply text for social_comment_reply cards.
   const [replyEdits, setReplyEdits] = useState<Record<string, string>>({});
+  const [commentsEnabled, setCommentsEnabled] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,7 +38,26 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     void load();
+    socialCommentsApi.status().then((s) => setCommentsEnabled(s.enabled)).catch(() => {});
   }, [load]);
+
+  async function syncComments() {
+    setSyncing(true);
+    setError(null);
+    try {
+      const r = await socialCommentsApi.sync();
+      setNotice(
+        r.drafts > 0
+          ? `Pulled ${r.drafts} new comment${r.drafts === 1 ? "" : "s"} to review.`
+          : "No new comments to review right now.",
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not sync comments.");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function approve(id: string) {
     setBusy(id);
@@ -103,6 +124,13 @@ export default function ApprovalsPage() {
       <PageHeader
         title="Approvals"
         description="Nothing goes out without a human OK. Review and approve bulk sends here."
+        actions={
+          commentsEnabled ? (
+            <Button variant="secondary" disabled={syncing} onClick={() => void syncComments()}>
+              {syncing ? "Syncing…" : "Sync comments now"}
+            </Button>
+          ) : undefined
+        }
       />
 
       {error ? (

@@ -52,6 +52,24 @@ async def status(_user: Annotated[AdminUser, Depends(require_authenticated)]) ->
     return {"enabled": settings.social_comment_replies_enabled}
 
 
+class SyncResult(BaseModel):
+    connections: int
+    drafts: int
+    errors: int
+
+
+@router.post("/sync", response_model=SyncResult)
+async def sync_now(
+    request: Request, db: DbSession,
+    _user: AdminUser = Depends(require_editor), _c: None = Depends(verify_csrf),
+) -> SyncResult:
+    """Pull new comments from this account's connected Facebook/Instagram
+    accounts right now and draft approval-gated replies. On-demand equivalent
+    of the 15-minute background poll — used from the Approvals page."""
+    result = await svc.ingest_for_account(db, _account_id(request))
+    return SyncResult(**result)
+
+
 @router.get("", response_model=list[SocialCommentOut])
 async def list_comments(
     request: Request, db: DbSession,

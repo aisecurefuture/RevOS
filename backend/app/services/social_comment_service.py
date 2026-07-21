@@ -117,15 +117,15 @@ async def _token_data(conn: SocialConnection) -> dict:
     return data
 
 
-async def _active_meta_connections(db: AsyncSession) -> list[SocialConnection]:
-    result = await db.execute(
-        select(SocialConnection).where(
-            SocialConnection.platform.in_([SocialPlatform.facebook, SocialPlatform.instagram]),
-            SocialConnection.status == SocialConnectionStatus.active,
-            SocialConnection.deleted_at.is_(None),
-        )
+async def _active_meta_connections(db: AsyncSession, *, account_id: uuid.UUID | None = None) -> list[SocialConnection]:
+    q = select(SocialConnection).where(
+        SocialConnection.platform.in_([SocialPlatform.facebook, SocialPlatform.instagram]),
+        SocialConnection.status == SocialConnectionStatus.active,
+        SocialConnection.deleted_at.is_(None),
     )
-    return list(result.scalars().all())
+    if account_id is not None:
+        q = q.where(SocialConnection.account_id == account_id)
+    return list((await db.execute(q)).scalars().all())
 
 
 # ---------------------------------------------------------------------------
@@ -417,3 +417,23 @@ async def ingest_all(db: AsyncSession) -> dict:
             await db.rollback()
             logger.exception("Comment ingest failed for connection %s", conn.id)
     return {"enabled": True, "connections": len(conns), "drafts": total}
+
+
+async def ingest_for_account(db: AsyncSession, account_id: uuid.UUID) -> dict:
+    """On-demand poll for one account's own connections (the 'Sync now' button).
+
+    Runs regardless of the global beat flag — it's an explicit admin action —
+    and isolates per-connection failures so one bad token doesn't sink the rest.
+    """
+    total = 0
+    errors = 0
+    conns = await _active_meta_connections(db, account_id=account_id)
+    for conn in conns:
+        try:
+            total += await ingest_for_connection(db, conn)
+            await db.commit()
+        except Exception:  # noqa: BLE001
+            await db.rollback()
+            errors += 1
+            logger.exception("Manual comment sync failed for connection %s", conn.id)
+    return {"connections": len(conns), "drafts": total, "errors": errors}
