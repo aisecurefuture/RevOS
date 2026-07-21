@@ -152,13 +152,29 @@ export interface TickResult {
   stopped: number;
 }
 
+export interface ContactChannel {
+  value: string;
+  label?: string | null;
+  is_primary: boolean;
+}
+
 export interface Contact {
   id: string;
   first_name?: string | null;
   last_name?: string | null;
   email?: string | null;
+  phone?: string | null;
+  emails?: ContactChannel[];
+  phones?: ContactChannel[];
   title?: string | null;
   linkedin_url?: string | null;
+  notes?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
   source?: string | null;
   lifecycle_stage: string;
   lead_score: number;

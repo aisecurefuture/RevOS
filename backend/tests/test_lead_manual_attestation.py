@@ -127,6 +127,86 @@ async def test_also_create_contact_links_lead_to_contact(api, make_user, async_s
 
 
 @pytest.mark.asyncio
+async def test_contact_stores_notes_address_and_multi_channels(api, make_user, async_session_factory):
+    h, bid = await _setup(api, make_user)
+    r = await api.post("/api/leads", headers=h, json=_payload(
+        brand_id=bid, email="rich@x.com", phone="555-0001", also_create_contact=True,
+        notes="Met at the downtown open house; wants 3BR listings.",
+        address_line1="123 Main St", city="Austin", region="TX", postal_code="78701", country="US",
+        additional_emails=[{"value": "rich.work@x.com", "label": "work"}],
+        additional_phones=[{"value": "555-0002", "label": "office"}],
+    ))
+    assert r.status_code == 201, r.text
+
+    async with async_session_factory() as s:
+        contact = (await s.execute(select(Contact).where(Contact.email == "rich@x.com"))).scalar_one()
+        assert contact.notes.startswith("Met at the downtown open house")
+        assert contact.city == "Austin" and contact.region == "TX" and contact.postal_code == "78701"
+        # Primary is first; extra is stored non-primary.
+        assert [e["value"] for e in contact.emails] == ["rich@x.com", "rich.work@x.com"]
+        assert contact.emails[0]["is_primary"] is True
+        assert contact.emails[1]["is_primary"] is False
+        assert [p["value"] for p in contact.phones] == ["555-0001", "555-0002"]
+        assert contact.phone == "555-0001"  # scalar mirrors the primary
+
+
+@pytest.mark.asyncio
+async def test_contact_list_out_synthesizes_primary_channel(api, make_user):
+    """A contact created through the plain create endpoint (no channel lists)
+    still exposes a primary email/phone entry in the API response."""
+    h, bid = await _setup(api, make_user)
+    created = await api.post("/api/contacts", headers=h, json={
+        "brand_id": bid, "email": "plain@x.com", "phone": "555-9999", "first_name": "Plain",
+    })
+    assert created.status_code == 201, created.text
+    listed = await api.get(f"/api/contacts?brand_id={bid}")
+    row = next(c for c in listed.json() if c["email"] == "plain@x.com")
+    assert row["emails"] == [{"value": "plain@x.com", "label": None, "is_primary": True}]
+    assert row["phones"][0]["value"] == "555-9999"
+
+
+@pytest.mark.asyncio
+async def test_update_contact_syncs_primary_and_notes(api, make_user, async_session_factory):
+    """Editing the channel lists re-syncs the scalar email/phone primary and
+    persists notes/address changes."""
+    h, bid = await _setup(api, make_user)
+    created = (await api.post("/api/contacts", headers=h, json={
+        "brand_id": bid, "email": "old@x.com", "phone": "111",
+    })).json()
+    cid = created["id"]
+
+    patched = await api.patch(f"/api/contacts/{cid}", headers=h, json={
+        "emails": [
+            {"value": "new-primary@x.com", "is_primary": True},
+            {"value": "secondary@x.com", "label": "work", "is_primary": False},
+        ],
+        "notes": "Prefers text over email.",
+        "city": "Dallas",
+    })
+    assert patched.status_code == 200, patched.text
+    body = patched.json()
+    assert body["email"] == "new-primary@x.com"     # scalar re-synced to new primary
+    assert body["notes"] == "Prefers text over email."
+    assert body["city"] == "Dallas"
+    assert [e["value"] for e in body["emails"]] == ["new-primary@x.com", "secondary@x.com"]
+
+    async with async_session_factory() as s:
+        contact = (await s.execute(select(Contact).where(Contact.email == "new-primary@x.com"))).scalar_one()
+        assert contact.city == "Dallas"
+
+
+@pytest.mark.asyncio
+async def test_delete_contact_soft_deletes(api, make_user):
+    h, bid = await _setup(api, make_user)
+    cid = (await api.post("/api/contacts", headers=h, json={
+        "brand_id": bid, "email": "gone@x.com",
+    })).json()["id"]
+    assert (await api.delete(f"/api/contacts/{cid}", headers=h)).status_code == 200
+    listed = await api.get(f"/api/contacts?brand_id={bid}")
+    assert all(c["email"] != "gone@x.com" for c in listed.json())
+
+
+@pytest.mark.asyncio
 async def test_brand_id_defaults_to_first_brand_when_omitted(api, make_user, async_session_factory):
     h, _bid = await _setup(api, make_user)
     r = await api.post("/api/leads", headers=h, json=_payload(email="nobrand@x.com"))

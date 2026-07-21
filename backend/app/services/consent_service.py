@@ -104,6 +104,10 @@ async def create_lead_with_attestation(
     also_create_contact: bool,
     ip: str | None,
     ua: str | None,
+    additional_emails: list | None = None,
+    additional_phones: list | None = None,
+    notes: str | None = None,
+    address: dict | None = None,
 ) -> Lead:
     """Manually add a lead with a human attestation that the person opted in.
 
@@ -163,9 +167,24 @@ async def create_lead_with_attestation(
     if also_create_contact:
         from app.services import crm_service
 
+        # The primary email/phone lead the channel lists; the modal's extra
+        # rows follow as non-primary.
+        def _channels(primary: str | None, extras: list | None) -> list[dict]:
+            out: list[dict] = []
+            if primary:
+                out.append({"value": primary, "label": "primary", "is_primary": True})
+            for e in extras or []:
+                raw = e if isinstance(e, dict) else e.model_dump()
+                if raw.get("value"):
+                    out.append({"value": raw["value"], "label": raw.get("label"), "is_primary": False})
+            return out
+
         contact = await crm_service.find_or_create_contact(
             db, brand_id=brand_id, email=email, first_name=first_name,
             last_name=last_name, phone=phone, title=title, source=source or "manual",
+            emails=_channels(email, additional_emails),
+            phones=_channels(phone, additional_phones),
+            notes=notes, address=address,
         )
         lead.contact_id = contact.id
 

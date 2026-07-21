@@ -52,6 +52,14 @@ async def create_lead_manual(
         consent_basis=body.consent_basis,
         consent_mode=body.consent_mode,
         also_create_contact=body.also_create_contact,
+        additional_emails=[e.model_dump() for e in body.additional_emails],
+        additional_phones=[p.model_dump() for p in body.additional_phones],
+        notes=body.notes,
+        address={
+            "address_line1": body.address_line1, "address_line2": body.address_line2,
+            "city": body.city, "region": body.region,
+            "postal_code": body.postal_code, "country": body.country,
+        },
         ip=_client_ip(request),
         ua=request.headers.get("user-agent", "")[:400] or None,
     )

@@ -8,6 +8,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.schemas.crm import ContactChannel
+
 
 class ConsentMode(StrEnum):
     """How a manual opt-in attestation resolves the lead's mailable state."""
@@ -48,14 +50,25 @@ class LeadManualCreate(BaseModel):
     """
 
     brand_id: uuid.UUID | None = None       # None → resolved to the account's first brand
-    email: EmailStr
+    email: EmailStr                          # the primary email — drives the mailable Lead
     first_name: str | None = Field(default=None, max_length=120)
     last_name: str | None = Field(default=None, max_length=120)
-    phone: str | None = Field(default=None, max_length=40)
+    phone: str | None = Field(default=None, max_length=40)    # primary phone
     company_name: str | None = Field(default=None, max_length=200)
     title: str | None = Field(default=None, max_length=200)   # used only for the linked contact
     source: str | None = Field(default="manual", max_length=120)
     tags: list[str] = Field(default_factory=list)
+
+    # Rich contact detail (stored on the linked Contact when also_create_contact).
+    additional_emails: list[ContactChannel] = Field(default_factory=list)
+    additional_phones: list[ContactChannel] = Field(default_factory=list)
+    notes: str | None = Field(default=None, max_length=5000)
+    address_line1: str | None = Field(default=None, max_length=200)
+    address_line2: str | None = Field(default=None, max_length=200)
+    city: str | None = Field(default=None, max_length=120)
+    region: str | None = Field(default=None, max_length=120)
+    postal_code: str | None = Field(default=None, max_length=30)
+    country: str | None = Field(default=None, max_length=80)
 
     # --- Opt-in attestation (required) ---
     opt_in_attested: bool = False
