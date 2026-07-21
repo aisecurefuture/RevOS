@@ -61,10 +61,27 @@ class Contact(TenantModel, table=True):
 
     first_name: str | None = Field(default=None, max_length=120)
     last_name: str | None = Field(default=None, max_length=120)
+    # Primary email/phone — authoritative for search, CSV, and the linked Lead.
+    # Additional values live in the `emails`/`phones` JSON lists below.
     email: str | None = Field(default=None, index=True, max_length=320)
     phone: str | None = Field(default=None, max_length=40)
     title: str | None = Field(default=None, max_length=200)
     linkedin_url: str | None = Field(default=None, max_length=400)
+
+    # Multi-value contact points: [{"value", "label", "is_primary"}]. The
+    # is_primary entry is mirrored into the scalar email/phone above.
+    emails: list = Field(default_factory=list, sa_type=JSON)
+    phones: list = Field(default_factory=list, sa_type=JSON)
+
+    # Mailing address (structured for filtering/segmentation).
+    address_line1: str | None = Field(default=None, max_length=200)
+    address_line2: str | None = Field(default=None, max_length=200)
+    city: str | None = Field(default=None, max_length=120)
+    region: str | None = Field(default=None, max_length=120)      # state / province
+    postal_code: str | None = Field(default=None, max_length=30)
+    country: str | None = Field(default=None, max_length=80)
+
+    notes: str | None = Field(default=None, max_length=5000)
 
     source: str | None = Field(default=None, index=True, max_length=120)   # e.g. linkedin_import
     lifecycle_stage: LifecycleStage = Field(

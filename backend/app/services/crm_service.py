@@ -113,8 +113,78 @@ async def find_contact(
     return None
 
 
+def normalize_channels(entries: list | None, scalar: str | None) -> tuple[list[dict], str | None]:
+    """Clean a list of {value,label,is_primary} channels (email or phone),
+    de-dupe, guarantee exactly one primary, and return (list, primary_value).
+
+    If no list is given, synthesize one from the scalar column so legacy rows
+    and simple single-value writes stay consistent.
+    """
+    cleaned: list[dict] = []
+    seen: set[str] = set()
+    for e in entries or []:
+        raw = e if isinstance(e, dict) else e.model_dump()
+        value = clean_text(raw.get("value"))
+        if not value or value.lower() in seen:
+            continue
+        seen.add(value.lower())
+        cleaned.append({
+            "value": value,
+            "label": clean_text(raw.get("label")),
+            "is_primary": bool(raw.get("is_primary")),
+        })
+    if not cleaned and scalar:
+        cleaned = [{"value": scalar, "label": None, "is_primary": True}]
+    if cleaned:
+        primaries = [c for c in cleaned if c["is_primary"]]
+        if not primaries:
+            cleaned[0]["is_primary"] = True
+        else:
+            for c in primaries[1:]:      # only the first primary stays primary
+                c["is_primary"] = False
+    primary_value = next((c["value"] for c in cleaned if c["is_primary"]), None)
+    return cleaned, primary_value
+
+
 async def create_contact(db: AsyncSession, data: dict) -> Contact:
+    emails, primary_email = normalize_channels(data.pop("emails", None), data.get("email"))
+    phones, primary_phone = normalize_channels(data.pop("phones", None), data.get("phone"))
+    data["emails"] = emails
+    data["phones"] = phones
+    if primary_email:
+        data["email"] = primary_email
+    if primary_phone:
+        data["phone"] = primary_phone
     contact = Contact(**data)
+    contact.lead_score = score_contact(
+        email=contact.email, title=contact.title,
+        has_company=contact.company_id is not None, linkedin=contact.linkedin_url,
+    )
+    db.add(contact)
+    await db.flush()
+    await db.refresh(contact)
+    return contact
+
+
+async def update_contact(db: AsyncSession, contact: Contact, data: dict) -> Contact:
+    """Apply a partial update. Channel lists (emails/phones) are normalized and
+    their primary mirrored back into the scalar email/phone columns."""
+    if data.get("email"):
+        data["email"] = str(data["email"]).lower()
+
+    if "emails" in data:
+        emails, primary = normalize_channels(data.pop("emails"), data.get("email") or contact.email)
+        contact.emails = emails
+        if primary:
+            contact.email = primary
+    if "phones" in data:
+        phones, primary = normalize_channels(data.pop("phones"), data.get("phone") or contact.phone)
+        contact.phones = phones
+        contact.phone = primary or contact.phone
+
+    for key, value in data.items():
+        setattr(contact, key, value)
+
     contact.lead_score = score_contact(
         email=contact.email, title=contact.title,
         has_company=contact.company_id is not None, linkedin=contact.linkedin_url,
@@ -129,6 +199,8 @@ async def find_or_create_contact(
     db: AsyncSession, *, brand_id: uuid.UUID, email: str,
     first_name: str | None = None, last_name: str | None = None,
     phone: str | None = None, title: str | None = None, source: str | None = None,
+    emails: list | None = None, phones: list | None = None,
+    notes: str | None = None, address: dict | None = None,
 ) -> Contact:
     """Return an existing contact for this brand+email (resurrecting a
     soft-deleted one) or create a new one. Fills blanks only — never
@@ -145,10 +217,26 @@ async def find_or_create_contact(
 
     contact.first_name = contact.first_name or clean_text(first_name)
     contact.last_name = contact.last_name or clean_text(last_name)
-    contact.phone = contact.phone or clean_text(phone)
     contact.title = contact.title or clean_text(title)
+    contact.notes = contact.notes or clean_text(notes)
     if source and not contact.source:
         contact.source = source
+
+    # Multi-value channels: set only when this contact has none yet.
+    email_list, primary_email = normalize_channels(emails, email)
+    phone_list, primary_phone = normalize_channels(phones, phone)
+    if not contact.emails:
+        contact.emails = email_list
+        contact.email = primary_email or contact.email
+    if not contact.phones and phone_list:
+        contact.phones = phone_list
+        contact.phone = contact.phone or primary_phone
+
+    # Address: fill blank fields only.
+    for field in ("address_line1", "address_line2", "city", "region", "postal_code", "country"):
+        if not getattr(contact, field) and (address or {}).get(field):
+            setattr(contact, field, clean_text((address or {}).get(field)))
+
     contact.lead_score = score_contact(
         email=contact.email, title=contact.title,
         has_company=contact.company_id is not None, linkedin=contact.linkedin_url,

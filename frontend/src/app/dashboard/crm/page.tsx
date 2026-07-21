@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AddLeadModal } from "@/components/AddLeadModal";
+import { EditContactModal } from "@/components/EditContactModal";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -82,6 +83,7 @@ function Contacts({
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<Contact | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const params = useCallback(() => {
@@ -166,6 +168,14 @@ function Contacts({
         onCreated={() => void load()}
       />
 
+      {editing ? (
+        <EditContactModal
+          contact={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => void load()}
+        />
+      ) : null}
+
       {loading ? (
         <Spinner />
       ) : (
@@ -189,7 +199,13 @@ function Contacts({
                 </tr>
               ) : (
                 contacts.map((c) => (
-                  <tr key={c.id} className="border-b border-slate-100 last:border-0">
+                  <tr
+                    key={c.id}
+                    onClick={() => canEdit && setEditing(c)}
+                    className={`border-b border-slate-100 last:border-0 ${
+                      canEdit ? "cursor-pointer hover:bg-slate-50" : ""
+                    }`}
+                  >
                     <td className="px-4 py-3 font-medium text-slate-800">
                       {[c.first_name, c.last_name].filter(Boolean).join(" ") || "—"}
                     </td>

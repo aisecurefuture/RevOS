@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { type Channel, ContactChannelRows } from "@/components/ContactChannelRows";
 import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/lib/api";
 import { leadsApi } from "@/lib/resources";
@@ -18,15 +19,22 @@ interface Props {
 
 const INPUT =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
+const LABEL = "mb-1 block text-xs font-medium text-slate-500";
 
 export function AddLeadModal({ open, variant, brandId, onClose, onCreated }: Props) {
-  const noun = variant === "contact" ? "contact" : "lead";
+  const isContact = variant === "contact";
+  const noun = isContact ? "contact" : "lead";
+
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [title, setTitle] = useState("");
+  const [addEmails, setAddEmails] = useState<Channel[]>([]);
+  const [addPhones, setAddPhones] = useState<Channel[]>([]);
+  const [notes, setNotes] = useState("");
+  const [addr, setAddr] = useState({ line1: "", line2: "", city: "", region: "", postal: "", country: "" });
   const [basis, setBasis] = useState("");
   const [mode, setMode] = useState<"express" | "double_optin">("express");
   const [attested, setAttested] = useState(false);
@@ -36,16 +44,10 @@ export function AddLeadModal({ open, variant, brandId, onClose, onCreated }: Pro
   if (!open) return null;
 
   function reset() {
-    setEmail("");
-    setFirstName("");
-    setLastName("");
-    setPhone("");
-    setCompany("");
-    setTitle("");
-    setBasis("");
-    setMode("express");
-    setAttested(false);
-    setError(null);
+    setEmail(""); setFirstName(""); setLastName(""); setPhone(""); setCompany("");
+    setTitle(""); setAddEmails([]); setAddPhones([]); setNotes("");
+    setAddr({ line1: "", line2: "", city: "", region: "", postal: "", country: "" });
+    setBasis(""); setMode("express"); setAttested(false); setError(null);
   }
 
   const canSubmit = !!email && attested && basis.trim().length >= 3 && !saving;
@@ -56,6 +58,9 @@ export function AddLeadModal({ open, variant, brandId, onClose, onCreated }: Pro
     setSaving(true);
     setError(null);
     try {
+      const cleanChannels = (list: Channel[]) =>
+        list.map((c) => ({ value: c.value.trim(), label: c.label.trim() || undefined }))
+          .filter((c) => c.value);
       await leadsApi.create({
         brand_id: brandId ?? undefined,
         email,
@@ -63,12 +68,25 @@ export function AddLeadModal({ open, variant, brandId, onClose, onCreated }: Pro
         last_name: lastName || undefined,
         phone: phone || undefined,
         company_name: company || undefined,
-        title: variant === "contact" ? title || undefined : undefined,
+        title: isContact ? title || undefined : undefined,
         opt_in_attested: attested,
         consent_basis: basis.trim(),
         consent_mode: mode,
-        also_create_contact: variant === "contact",
+        also_create_contact: isContact,
         source: "manual",
+        ...(isContact
+          ? {
+              additional_emails: cleanChannels(addEmails),
+              additional_phones: cleanChannels(addPhones),
+              notes: notes.trim() || undefined,
+              address_line1: addr.line1 || undefined,
+              address_line2: addr.line2 || undefined,
+              city: addr.city || undefined,
+              region: addr.region || undefined,
+              postal_code: addr.postal || undefined,
+              country: addr.country || undefined,
+            }
+          : {}),
       });
       reset();
       onCreated();
@@ -103,7 +121,7 @@ export function AddLeadModal({ open, variant, brandId, onClose, onCreated }: Pro
 
         <form onSubmit={submit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500">Email *</label>
+            <label className={LABEL}>{isContact ? "Primary email *" : "Email *"}</label>
             <input
               type="email"
               required
@@ -112,32 +130,76 @@ export function AddLeadModal({ open, variant, brandId, onClose, onCreated }: Pro
               placeholder="name@company.com"
               className={INPUT}
             />
+            {isContact ? <ContactChannelRows kind="email" list={addEmails} set={setAddEmails} /> : null}
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">First name</label>
+              <label className={LABEL}>First name</label>
               <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className={INPUT} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Last name</label>
+              <label className={LABEL}>Last name</label>
               <input value={lastName} onChange={(e) => setLastName(e.target.value)} className={INPUT} />
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Phone</label>
+              <label className={LABEL}>{isContact ? "Primary phone" : "Phone"}</label>
               <input value={phone} onChange={(e) => setPhone(e.target.value)} className={INPUT} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Company</label>
+              <label className={LABEL}>Company</label>
               <input value={company} onChange={(e) => setCompany(e.target.value)} className={INPUT} />
             </div>
           </div>
-          {variant === "contact" ? (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Title</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} className={INPUT} />
-            </div>
+          {isContact ? <ContactChannelRows kind="phone" list={addPhones} set={setAddPhones} /> : null}
+
+          {isContact ? (
+            <>
+              <div>
+                <label className={LABEL}>Title</label>
+                <input value={title} onChange={(e) => setTitle(e.target.value)} className={INPUT} />
+              </div>
+
+              <div>
+                <label className={LABEL}>Address</label>
+                <div className="space-y-2">
+                  <input
+                    value={addr.line1}
+                    onChange={(e) => setAddr({ ...addr, line1: e.target.value })}
+                    placeholder="Street address"
+                    className={INPUT}
+                  />
+                  <input
+                    value={addr.line2}
+                    onChange={(e) => setAddr({ ...addr, line2: e.target.value })}
+                    placeholder="Apt, suite, unit (optional)"
+                    className={INPUT}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={addr.city} onChange={(e) => setAddr({ ...addr, city: e.target.value })} placeholder="City" className={INPUT} />
+                    <input value={addr.region} onChange={(e) => setAddr({ ...addr, region: e.target.value })} placeholder="State / region" className={INPUT} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={addr.postal} onChange={(e) => setAddr({ ...addr, postal: e.target.value })} placeholder="ZIP / postal" className={INPUT} />
+                    <input value={addr.country} onChange={(e) => setAddr({ ...addr, country: e.target.value })} placeholder="Country" className={INPUT} />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className={LABEL}>Notes</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Context, preferences, where you met…"
+                  className={INPUT}
+                />
+              </div>
+            </>
           ) : null}
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -154,26 +216,14 @@ export function AddLeadModal({ open, variant, brandId, onClose, onCreated }: Pro
 
             <div className="mt-3 space-y-2 text-sm text-slate-700">
               <label className="flex items-start gap-2">
-                <input
-                  type="radio"
-                  name="mode"
-                  checked={mode === "express"}
-                  onChange={() => setMode("express")}
-                  className="mt-0.5"
-                />
+                <input type="radio" name="mode" checked={mode === "express"} onChange={() => setMode("express")} className="mt-0.5" />
                 <span>
                   <span className="font-medium">Express consent — mailable now.</span> They gave
                   direct written/verbal permission to receive marketing.
                 </span>
               </label>
               <label className="flex items-start gap-2">
-                <input
-                  type="radio"
-                  name="mode"
-                  checked={mode === "double_optin"}
-                  onChange={() => setMode("double_optin")}
-                  className="mt-0.5"
-                />
+                <input type="radio" name="mode" checked={mode === "double_optin"} onChange={() => setMode("double_optin")} className="mt-0.5" />
                 <span>
                   <span className="font-medium">Send a confirmation email first.</span> Mailable
                   only after they click the confirm link (double opt-in).
@@ -182,12 +232,7 @@ export function AddLeadModal({ open, variant, brandId, onClose, onCreated }: Pro
             </div>
 
             <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={attested}
-                onChange={(e) => setAttested(e.target.checked)}
-                className="mt-0.5"
-              />
+              <input type="checkbox" checked={attested} onChange={(e) => setAttested(e.target.checked)} className="mt-0.5" />
               <span>
                 I attest that this person opted in to receive communications, as described above. *
               </span>

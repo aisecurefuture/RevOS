@@ -160,6 +160,11 @@ export const contactsApi = {
     const qs = new URLSearchParams(params).toString();
     return apiFetch<Contact[]>(`/contacts${qs ? `?${qs}` : ""}`);
   },
+  get: (id: string) => apiFetch<Contact>(`/contacts/${id}`),
+  update: (id: string, data: Record<string, unknown>) =>
+    apiFetch<Contact>(`/contacts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  remove: (id: string) =>
+    apiFetch<{ status: string }>(`/contacts/${id}`, { method: "DELETE" }),
   importCsv: (file: File, brandId?: string | null) => {
     const fd = new FormData();
     fd.append("file", file);

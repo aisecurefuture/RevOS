@@ -117,16 +117,7 @@ async def update_contact(
 ) -> Contact:
     contact = await get_active(db, Contact, contact_id)
     data = body.model_dump(exclude_unset=True)
-    if data.get("email"):
-        data["email"] = str(data["email"]).lower()
-    for key, value in data.items():
-        setattr(contact, key, value)
-    contact.lead_score = crm_service.score_contact(
-        email=contact.email, title=contact.title,
-        has_company=contact.company_id is not None, linkedin=contact.linkedin_url)
-    db.add(contact)
-    await db.flush()
-    await db.refresh(contact)
+    contact = await crm_service.update_contact(db, contact, data)
     await write_audit(db, action="contact.update", user_id=user.id,
                       entity_type="contact", entity_id=str(contact_id), request=request)
     return contact
