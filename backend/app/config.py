@@ -186,7 +186,7 @@ class Settings(BaseSettings):
     # the app's Threads use case in the Meta dashboard — requesting one that
     # isn't makes Threads reject auth with a generic "error_code: 1". Drop to
     # just "threads_basic" to isolate a connection issue, then add publish back.
-    threads_scopes: str = "threads_basic,threads_content_publish"
+    threads_scopes: str = "threads_basic,threads_content_publish,threads_manage_replies"
     twitter_bearer_token: str = ""
     twitter_api_key: str = ""
     twitter_api_secret: str = ""

@@ -316,3 +316,42 @@ async def test_like_unsupported_on_youtube(api, async_session_factory, monkeypat
     r = await api.post(f"/api/social-comments/{cid}/like", headers=h)
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "like_unsupported"
+
+
+@pytest.mark.asyncio
+async def test_threads_comment_reply_lifecycle(api, async_session_factory, monkeypatch):
+    """Threads: ingest a reply → draft → approve → posts via reply_to_comment."""
+    monkeypatch.setattr(svc.settings, "social_comment_replies_enabled", True)
+    monkeypatch.setattr(svc.ai_service, "generate", lambda **_: "Appreciate you — DM us for details!")
+    monkeypatch.setattr(svc.secrets_service, "get_secret", AsyncMock(return_value={
+        "access_token": "THTOKEN", "threads_user_id": "TUID",
+    }))
+    monkeypatch.setattr(svc.threads_client, "list_replies", AsyncMock(return_value=[
+        IncomingComment("POST1", "TREPLY1", "Is this property still available?", "buyer_jane", "buyer_jane", "http://t/x", None),
+    ]))
+    reply_mock = AsyncMock(return_value="TPUB99")
+    monkeypatch.setattr(svc.threads_client, "reply_to_comment", reply_mock)
+
+    h = await _register_owner(api, async_session_factory, "threads@comments.com")
+    account_id = uuid.UUID((await api.get("/api/accounts", headers=h)).json()[0]["account"]["id"])
+    async with async_session_factory() as s:
+        conn = SocialConnection(
+            account_id=account_id, platform=SocialPlatform.threads, external_id="TUID",
+            handle="revos360", status=SocialConnectionStatus.active,
+            token_ref="revos/x/threads/1", connected_by=uuid.uuid4(),
+        )
+        s.add(conn)
+        await s.commit()
+        await s.refresh(conn)
+        drafts = await svc.ingest_for_connection(s, conn)
+        await s.commit()
+        assert drafts == 1
+
+    pending = (await api.get("/api/approvals", headers=h)).json()
+    approval_id = [a for a in pending if a["action_type"] == "social_comment_reply"][0]["id"]
+    r = await api.post(f"/api/approvals/{approval_id}/approve", headers=h)
+    assert r.status_code == 200, r.text
+    reply_mock.assert_awaited_once()
+    # reply_to_comment(user_id, token, comment_id, text)
+    assert reply_mock.await_args.args[0] == "TUID"
+    assert reply_mock.await_args.args[2] == "TREPLY1"

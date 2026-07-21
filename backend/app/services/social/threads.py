@@ -201,3 +201,44 @@ async def publish_media(
     # Longer per-request timeout: video containers can be slow to accept.
     async with httpx.AsyncClient(timeout=60.0) as client:
         return await _create_and_publish(client, user_id, access_token, params)
+
+
+# ---------------------------------------------------------------------------
+# Reply management (comment replies) — requires the threads_manage_replies scope.
+# ---------------------------------------------------------------------------
+
+from app.services.social.base import IncomingComment  # noqa: E402
+
+
+async def list_replies(user_id: str, access_token: str, *, posts: int = 15, per_post: int = 30) -> list[IncomingComment]:
+    """Replies across the account's recent Threads posts, flattened. Mirrors
+    the Meta/YouTube comment shape so the comment service treats it uniformly."""
+    out: list[IncomingComment] = []
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(f"{_GRAPH}/{user_id}/threads", params={
+            "fields": "id,permalink,timestamp", "limit": posts, "access_token": access_token,
+        })
+        _raise_graph_error(resp, "list_threads")
+        for post in resp.json().get("data", []):
+            rep = await client.get(f"{_GRAPH}/{post['id']}/replies", params={
+                "fields": "id,text,username,timestamp", "limit": per_post, "access_token": access_token,
+            })
+            if not rep.is_success:
+                continue
+            for r in rep.json().get("data", []):
+                out.append(IncomingComment(
+                    post_id=post["id"], comment_id=r["id"], text=r.get("text", "") or "",
+                    author_name=r.get("username"), author_id=r.get("username"),
+                    permalink=post.get("permalink"), created_time=r.get("timestamp"),
+                ))
+    return out
+
+
+async def reply_to_comment(user_id: str, access_token: str, reply_to_id: str, text: str) -> str:
+    """Reply to a Threads reply — a reply is just a thread with reply_to_id set
+    (container → wait for FINISHED → publish)."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        result = await _create_and_publish(client, user_id, access_token, {
+            "media_type": "TEXT", "text": text, "reply_to_id": reply_to_id, "access_token": access_token,
+        })
+    return result.external_id

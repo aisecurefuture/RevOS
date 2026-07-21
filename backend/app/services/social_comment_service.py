@@ -39,6 +39,7 @@ from app.models.social_comment import SocialComment, SocialCommentStatus
 from app.models.social_connection import SocialConnection, SocialConnectionStatus
 from app.services import ai_service, brand_service, secrets_service
 from app.services.social import meta as meta_client
+from app.services.social import threads as threads_client
 from app.services.social import youtube as youtube_client
 from app.services.social.meta import IncomingComment
 
@@ -118,7 +119,10 @@ async def _token_data(conn: SocialConnection) -> dict:
     return data
 
 
-_COMMENT_PLATFORMS = [SocialPlatform.facebook, SocialPlatform.instagram, SocialPlatform.youtube]
+_COMMENT_PLATFORMS = [
+    SocialPlatform.facebook, SocialPlatform.instagram,
+    SocialPlatform.youtube, SocialPlatform.threads,
+]
 
 
 async def _active_comment_connections(db: AsyncSession, *, account_id: uuid.UUID | None = None) -> list[SocialConnection]:
@@ -149,7 +153,11 @@ async def ingest_for_connection(db: AsyncSession, conn: SocialConnection) -> int
     token = await _token_data(conn)
     channel_id = str((conn.platform_meta or {}).get("channel_id", "")) if isinstance(conn.platform_meta, dict) else ""
     # Comments authored by the brand itself are skipped (don't reply to yourself).
-    own_ids = {str(token.get("page_id", "")), str(token.get("ig_user_id", "")), channel_id}
+    # Threads replies are authored by username, so include the connection's handle.
+    own_ids = {
+        str(token.get("page_id", "")), str(token.get("ig_user_id", "")), channel_id,
+        str(conn.handle or ""),
+    }
 
     if conn.platform == SocialPlatform.facebook:
         incoming = await meta_client.list_page_comments(token["page_id"], token["access_token"])
@@ -158,6 +166,9 @@ async def ingest_for_connection(db: AsyncSession, conn: SocialConnection) -> int
     elif conn.platform == SocialPlatform.youtube:
         access = await _youtube_access_token(conn, token)
         incoming = await youtube_client.list_channel_comments(channel_id, access)
+    elif conn.platform == SocialPlatform.threads:
+        threads_user_id = token.get("threads_user_id") or conn.external_id
+        incoming = await threads_client.list_replies(threads_user_id, token["access_token"])
     else:
         return 0
 
@@ -349,6 +360,11 @@ async def execute_reply(db: AsyncSession, approval: ApprovalRequest, actor) -> N
         elif comment.platform == str(SocialPlatform.youtube):
             access = await _youtube_access_token(conn, token)
             reply_id = await youtube_client.reply_to_comment(comment.external_comment_id, access, reply_text)
+        elif comment.platform == str(SocialPlatform.threads):
+            threads_user_id = token.get("threads_user_id") or conn.external_id
+            reply_id = await threads_client.reply_to_comment(
+                threads_user_id, token["access_token"], comment.external_comment_id, reply_text,
+            )
         else:
             raise RevOSError("Unsupported platform for comment replies.", code="unsupported", status_code=400)
     except Exception as exc:  # noqa: BLE001 — record failure on the row
