@@ -103,7 +103,10 @@ async def test_get_user_info_error_envelope():
 
 
 @pytest.mark.asyncio
-async def test_publish_video_init_then_upload():
+async def test_publish_video_polls_until_complete(monkeypatch):
+    """Publishing is async: after upload we poll status, and only report the
+    public post id once TikTok says PUBLISH_COMPLETE."""
+    monkeypatch.setattr(tt.asyncio, "sleep", AsyncMock())  # no real delay
     upload_url = f"{API_HOST}/upload/session/xyz"
     with respx.mock(base_url=API_HOST) as mock:
         mock.post("/v2/post/publish/video/init/").mock(return_value=httpx.Response(200, json={
@@ -111,8 +114,34 @@ async def test_publish_video_init_then_upload():
             "error": {"code": "ok"},
         }))
         mock.put("/upload/session/xyz").mock(return_value=httpx.Response(201))
+        status = mock.post("/v2/post/publish/status/fetch/").mock(side_effect=[
+            httpx.Response(200, json={"data": {"status": "PROCESSING_UPLOAD"}, "error": {"code": "ok"}}),
+            httpx.Response(200, json={"data": {"status": "PUBLISH_COMPLETE",
+                                               "publicaly_available_post_id": ["7xyz"]}, "error": {"code": "ok"}}),
+        ])
         result = await tt.publish_video("at-1", b"video-bytes", title="My clip")
-    assert result.external_id == "pub-1"
+    assert result.external_id == "7xyz"     # public post id, not the publish_id
+    assert status.call_count == 2           # polled until terminal
+
+
+@pytest.mark.asyncio
+async def test_publish_video_raises_on_failed_status(monkeypatch):
+    """The bug: a FAILED async status used to be lost and the post marked
+    'published'. Now it surfaces as an error with TikTok's reason."""
+    monkeypatch.setattr(tt.asyncio, "sleep", AsyncMock())
+    upload_url = f"{API_HOST}/upload/session/xyz"
+    with respx.mock(base_url=API_HOST) as mock:
+        mock.post("/v2/post/publish/video/init/").mock(return_value=httpx.Response(200, json={
+            "data": {"publish_id": "pub-2", "upload_url": upload_url}, "error": {"code": "ok"},
+        }))
+        mock.put("/upload/session/xyz").mock(return_value=httpx.Response(201))
+        mock.post("/v2/post/publish/status/fetch/").mock(return_value=httpx.Response(200, json={
+            "data": {"status": "FAILED", "fail_reason": "video_pull_failed"}, "error": {"code": "ok"},
+        }))
+        with pytest.raises(RevOSError) as exc:
+            await tt.publish_video("at-1", b"video-bytes", title="Bad clip")
+    assert exc.value.code == "tiktok_publish_failed"
+    assert "video_pull_failed" in str(exc.value)
 
 
 # ---------------------------------------------------------------------------

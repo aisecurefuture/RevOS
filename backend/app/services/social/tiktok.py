@@ -16,6 +16,7 @@ Official docs:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -202,4 +203,53 @@ async def publish_video(
             },
         )
         _raise_api_error(put, "upload_bytes")
-        return PublishResult(external_id=publish_id)
+        # A successful upload only means TikTok RECEIVED the bytes — publishing
+        # is asynchronous. Poll the status endpoint so a downstream FAILED
+        # (moderation, format, unaudited-app restriction) surfaces as a real
+        # error instead of a false "published". Bounded because this runs
+        # inside the synchronous approve request; most failures return fast.
+        external_id = await _await_publish(client, access_token, publish_id)
+        return PublishResult(external_id=external_id)
+
+
+async def _await_publish(
+    client: httpx.AsyncClient, access_token: str, publish_id: str,
+    *, attempts: int = 7, delay: float = 3.0,
+) -> str:
+    """Poll /post/publish/status/fetch until a terminal state.
+
+    Returns the public post id on completion (falling back to publish_id).
+    Raises on FAILED with TikTok's reason. If still processing when the budget
+    runs out, returns publish_id optimistically — the upload was accepted and
+    TikTok will most likely finish; we just couldn't confirm within the window.
+    """
+    last_status = None
+    for _ in range(attempts):
+        resp = await client.post(
+            f"{_API}/post/publish/status/fetch/",
+            content=json.dumps({"publish_id": publish_id}),
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json; charset=UTF-8",
+            },
+        )
+        _raise_api_error(resp, "status_fetch")
+        data = resp.json().get("data", {})
+        last_status = data.get("status")
+        if last_status == "PUBLISH_COMPLETE":
+            ids = data.get("publicaly_available_post_id") or []
+            return str(ids[0]) if ids else publish_id
+        if last_status == "FAILED":
+            raise RevOSError(
+                f"TikTok rejected the video: {data.get('fail_reason') or 'unknown reason'}",
+                code="tiktok_publish_failed", status_code=502,
+            )
+        if last_status == "SEND_TO_USER_INBOX":
+            # Delivered to the user's TikTok app inbox to finish manually.
+            return publish_id
+        await asyncio.sleep(delay)
+    logger.warning(
+        "TikTok publish %s still %s after %d polls; reporting optimistically",
+        publish_id, last_status, attempts,
+    )
+    return publish_id
