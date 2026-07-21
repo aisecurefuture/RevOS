@@ -147,3 +147,29 @@ class MatchProductOut(BaseModel):
     currency: str
     offer_id: uuid.UUID | None = None
     created_at: datetime
+
+
+# --- Match results ----------------------------------------------------------
+class DimensionOut(BaseModel):
+    key: str
+    score: float
+    weight: float
+    available: bool
+    detail: str
+
+
+class MatchScoreOut(BaseModel):
+    overall: float
+    coverage: float
+    rationale: str
+    dimensions: list[DimensionOut]
+
+
+class CreatorMatchOut(BaseModel):
+    creator: CreatorOut
+    score: MatchScoreOut
+
+
+class ProductMatchOut(BaseModel):
+    product: MatchProductOut
+    score: MatchScoreOut
