@@ -10,6 +10,7 @@ Official docs:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from urllib.parse import urlencode
@@ -131,28 +132,72 @@ async def get_profile(user_id: str, access_token: str) -> ThreadsProfile:
         )
 
 
-async def publish_text(user_id: str, access_token: str, text: str) -> PublishResult:
-    """Publish a text-only post to Threads (two-step: container → publish)."""
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        # Step 1: create container
-        resp = await client.post(
-            f"{_GRAPH}/{user_id}/threads",
-            params={
-                "media_type": "TEXT",
-                "text": text,
-                "access_token": access_token,
-            },
+async def _wait_until_ready(
+    client: httpx.AsyncClient, container_id: str, access_token: str,
+    *, attempts: int = 20, delay: float = 2.0,
+) -> None:
+    """Threads containers process asynchronously. Publishing before the
+    container is FINISHED 400s with "The requested resource does not exist",
+    so poll status first. Text is ready in a couple seconds; video takes
+    longer, hence the generous budget (~40s)."""
+    for _ in range(attempts):
+        st = await client.get(
+            f"{_GRAPH}/{container_id}",
+            params={"fields": "status,error_message", "access_token": access_token},
         )
-        _raise_graph_error(resp, "create_container")
-        container_id = resp.json()["id"]
+        if st.is_success:
+            data = st.json()
+            status = data.get("status")
+            if status == "FINISHED":
+                return
+            if status in ("ERROR", "EXPIRED"):
+                raise RevOSError(
+                    f"Threads could not process the post: {data.get('error_message') or status}",
+                    code="threads_media_failed", status_code=502,
+                )
+        await asyncio.sleep(delay)
+    # Timed out — let the publish attempt surface whatever error remains.
 
-        # Step 2: publish
-        resp = await client.post(
-            f"{_GRAPH}/{user_id}/threads_publish",
-            params={
-                "creation_id": container_id,
-                "access_token": access_token,
-            },
-        )
-        _raise_graph_error(resp, "publish")
-        return PublishResult(external_id=resp.json()["id"])
+
+async def _create_and_publish(
+    client: httpx.AsyncClient, user_id: str, access_token: str, params: dict,
+) -> PublishResult:
+    resp = await client.post(f"{_GRAPH}/{user_id}/threads", params=params)
+    _raise_graph_error(resp, "create_container")
+    container_id = resp.json()["id"]
+    await _wait_until_ready(client, container_id, access_token)
+    pub = await client.post(
+        f"{_GRAPH}/{user_id}/threads_publish",
+        params={"creation_id": container_id, "access_token": access_token},
+    )
+    _raise_graph_error(pub, "publish")
+    return PublishResult(external_id=pub.json()["id"])
+
+
+async def publish_text(user_id: str, access_token: str, text: str) -> PublishResult:
+    """Publish a text-only post to Threads (container → wait → publish)."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        return await _create_and_publish(client, user_id, access_token, {
+            "media_type": "TEXT", "text": text, "access_token": access_token,
+        })
+
+
+async def publish_media(
+    user_id: str, access_token: str, *,
+    text: str | None, image_url: str | None = None, video_url: str | None = None,
+) -> PublishResult:
+    """Publish a single image or video to Threads. Threads FETCHES the media
+    from a public URL (same model as Instagram), so callers pass a signed
+    public URL, not a storage key. ``text`` becomes the post caption."""
+    if video_url:
+        params = {"media_type": "VIDEO", "video_url": video_url}
+    elif image_url:
+        params = {"media_type": "IMAGE", "image_url": image_url}
+    else:
+        raise RevOSError("A Threads media post needs an image or video.", code="missing_media", status_code=400)
+    if text:
+        params["text"] = text
+    params["access_token"] = access_token
+    # Longer per-request timeout: video containers can be slow to accept.
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        return await _create_and_publish(client, user_id, access_token, params)
