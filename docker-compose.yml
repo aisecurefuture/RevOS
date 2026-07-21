@@ -173,6 +173,24 @@ services:
       retries: 5
       start_period: 10s
 
+  # Keeps OpenBao unsealed automatically. Without this, OpenBao re-seals on
+  # every restart and the secrets layer silently goes offline until someone
+  # unseals by hand. Reads BAO_UNSEAL_KEY from .env (never committed); idles
+  # harmlessly if that key is unset.
+  bao-unseal:
+    image: openbao/openbao:2.2.0
+    restart: unless-stopped
+    depends_on:
+      - openbao
+    environment:
+      BAO_ADDR: http://openbao:8200
+      BAO_UNSEAL_KEY: ${BAO_UNSEAL_KEY:-}
+    entrypoint: ["/bin/sh", "/usr/local/bin/bao-unseal.sh"]
+    volumes:
+      - ./deploy/bao-unseal.sh:/usr/local/bin/bao-unseal.sh:ro
+    cap_drop:
+      - ALL
+
 volumes:
   postgres-data:
   redis-data:
