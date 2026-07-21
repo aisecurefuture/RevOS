@@ -15,13 +15,6 @@ import type { SocialPost } from "@/lib/types";
 
 const PLATFORMS = ["linkedin", "instagram", "facebook", "twitter", "youtube", "tiktok"];
 
-// A <input type="datetime-local"> value/min is LOCAL wall-clock (YYYY-MM-DDTHH:mm),
-// never UTC. toISOString() would return UTC, which for CST users in the evening
-// pushes "now" into tomorrow — so shift by the timezone offset first.
-function localDatetimeValue(d: Date): string {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
-
 export default function SocialPage() {
   const { user } = useAuth();
   const { selectedBrandId } = useBrand();
@@ -73,6 +66,12 @@ export default function SocialPage() {
   async function create(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedBrandId) return;
+    setError(null);
+    // Friendly, explicit check instead of the browser's cryptic "Invalid value".
+    if (scheduledAt && new Date(scheduledAt).getTime() <= Date.now()) {
+      setError("Pick a schedule time in the future — that time has already passed.");
+      return;
+    }
     try {
       await socialApi.createPost({
         brand_id: selectedBrandId,
@@ -316,7 +315,6 @@ export default function SocialPage() {
                 type="datetime-local"
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
-                min={localDatetimeValue(new Date())}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               {scheduledAt ? (
