@@ -171,6 +171,12 @@ class Settings(BaseSettings):
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_redirect_uri: str = ""   # e.g. https://api.revos360.com/api/social/facebook/callback
+    # Facebook Login for Business: when set, the OAuth flow requests this
+    # dashboard "configuration" (which bundles the permissions) via config_id
+    # instead of passing raw scopes. Leave empty to use the classic
+    # scope-based Facebook Login flow. Get the id from the Meta App Dashboard →
+    # Facebook Login for Business → Configurations.
+    meta_login_config_id: str = ""
     meta_page_access_token: str = ""
     instagram_business_account_id: str = ""
     threads_app_id: str = ""

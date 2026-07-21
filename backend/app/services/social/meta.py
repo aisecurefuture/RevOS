@@ -60,15 +60,27 @@ class PublishResult:
 
 
 def connect_url(state: str) -> str:
-    """Build the Meta OAuth dialog URL."""
-    params = urlencode({
+    """Build the Meta OAuth dialog URL.
+
+    Two flows, chosen by config:
+    - Facebook Login for Business (META_LOGIN_CONFIG_ID set): the permissions
+      live in the dashboard "configuration", so we pass ``config_id`` and
+      NOT ``scope`` — passing raw scopes to a business-login app is what
+      triggers Facebook's "Invalid Scopes" screen.
+    - Classic Facebook Login (no config id): permissions passed as ``scope``.
+    Both use the same code-exchange + Graph endpoints afterward.
+    """
+    params = {
         "client_id": settings.meta_app_id,
         "redirect_uri": settings.meta_redirect_uri,
         "state": state,
-        "scope": _META_SCOPES,
         "response_type": "code",
-    })
-    return f"{_DIALOG}?{params}"
+    }
+    if settings.meta_login_config_id:
+        params["config_id"] = settings.meta_login_config_id
+    else:
+        params["scope"] = _META_SCOPES
+    return f"{_DIALOG}?{urlencode(params)}"
 
 
 def _raise_graph_error(resp: httpx.Response, context: str) -> None:

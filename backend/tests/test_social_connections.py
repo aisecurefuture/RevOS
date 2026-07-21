@@ -91,10 +91,27 @@ def test_get_connect_url(monkeypatch):
     monkeypatch.setattr(svc.settings, "meta_app_secret", "sec")
     monkeypatch.setattr(svc.settings, "meta_redirect_uri", "https://example.com/callback")
 
+    monkeypatch.setattr(svc.settings, "meta_login_config_id", "")
     url = svc.get_connect_url("facebook", ACCOUNT_ID)
     assert "www.facebook.com" in url
     assert "app123" in url
     assert "state=" in url
+    # Classic flow: permissions passed as scope.
+    assert "scope=" in url
+    assert "config_id=" not in url
+
+
+def test_get_connect_url_business_login_uses_config_id(monkeypatch):
+    """Facebook Login for Business: pass config_id, NOT scope (raw scopes on a
+    business-login app trigger Facebook's 'Invalid Scopes' error)."""
+    monkeypatch.setattr(svc.settings, "meta_app_id", "app123")
+    monkeypatch.setattr(svc.settings, "meta_app_secret", "sec")
+    monkeypatch.setattr(svc.settings, "meta_redirect_uri", "https://example.com/callback")
+    monkeypatch.setattr(svc.settings, "meta_login_config_id", "cfg-999")
+
+    url = svc.get_connect_url("facebook", ACCOUNT_ID)
+    assert "config_id=cfg-999" in url
+    assert "scope=" not in url
 
 
 def test_get_connect_url_unsupported_platform():
