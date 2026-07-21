@@ -203,6 +203,14 @@ export const socialApi = {
     apiFetch<SocialPost[]>(`/social/posts${brandId ? `?brand_id=${brandId}` : ""}`),
   createPost: (data: Record<string, unknown>) =>
     apiFetch<SocialPost>("/social/posts", { method: "POST", body: JSON.stringify(data) }),
+  uploadMedia: (file: File, brandId: string) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("brand_id", brandId);
+    return apiUpload<{ media_url: string; kind: string; filename: string; mime_type: string | null }>(
+      "/social/upload-media", fd,
+    );
+  },
   publish: (id: string) =>
     apiFetch<PublishResult>(`/social/posts/${id}/publish`, { method: "POST" }),
   submitForApproval: (id: string, connectionId?: string) =>

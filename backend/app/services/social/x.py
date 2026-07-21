@@ -16,6 +16,7 @@ Official docs:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import logging
@@ -191,12 +192,77 @@ async def get_me(access_token: str) -> XUser:
         return XUser(user_id=data["id"], username=data.get("username"), name=data.get("name"))
 
 
-async def publish_tweet(access_token: str, text: str) -> PublishResult:
-    """Post a tweet on behalf of the connected user."""
+_UPLOAD = f"{_API}/media/upload"   # v2 chunked media upload (needs media.write scope)
+_MEDIA_CHUNK = 4 * 1024 * 1024     # 4 MB — under X's per-APPEND request limit
+
+
+def _media_id(payload: dict) -> str | None:
+    data = payload.get("data") or payload
+    return data.get("id") or data.get("media_id_string") or payload.get("media_id_string")
+
+
+def _processing_info(payload: dict) -> dict | None:
+    return (payload.get("data") or payload).get("processing_info")
+
+
+async def upload_media(
+    access_token: str, data: bytes, media_type: str, *, category: str,
+) -> str:
+    """Chunked-upload one media file, returning its media id for attachment.
+
+    ``category`` is X's media_category: "tweet_image", "tweet_gif", or
+    "tweet_video". Video is processed asynchronously — we poll STATUS until
+    it succeeds (or fails) before returning.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        init = await client.post(_UPLOAD, headers=headers, data={
+            "command": "INIT", "total_bytes": str(len(data)),
+            "media_type": media_type, "media_category": category,
+        })
+        _raise_api_error(init, "media_init")
+        media_id = _media_id(init.json())
+        if not media_id:
+            raise RevOSError("X media upload returned no media id.", code="x_media_error", status_code=502)
+
+        for idx, start in enumerate(range(0, len(data), _MEDIA_CHUNK)):
+            chunk = data[start:start + _MEDIA_CHUNK]
+            ap = await client.post(
+                _UPLOAD, headers=headers,
+                data={"command": "APPEND", "media_id": media_id, "segment_index": str(idx)},
+                files={"media": ("blob", chunk, "application/octet-stream")},
+            )
+            _raise_api_error(ap, "media_append")
+
+        fin = await client.post(_UPLOAD, headers=headers, data={"command": "FINALIZE", "media_id": media_id})
+        _raise_api_error(fin, "media_finalize")
+
+        info = _processing_info(fin.json())
+        while info and info.get("state") in ("pending", "in_progress"):
+            await asyncio.sleep(min(int(info.get("check_after_secs", 3)), 10))
+            st = await client.get(_UPLOAD, headers=headers, params={"command": "STATUS", "media_id": media_id})
+            _raise_api_error(st, "media_status")
+            info = _processing_info(st.json())
+        if info and info.get("state") == "failed":
+            raise RevOSError("X could not process the uploaded media.", code="x_media_failed", status_code=502)
+        return str(media_id)
+
+
+async def publish_tweet(
+    access_token: str, text: str | None, *, media_ids: list[str] | None = None,
+) -> PublishResult:
+    """Post a tweet, optionally with already-uploaded media, on behalf of the user."""
+    payload: dict = {}
+    if text:
+        payload["text"] = text
+    if media_ids:
+        payload["media"] = {"media_ids": media_ids}
+    if not payload:
+        raise RevOSError("A tweet needs text or media.", code="empty_tweet", status_code=400)
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         resp = await client.post(
             f"{_API}/tweets",
-            json={"text": text},
+            json=payload,
             headers={"Authorization": f"Bearer {access_token}"},
         )
         _raise_api_error(resp, "publish_tweet")

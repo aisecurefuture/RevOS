@@ -173,3 +173,46 @@ async def test_linkedin_access_token_expired_no_refresh_token_asks_reconnect():
     with pytest.raises(RevOSError) as exc:
         await svc._linkedin_access_token(_FakeConn(), token_data)
     assert exc.value.code == "token_expired"
+
+
+# ---------------------------------------------------------------------------
+# Media attach (register-upload → PUT bytes → share with asset)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_register_and_upload_returns_asset_urn():
+    upload_url = "https://upload.linkedin.example/stream/abc"
+    with respx.mock(assert_all_called=True) as mock:
+        mock.post(f"{API_HOST}/v2/assets?action=registerUpload").mock(return_value=httpx.Response(
+            200, json={"value": {
+                "asset": "urn:li:digitalmediaAsset:ASSET99",
+                "uploadMechanism": {
+                    "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest": {"uploadUrl": upload_url},
+                },
+            }},
+        ))
+        mock.put(upload_url).mock(return_value=httpx.Response(201))
+        urn = await li.register_and_upload("at-1", "member-1", b"\xff\xd8imagebytes", is_video=False)
+    assert urn == "urn:li:digitalmediaAsset:ASSET99"
+
+
+@pytest.mark.asyncio
+async def test_publish_share_with_image_sets_media_category():
+    captured = {}
+
+    def _capture(request):
+        import json as _j
+        captured.update(_j.loads(request.content))
+        return httpx.Response(201, headers={"X-RestLi-Id": "urn:li:share:777"}, json={})
+
+    with respx.mock(base_url=API_HOST) as mock:
+        mock.post("/v2/ugcPosts").mock(side_effect=_capture)
+        result = await li.publish_share(
+            "at-1", "member-1", "With a photo",
+            media=["urn:li:digitalmediaAsset:ASSET99"], media_is_video=False,
+        )
+    assert result.external_id == "urn:li:share:777"
+    content = captured["specificContent"]["com.linkedin.ugc.ShareContent"]
+    assert content["shareMediaCategory"] == "IMAGE"
+    assert content["media"][0]["media"] == "urn:li:digitalmediaAsset:ASSET99"
+    assert content["media"][0]["status"] == "READY"

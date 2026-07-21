@@ -153,17 +153,85 @@ async def get_profile(access_token: str) -> LinkedInProfile:
         )
 
 
-async def publish_share(access_token: str, member_id: str, text: str) -> PublishResult:
-    """Publish a text share on behalf of the member via ugcPosts."""
+_IMAGE_RECIPE = "urn:li:digitalmediaRecipe:feedshare-image"
+_VIDEO_RECIPE = "urn:li:digitalmediaRecipe:feedshare-video"
+
+
+async def register_and_upload(
+    access_token: str, member_id: str, data: bytes, *, is_video: bool,
+) -> str:
+    """Register an upload slot, PUT the bytes, return the asset URN.
+
+    Two-step LinkedIn Vector Asset flow: registerUpload returns a one-time
+    upload URL + an asset URN; we PUT the bytes to the URL, then reference the
+    URN when creating the share. LinkedIn processes video server-side; the
+    share can reference the asset immediately.
+    """
+    recipe = _VIDEO_RECIPE if is_video else _IMAGE_RECIPE
+    register = {
+        "registerUploadRequest": {
+            "owner": f"urn:li:person:{member_id}",
+            "recipes": [recipe],
+            "serviceRelationships": [
+                {"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}
+            ],
+        }
+    }
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        reg = await client.post(
+            f"{_API}/v2/assets?action=registerUpload",
+            json=register,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "X-Restli-Protocol-Version": "2.0.0",
+                "Content-Type": "application/json",
+            },
+        )
+        _raise_api_error(reg, "register_upload")
+        value = reg.json()["value"]
+        asset_urn = value["asset"]
+        upload_url = (
+            value["uploadMechanism"]
+            ["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]
+            ["uploadUrl"]
+        )
+        put = await client.put(
+            upload_url,
+            content=data,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if put.status_code not in (200, 201):
+            _raise_api_error(put, "upload_bytes")
+    return asset_urn
+
+
+async def publish_share(
+    access_token: str,
+    member_id: str,
+    text: str,
+    *,
+    media: list[str] | None = None,
+    media_is_video: bool = False,
+) -> PublishResult:
+    """Publish a share via ugcPosts, optionally with already-registered media
+    asset URNs (``media``)."""
+    if media:
+        category = "VIDEO" if media_is_video else "IMAGE"
+        share_media = [{"status": "READY", "media": urn} for urn in media]
+    else:
+        category, share_media = "NONE", None
+
+    share_content: dict = {
+        "shareCommentary": {"text": text},
+        "shareMediaCategory": category,
+    }
+    if share_media:
+        share_content["media"] = share_media
+
     payload = {
         "author": f"urn:li:person:{member_id}",
         "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": {
-                "shareCommentary": {"text": text},
-                "shareMediaCategory": "NONE",
-            }
-        },
+        "specificContent": {"com.linkedin.ugc.ShareContent": share_content},
         "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
     }
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:

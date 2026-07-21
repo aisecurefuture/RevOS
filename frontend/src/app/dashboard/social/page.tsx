@@ -36,6 +36,9 @@ export default function SocialPage() {
   const [platform, setPlatform] = useState("instagram");
   const [caption, setCaption] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
+  // Attached media: uploaded storage keys + local preview URLs.
+  const [media, setMedia] = useState<{ url: string; kind: string; filename: string; preview: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,16 +76,42 @@ export default function SocialPage() {
         brand_id: selectedBrandId,
         platform,
         caption,
+        media_urls: media.map((m) => m.url),
         // datetime-local has no timezone; interpreted in the browser's local
         // zone and converted to an ISO instant for the API.
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
       });
       setCaption("");
       setScheduledAt("");
+      media.forEach((m) => URL.revokeObjectURL(m.preview));
+      setMedia([]);
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Create failed");
     }
+  }
+
+  async function onAttach(files: FileList | null) {
+    if (!files || !selectedBrandId) return;
+    setError(null);
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        const res = await socialApi.uploadMedia(file, selectedBrandId);
+        setMedia((m) => [...m, { url: res.media_url, kind: res.kind, filename: res.filename, preview: URL.createObjectURL(file) }]);
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeMedia(i: number) {
+    setMedia((m) => {
+      URL.revokeObjectURL(m[i].preview);
+      return m.filter((_, k) => k !== i);
+    });
   }
 
   async function submitForApproval(id: string, connectionId?: string) {
@@ -211,6 +240,39 @@ export default function SocialPage() {
                 placeholder="Caption…"
                 className="grow rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">Photos / videos (optional):</label>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {media.map((m, i) => (
+                  <div key={m.preview} className="group relative h-16 w-16 overflow-hidden rounded-lg border border-slate-200">
+                    {m.kind === "video" ? (
+                      // eslint-disable-next-line jsx-a11y/media-has-caption
+                      <video src={m.preview} className="h-full w-full object-cover" />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={m.preview} alt={m.filename} className="h-full w-full object-cover" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeMedia(i)}
+                      className="absolute right-0 top-0 bg-black/60 px-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <label className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 text-2xl text-slate-400 hover:border-brand hover:text-brand">
+                  {uploading ? "…" : "+"}
+                  <input
+                    type="file" multiple accept="image/*,video/*" className="hidden"
+                    onChange={(e) => { void onAttach(e.target.files); e.target.value = ""; }}
+                  />
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                Live media publishing: LinkedIn, X, Instagram, Facebook, TikTok, YouTube. X allows up to 4 photos or 1 video.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-xs text-slate-500">Schedule for (optional):</label>

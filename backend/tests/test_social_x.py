@@ -249,3 +249,65 @@ async def test_x_access_token_valid_skips_refresh():
         tok = await svc._x_access_token(_FakeConn(), token_data)
     assert tok == "good"
     refresh_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Media upload (chunked) + attaching media to a tweet
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_upload_media_image_chunked_flow():
+    with respx.mock(base_url=API) as mock:
+        route = mock.post("/2/media/upload")
+        route.side_effect = [
+            httpx.Response(200, json={"data": {"id": "media-123"}}),   # INIT
+            httpx.Response(200, json={}),                              # APPEND
+            httpx.Response(200, json={"data": {"id": "media-123"}}),   # FINALIZE (no processing_info)
+        ]
+        media_id = await x_client.upload_media("at-1", b"\xff\xd8imgbytes", "image/jpeg", category="tweet_image")
+    assert media_id == "media-123"
+
+
+@pytest.mark.asyncio
+async def test_upload_media_video_polls_status_until_done():
+    with respx.mock(base_url=API) as mock:
+        mock.post("/2/media/upload").side_effect = [
+            httpx.Response(200, json={"data": {"id": "vid-9"}}),                                   # INIT
+            httpx.Response(200, json={}),                                                          # APPEND
+            httpx.Response(200, json={"data": {"id": "vid-9", "processing_info": {"state": "in_progress", "check_after_secs": 0}}}),  # FINALIZE
+        ]
+        mock.get("/2/media/upload").mock(return_value=httpx.Response(
+            200, json={"data": {"processing_info": {"state": "succeeded"}}}))
+        media_id = await x_client.upload_media("at-1", b"video", "video/mp4", category="tweet_video")
+    assert media_id == "vid-9"
+
+
+@pytest.mark.asyncio
+async def test_publish_tweet_attaches_media_ids():
+    captured = {}
+
+    def _capture(request):
+        import json as _j
+        captured.update(_j.loads(request.content))
+        return httpx.Response(201, json={"data": {"id": "tweet-with-media"}})
+
+    with respx.mock(base_url=API) as mock:
+        mock.post("/2/tweets").mock(side_effect=_capture)
+        result = await x_client.publish_tweet("at-1", "look", media_ids=["media-123"])
+    assert result.external_id == "tweet-with-media"
+    assert captured["media"]["media_ids"] == ["media-123"]
+
+
+@pytest.mark.asyncio
+async def test_publish_tweet_media_only_no_text():
+    with respx.mock(base_url=API) as mock:
+        mock.post("/2/tweets").mock(return_value=httpx.Response(201, json={"data": {"id": "t2"}}))
+        result = await x_client.publish_tweet("at-1", None, media_ids=["m1"])
+    assert result.external_id == "t2"
+
+
+@pytest.mark.asyncio
+async def test_publish_tweet_empty_is_rejected():
+    with pytest.raises(RevOSError) as exc:
+        await x_client.publish_tweet("at-1", None, media_ids=None)
+    assert exc.value.code == "empty_tweet"

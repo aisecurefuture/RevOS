@@ -69,3 +69,33 @@ async def test_hao_campaign_seed(async_session_factory):
         # Idempotent: a second run creates nothing.
         again = await seed_hao_campaign(s)
         assert again["created"] is False
+
+
+@pytest.mark.asyncio
+async def test_upload_post_media_returns_storage_key(api, make_user):
+    """Attaching a photo stores it and returns a media_url usable in a post."""
+    h = await _login(api, **await make_user("admin@test.com", "AdminPass123", Role.admin))
+    bid = (await api.post("/api/brands", headers=h, json={"name": "Media Brand"})).json()["id"]
+    files = {"file": ("shot.jpg", b"\xff\xd8\xff\xd9imagebytes", "image/jpeg")}
+    r = await api.post("/api/social/upload-media", headers=h, data={"brand_id": bid}, files=files)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["media_url"].startswith("media/")
+    assert body["kind"] == "image"
+
+    # The returned key is accepted as a post's media_urls entry.
+    post = await api.post("/api/social/posts", headers=h, json={
+        "brand_id": bid, "platform": "linkedin", "caption": "hi", "media_urls": [body["media_url"]],
+    })
+    assert post.status_code == 201, post.text
+    assert post.json()["media_urls"] == [body["media_url"]]
+
+
+@pytest.mark.asyncio
+async def test_upload_post_media_rejects_bad_type(api, make_user):
+    h = await _login(api, **await make_user("admin@test.com", "AdminPass123", Role.admin))
+    bid = (await api.post("/api/brands", headers=h, json={"name": "Media Brand"})).json()["id"]
+    files = {"file": ("evil.exe", b"MZ\x90\x00", "application/x-msdownload")}
+    r = await api.post("/api/social/upload-media", headers=h, data={"brand_id": bid}, files=files)
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "bad_media_type"

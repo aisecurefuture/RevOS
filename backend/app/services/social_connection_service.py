@@ -855,6 +855,22 @@ async def _tiktok_access_token(conn: SocialConnection, token_data: dict) -> str:
     return fresh.access_token
 
 
+_IMAGE_EXTS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+_VIDEO_EXTS = {".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4", ".webm": "video/webm"}
+
+
+def _media_mime(ref: str) -> str:
+    """Best-effort MIME from a storage key / URL extension."""
+    import os
+    ext = os.path.splitext(ref.split("?")[0])[1].lower()
+    return _IMAGE_EXTS.get(ext) or _VIDEO_EXTS.get(ext) or "application/octet-stream"
+
+
+def _is_video_ref(ref: str) -> bool:
+    import os
+    return os.path.splitext(ref.split("?")[0])[1].lower() in _VIDEO_EXTS
+
+
 async def _fetch_media_bytes(ref: str) -> bytes:
     """Load media bytes for upload.
 
@@ -974,15 +990,45 @@ async def _dispatch_publish(post: SocialPost, conn: SocialConnection, token_data
             title=title, description=post.caption,
         )
     if conn.platform == SocialPlatform.twitter:
-        if not post.caption:
-            raise RevOSError("A tweet requires text in the post caption.", code="missing_text", status_code=400)
+        if not post.caption and not post.media_urls:
+            raise RevOSError("A tweet requires text or media.", code="missing_text", status_code=400)
         access_token = await _x_access_token(conn, token_data)
-        return await x_client.publish_tweet(access_token, post.caption)
+        media_ids: list[str] = []
+        # X allows up to 4 images OR 1 video/GIF per tweet.
+        refs = post.media_urls[:4]
+        if any(_is_video_ref(r) for r in refs):
+            refs = [next(r for r in refs if _is_video_ref(r))]
+        for ref in refs:
+            is_video = _is_video_ref(ref)
+            data = await _fetch_media_bytes(ref)
+            mid = await x_client.upload_media(
+                access_token, data, _media_mime(ref),
+                category="tweet_video" if is_video else "tweet_image",
+            )
+            media_ids.append(mid)
+        return await x_client.publish_tweet(access_token, post.caption, media_ids=media_ids or None)
     if conn.platform == SocialPlatform.linkedin:
-        if not post.caption:
-            raise RevOSError("A LinkedIn post requires text in the post caption.", code="missing_text", status_code=400)
+        if not post.caption and not post.media_urls:
+            raise RevOSError("A LinkedIn post requires text or media.", code="missing_text", status_code=400)
         access_token = await _linkedin_access_token(conn, token_data)
-        return await linkedin_client.publish_share(access_token, token_data["member_id"], post.caption)
+        member_id = token_data["member_id"]
+        # LinkedIn: multiple images, or a single video.
+        refs = post.media_urls
+        video = next((r for r in refs if _is_video_ref(r)), None)
+        media_urns: list[str] = []
+        is_video = False
+        if video:
+            media_urns = [await linkedin_client.register_and_upload(
+                access_token, member_id, await _fetch_media_bytes(video), is_video=True)]
+            is_video = True
+        else:
+            for ref in refs[:9]:  # LinkedIn caps at 9 images
+                media_urns.append(await linkedin_client.register_and_upload(
+                    access_token, member_id, await _fetch_media_bytes(ref), is_video=False))
+        return await linkedin_client.publish_share(
+            access_token, member_id, post.caption or "",
+            media=media_urns or None, media_is_video=is_video,
+        )
     if conn.platform == SocialPlatform.tiktok:
         video_url = post.media_urls[0] if post.media_urls else None
         if not video_url:

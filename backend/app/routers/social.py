@@ -5,9 +5,11 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 
+from app.config import settings
 from app.core.audit import write_audit
+from app.core.exceptions import RevOSError
 from app.deps import (
     DbSession,
     require_admin,
@@ -26,8 +28,14 @@ from app.schemas.content import (
     SocialPostCreate,
     SocialPostOut,
 )
-from app.services import social_service
+from app.services import media_service, social_service
 from app.services.social.base import adapter_status
+
+_SOCIAL_MEDIA_TYPES = {
+    "image/jpeg", "image/png", "image/gif", "image/webp",
+    "video/mp4", "video/quicktime", "video/webm",
+}
+_SOCIAL_MEDIA_MAX_BYTES = 200 * 1024 * 1024  # 200 MB — platform caps enforced at publish
 
 router = APIRouter(prefix="/social", tags=["social"])
 
@@ -92,6 +100,40 @@ async def list_posts(
 ) -> list[SocialPost]:
     return await social_service.list_posts(
         db, brand_id=brand_id, social_campaign_id=social_campaign_id)
+
+
+@router.post("/upload-media", status_code=201)
+async def upload_post_media(
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    file: Annotated[UploadFile, File()],
+    brand_id: Annotated[uuid.UUID, Form()],
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Store a photo/video for attaching to a social post. Lands in the Media
+    library and returns the storage key to pass in the post's media_urls."""
+    ctype = file.content_type or ""
+    if ctype not in _SOCIAL_MEDIA_TYPES:
+        raise RevOSError(
+            f"Unsupported media type {ctype!r}. Use JPEG, PNG, GIF, WebP, or MP4/MOV/WebM video.",
+            code="bad_media_type", status_code=400,
+        )
+    data = await file.read()
+    if not data:
+        raise RevOSError("Empty file.", code="empty_file", status_code=400)
+    if len(data) > _SOCIAL_MEDIA_MAX_BYTES:
+        raise RevOSError("File too large.", code="file_too_large", status_code=400)
+    asset = await media_service.create_asset(
+        db, brand_id=brand_id, uploader_id=user.id,
+        filename=file.filename or "upload", data=data, mime=ctype,
+    )
+    return {
+        "media_url": asset.original_path,   # storage key — goes into media_urls
+        "kind": str(asset.kind),
+        "filename": asset.original_filename,
+        "mime_type": asset.mime_type,
+        "size_bytes": asset.size_bytes,
+    }
 
 
 @router.post("/posts", response_model=SocialPostOut, status_code=201)
