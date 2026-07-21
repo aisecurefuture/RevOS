@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.matching import (
     AudienceSource,
+    CollaborationDirection,
+    CollaborationStatus,
     CreatorManagement,
     CreatorStatus,
     MatchProductStatus,
@@ -66,6 +68,7 @@ class CreatorUpdate(BaseModel):
     location: str | None = Field(default=None, max_length=160)
     management: CreatorManagement | None = None
     status: CreatorStatus | None = None
+    discoverable: bool | None = None
     follower_count: int | None = Field(default=None, ge=0)
     engagement_rate: float | None = Field(default=None, ge=0)
     avg_views: int | None = Field(default=None, ge=0)
@@ -91,6 +94,7 @@ class CreatorOut(BaseModel):
     location: str | None = None
     management: str
     status: str
+    discoverable: bool = False
     follower_count: int | None = None
     engagement_rate: float | None = None
     avg_views: int | None = None
@@ -173,3 +177,36 @@ class CreatorMatchOut(BaseModel):
 class ProductMatchOut(BaseModel):
     product: MatchProductOut
     score: MatchScoreOut
+
+
+# --- Collaboration requests -------------------------------------------------
+class CollaborationRequestCreate(BaseModel):
+    direction: CollaborationDirection
+    creator_id: uuid.UUID
+    product_id: uuid.UUID | None = None      # required for brand→creator; context for creator→brand
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class CollaborationRespond(BaseModel):
+    accept: bool
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CollaborationRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    direction: str
+    status: str
+    initiator_account_id: uuid.UUID
+    initiator_user_id: uuid.UUID
+    creator_id: uuid.UUID
+    product_id: uuid.UUID | None = None
+    recipient_account_id: uuid.UUID | None = None
+    message: str
+    response_note: str | None = None
+    response_channel: str | None = None
+    brokered_by_user_id: uuid.UUID | None = None
+    responded_at: datetime | None = None
+    expires_at: datetime | None = None
+    created_at: datetime

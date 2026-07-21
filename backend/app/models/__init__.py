@@ -78,6 +78,9 @@ from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
 from app.models.media import MediaAsset, MediaKind, MediaStatus, MediaVariant
 from app.models.matching import (
     AudienceSource,
+    CollaborationDirection,
+    CollaborationRequest,
+    CollaborationStatus,
     Creator,
     CreatorManagement,
     CreatorManager,
@@ -137,6 +140,7 @@ __all__ = [
     # matching
     "Creator", "CreatorManagement", "CreatorStatus", "AudienceSource",
     "CreatorManager", "MatchProduct", "MatchProductStatus",
+    "CollaborationRequest", "CollaborationDirection", "CollaborationStatus",
     # pitch video
     "ListingVideoJob", "ListingVideoJobStatus",
     "PitchVideoJob", "PitchVideoJobStatus", "PitchVideoVoiceMode",

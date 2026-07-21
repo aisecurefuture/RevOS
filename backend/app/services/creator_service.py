@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.models.base import utcnow
 from app.models.matching import Creator, CreatorStatus, MatchProduct, MatchProductStatus
 from app.services import matching_service
 from app.services.crud import list_active
@@ -37,7 +38,10 @@ def _derive_cohort_fields(data: dict) -> dict:
 
 # --- Creators ---------------------------------------------------------------
 async def create_creator(db: AsyncSession, data: dict) -> Creator:
-    creator = Creator(**_derive_cohort_fields(dict(data)))
+    data = _derive_cohort_fields(dict(data))
+    if data.get("discoverable"):
+        data["discoverable_at"] = utcnow()
+    creator = Creator(**data)
     db.add(creator)
     await db.flush()
     await db.refresh(creator)
@@ -46,6 +50,9 @@ async def create_creator(db: AsyncSession, data: dict) -> Creator:
 
 async def update_creator(db: AsyncSession, creator: Creator, data: dict) -> Creator:
     data = _derive_cohort_fields(dict(data))
+    # Stamp the opt-in moment the first time a creator becomes discoverable.
+    if data.get("discoverable") and not creator.discoverable:
+        creator.discoverable_at = utcnow()
     for key, value in data.items():
         setattr(creator, key, value)
     db.add(creator)

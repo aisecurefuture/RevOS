@@ -111,6 +111,17 @@ async def test_update_recomputes_size_tier_and_delete(api, make_user):
 
 
 @pytest.mark.asyncio
+async def test_creator_discoverable_flag_round_trips(api, make_user):
+    """MK1: creators opt into the marketplace via the discoverable flag."""
+    h = await _admin(api, make_user)
+    created = (await api.post("/api/matching/creators", headers=h, json=_strong_creator())).json()
+    assert created["discoverable"] is False   # opt-in: off by default
+    up = await api.patch(f"/api/matching/creators/{created['id']}", headers=h,
+                         json={"discoverable": True})
+    assert up.status_code == 200 and up.json()["discoverable"] is True
+
+
+@pytest.mark.asyncio
 async def test_draft_products_excluded_from_creator_matches(api, make_user):
     h = await _admin(api, make_user)
     cid = (await api.post("/api/matching/creators", headers=h, json=_strong_creator())).json()["id"]

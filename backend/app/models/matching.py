@@ -20,7 +20,7 @@ from enum import StrEnum
 import sqlalchemy as sa
 from sqlmodel import Field
 
-from app.models.base import JSON, TenantModel
+from app.models.base import JSON, BaseModel, TenantModel
 
 
 class CreatorManagement(StrEnum):
@@ -66,6 +66,11 @@ class Creator(TenantModel, table=True):
     status: CreatorStatus = Field(
         default=CreatorStatus.active, sa_type=sa.String, max_length=16, index=True,
     )
+
+    # Marketplace opt-in: only discoverable creators appear in cross-tenant
+    # search. Contact details stay hidden until a request is accepted.
+    discoverable: bool = Field(default=False, index=True)
+    discoverable_at: datetime | None = Field(default=None)
 
     # --- Current audience snapshot (time-series + benchmarks come in Phase 3) ---
     follower_count: int | None = Field(default=None)
@@ -127,3 +132,50 @@ class MatchProduct(TenantModel, table=True):
     budget_cents: int | None = Field(default=None)
     currency: str = Field(default="USD", max_length=3)
     offer_id: uuid.UUID | None = Field(default=None, foreign_key="offers.id", index=True)  # optional link
+
+
+class CollaborationDirection(StrEnum):
+    brand_to_creator = "brand_to_creator"   # a brand/product reaches out to a creator
+    creator_to_brand = "creator_to_brand"   # a creator reaches out to a brand/product
+
+
+class CollaborationStatus(StrEnum):
+    pending = "pending"
+    accepted = "accepted"
+    declined = "declined"
+    withdrawn = "withdrawn"       # initiator pulled it back
+    expired = "expired"
+
+
+class CollaborationRequest(BaseModel, table=True):
+    """A structured outreach between a brand/product and a creator — either side
+    may initiate. Cross-tenant by nature, so this is a plain BaseModel (NOT a
+    TenantModel): it carries explicit initiator/recipient account columns and is
+    queried explicitly per-side, never auto-scoped to a single tenant.
+
+    Pre-accept there is exactly ONE message (rate-limited at the service layer);
+    free-form messaging only unlocks after ``accepted`` — spam-proof by design.
+    """
+
+    __tablename__ = "collaboration_requests"
+
+    direction: CollaborationDirection = Field(sa_type=sa.String, max_length=20, index=True)
+    status: CollaborationStatus = Field(
+        default=CollaborationStatus.pending, sa_type=sa.String, max_length=16, index=True,
+    )
+
+    initiator_account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
+    initiator_user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
+    creator_id: uuid.UUID = Field(foreign_key="creators.id", index=True)
+    product_id: uuid.UUID | None = Field(default=None, foreign_key="match_products.id", index=True)
+    # The party being asked (creator's account for brand→creator; product's
+    # account for creator→brand). Resolved on create.
+    recipient_account_id: uuid.UUID | None = Field(default=None, foreign_key="accounts.id", index=True)
+
+    message: str = Field(max_length=2000)
+    response_note: str | None = Field(default=None, max_length=2000)
+    response_channel: str | None = Field(default=None, max_length=16)  # email | in_app | portal
+    brokered_by_user_id: uuid.UUID | None = Field(default=None, foreign_key="admin_users.id", index=True)
+
+    responded_at: datetime | None = Field(default=None)
+    expires_at: datetime | None = Field(default=None, index=True)
