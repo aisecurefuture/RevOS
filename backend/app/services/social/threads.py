@@ -27,7 +27,7 @@ _TOKEN_URL = "https://graph.threads.net/oauth/access_token"
 _LONG_LIVED_URL = "https://graph.threads.net/access_token"
 _TIMEOUT = 15.0
 
-_THREADS_SCOPES = "threads_basic,threads_content_publish"
+_THREADS_SCOPES = "threads_basic,threads_content_publish"  # default; overridable via THREADS_SCOPES
 
 
 @dataclass
@@ -54,7 +54,7 @@ def connect_url(state: str) -> str:
     params = urlencode({
         "client_id": settings.threads_app_id,
         "redirect_uri": settings.threads_redirect_uri,
-        "scope": _THREADS_SCOPES,
+        "scope": settings.threads_scopes or _THREADS_SCOPES,
         "response_type": "code",
         "state": state,
     })

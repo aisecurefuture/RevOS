@@ -182,6 +182,11 @@ class Settings(BaseSettings):
     threads_app_id: str = ""
     threads_app_secret: str = ""
     threads_redirect_uri: str = ""  # e.g. https://api.revos360.com/api/social/threads/callback
+    # Comma-separated Threads OAuth scopes. Every scope here MUST be added to
+    # the app's Threads use case in the Meta dashboard — requesting one that
+    # isn't makes Threads reject auth with a generic "error_code: 1". Drop to
+    # just "threads_basic" to isolate a connection issue, then add publish back.
+    threads_scopes: str = "threads_basic,threads_content_publish"
     twitter_bearer_token: str = ""
     twitter_api_key: str = ""
     twitter_api_secret: str = ""
