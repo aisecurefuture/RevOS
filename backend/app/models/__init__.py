@@ -76,6 +76,15 @@ from app.models.lead import (
 )
 from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
 from app.models.media import MediaAsset, MediaKind, MediaStatus, MediaVariant
+from app.models.matching import (
+    AudienceSource,
+    Creator,
+    CreatorManagement,
+    CreatorManager,
+    CreatorStatus,
+    MatchProduct,
+    MatchProductStatus,
+)
 from app.models.offer import Offer, OfferStatus, OfferType
 from app.models.pitch_video import PitchVideoJob, PitchVideoJobStatus, PitchVideoVoiceMode
 from app.models.persona_identity import (
@@ -125,6 +134,9 @@ __all__ = [
     "Brand", "BrandType", "BrandVoice", "Audience", "BuyerPersona",
     # offer
     "Offer", "OfferType", "OfferStatus",
+    # matching
+    "Creator", "CreatorManagement", "CreatorStatus", "AudienceSource",
+    "CreatorManager", "MatchProduct", "MatchProductStatus",
     # pitch video
     "ListingVideoJob", "ListingVideoJobStatus",
     "PitchVideoJob", "PitchVideoJobStatus", "PitchVideoVoiceMode",

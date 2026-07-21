@@ -43,3 +43,7 @@ class SocialConnection(TenantModel, table=True):
     connected_by: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
     expires_at: datetime | None = Field(default=None)
     platform_meta: dict = Field(default_factory=dict, sa_type=JSON)
+
+    # When this account belongs to a matched creator (one creator → many
+    # accounts). NULL for the tenant's own brand/posting connections.
+    creator_id: uuid.UUID | None = Field(default=None, foreign_key="creators.id", index=True)
