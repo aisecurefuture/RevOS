@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ApiError, socialApi as connectionsApi, type SocialConnection } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
+import { platformLabel } from "@/lib/platforms";
 import { aiApi, socialApi } from "@/lib/resources";
 import type { SocialPost } from "@/lib/types";
 
@@ -175,7 +176,7 @@ export default function SocialPage() {
     if (conns.length === 0) {
       return (
         <span className="text-xs text-slate-400">
-          Connect {p.platform} in Settings → Social Connections
+          Connect {platformLabel(p.platform)} in Settings → Social Connections
         </span>
       );
     }
@@ -249,7 +250,7 @@ export default function SocialPage() {
               >
                 {PLATFORMS.map((p) => (
                   <option key={p} value={p}>
-                    {p}
+                    {platformLabel(p)}
                   </option>
                 ))}
               </select>
@@ -347,7 +348,7 @@ export default function SocialPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                      {p.platform}
+                      {platformLabel(p.platform)}
                     </span>
                     <span className="ml-2 text-xs capitalize text-slate-400">{p.state}</span>
                     <p className="mt-1 text-sm text-slate-700">{p.caption}</p>

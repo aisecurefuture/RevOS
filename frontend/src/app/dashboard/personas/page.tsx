@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
+import { platformLabel } from "@/lib/platforms";
 
 function fmtWait(seconds: number): string {
   const m = Math.round(seconds / 60);
@@ -603,7 +604,7 @@ function PublishRow({ jobId }: { jobId: string }) {
           value={platform} onChange={(e) => setPlatform(e.target.value)}
           className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
         >
-          {SOCIAL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+          {SOCIAL_PLATFORMS.map((p) => <option key={p} value={p}>{platformLabel(p)}</option>)}
         </select>
         <input
           value={caption} onChange={(e) => setCaption(e.target.value)}

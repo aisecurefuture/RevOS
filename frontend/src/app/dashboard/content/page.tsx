@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
+import { platformLabel } from "@/lib/platforms";
 import { aiApi, contentApi, socialApi } from "@/lib/resources";
 import type { ContentItem } from "@/lib/types";
 
@@ -160,7 +161,7 @@ export default function ContentPage() {
                 >
                   {CHANNELS.map((c) => (
                     <option key={c} value={c}>
-                      {c.replace(/_/g, " ")}
+                      {platformLabel(c)}
                     </option>
                   ))}
                 </select>
@@ -263,7 +264,7 @@ export default function ContentPage() {
                 items.map((c) => (
                   <tr key={c.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 font-medium text-slate-800">{c.title}</td>
-                    <td className="px-4 py-3 text-slate-500">{c.channel.replace(/_/g, " ")}</td>
+                    <td className="px-4 py-3 text-slate-500">{platformLabel(c.channel)}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATE_STYLES[c.state]}`}

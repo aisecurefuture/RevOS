@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useBrand } from "@/lib/brand";
+import { platformLabel } from "@/lib/platforms";
 import { mediaApi } from "@/lib/resources";
 import type { MediaAsset } from "@/lib/types";
 
@@ -195,13 +196,13 @@ export default function MediaPage() {
                           <img
                             src={`/api/media/variants/${v.id}/file`}
                             loading="lazy"
-                            alt={`${v.platform} ${v.purpose} rendition`}
+                            alt={`${platformLabel(v.platform)} ${v.purpose} rendition`}
                             className="max-h-40 w-full object-contain"
                           />
                         )}
                       </div>
                       <p className="font-medium text-slate-700">
-                        {v.platform} · {v.purpose}
+                        {platformLabel(v.platform)} · {v.purpose}
                       </p>
                       <p className="text-slate-400">
                         {v.width}×{v.height} ({v.aspect_ratio})
