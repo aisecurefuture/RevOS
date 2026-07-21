@@ -136,6 +136,21 @@ async def test_publish_tweet_api_error():
     assert exc.value.code == "x_api_error"
 
 
+@pytest.mark.asyncio
+async def test_publish_tweet_usage_cap_is_actionable():
+    """X's monthly write cap ('credits depleted') gets a distinct, actionable
+    error — not a raw passthrough — so the UI can flag it as a plan limit."""
+    with respx.mock(base_url=API) as mock:
+        mock.post("/2/tweets").mock(return_value=httpx.Response(429, json={
+            "title": "UsageCapExceeded", "detail": "Usage cap exceeded: credits depleted.",
+        }))
+        with pytest.raises(RevOSError) as exc:
+            await x_client.publish_tweet("at-1", "hi")
+    assert exc.value.code == "x_usage_cap"
+    assert exc.value.status_code == 402
+    assert "developer.x.com" in exc.value.message
+
+
 # ---------------------------------------------------------------------------
 # handle_x_callback
 # ---------------------------------------------------------------------------

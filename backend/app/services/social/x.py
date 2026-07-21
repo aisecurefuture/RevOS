@@ -96,6 +96,27 @@ def _raise_api_error(resp: httpx.Response, context: str) -> None:
     except Exception:
         detail = resp.text
     logger.warning("X API error (%s): HTTP %s — %s", context, resp.status_code, detail)
+
+    # X's monthly write cap surfaces as "credits depleted" / "usage cap
+    # exceeded" (often HTTP 429). That's an account plan limit on X's side,
+    # not a transient error — give the user an actionable message + code the
+    # UI can flag distinctly, rather than a raw passthrough.
+    low = (detail or "").lower()
+    if (
+        "credits depleted" in low
+        or "usage cap" in low
+        or "usage-cap" in low
+        or ("cap" in low and "exceed" in low)
+    ):
+        raise RevOSError(
+            "X (Twitter) has hit the monthly post limit for your X API plan. "
+            "This is a limit on your X developer account, not RevOS — check "
+            "your plan and usage at developer.x.com, then try again after the "
+            "monthly reset or once the plan is upgraded.",
+            code="x_usage_cap",
+            status_code=402,
+        )
+
     raise RevOSError(
         f"X API error during {context}: {detail}",
         code="x_api_error",
