@@ -271,7 +271,7 @@ export default function SocialPage() {
                 </label>
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Live media publishing: LinkedIn, X, Instagram, Facebook, TikTok, YouTube. X allows up to 4 photos or 1 video.
+                Live media: LinkedIn, X, Facebook, Instagram. X allows up to 4 photos or 1 video; Instagram needs at least one photo or video.
               </p>
             </div>
             <div className="flex items-center gap-2">

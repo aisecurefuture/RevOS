@@ -10,6 +10,7 @@ Official API docs:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from urllib.parse import urlencode
@@ -178,35 +179,141 @@ async def publish_to_page(
     )
 
 
+async def publish_photos_to_page(
+    page_id: str,
+    page_token: str,
+    photos: list[bytes],
+    *,
+    caption: str | None,
+) -> PublishResult:
+    """Post one or more photos to a Facebook Page (bytes uploaded directly).
+
+    A single photo publishes straight to /photos. Multiple photos upload
+    unpublished first, then attach to a single feed post."""
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        if len(photos) == 1:
+            resp = await client.post(
+                f"{_GRAPH}/{page_id}/photos",
+                data={"access_token": page_token, "caption": caption or "", "published": "true"},
+                files={"source": ("photo", photos[0], "application/octet-stream")},
+            )
+            _raise_graph_error(resp, "page photo publish")
+            pid = resp.json().get("post_id") or resp.json()["id"]
+            return PublishResult(external_id=pid, url=f"https://www.facebook.com/{pid.replace('_', '/posts/')}")
+
+        media_fbids: list[str] = []
+        for data in photos:
+            up = await client.post(
+                f"{_GRAPH}/{page_id}/photos",
+                data={"access_token": page_token, "published": "false"},
+                files={"source": ("photo", data, "application/octet-stream")},
+            )
+            _raise_graph_error(up, "page photo upload")
+            media_fbids.append(up.json()["id"])
+        import json as _json
+        feed = await client.post(
+            f"{_GRAPH}/{page_id}/feed",
+            data={
+                "access_token": page_token,
+                "message": caption or "",
+                "attached_media": _json.dumps([{"media_fbid": i} for i in media_fbids]),
+            },
+        )
+    _raise_graph_error(feed, "page multi-photo publish")
+    pid = feed.json()["id"]
+    return PublishResult(external_id=pid, url=f"https://www.facebook.com/{pid.replace('_', '/posts/')}")
+
+
+async def publish_video_to_page(
+    page_id: str,
+    page_token: str,
+    video: bytes,
+    *,
+    caption: str | None,
+) -> PublishResult:
+    """Upload a video to a Facebook Page (bytes uploaded directly)."""
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        resp = await client.post(
+            f"{_GRAPH}/{page_id}/videos",
+            data={"access_token": page_token, "description": caption or ""},
+            files={"source": ("video", video, "application/octet-stream")},
+        )
+    _raise_graph_error(resp, "page video publish")
+    vid = resp.json()["id"]
+    return PublishResult(external_id=vid, url=f"https://www.facebook.com/{page_id}/videos/{vid}")
+
+
+async def _ig_publish_container(client: httpx.AsyncClient, ig_user_id: str, user_token: str, container_id: str) -> str:
+    pub = await client.post(
+        f"{_GRAPH}/{ig_user_id}/media_publish",
+        data={"creation_id": container_id, "access_token": user_token},
+    )
+    _raise_graph_error(pub, "IG media publish")
+    return pub.json()["id"]
+
+
 async def publish_to_instagram(
     ig_user_id: str,
     user_token: str,
     *,
-    image_url: str,
+    image_url: str | None = None,
+    image_urls: list[str] | None = None,
+    video_url: str | None = None,
     caption: str | None,
 ) -> PublishResult:
-    """Publish a single image to an Instagram Business Account (two-step API)."""
+    """Publish to an Instagram Business Account: a single image, a carousel of
+    images, or a Reel (video). Media is referenced by PUBLIC URL — Meta fetches
+    it, so callers pass signed public links, not storage keys."""
+    urls = image_urls or ([image_url] if image_url else [])
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        # Step 1 — create media container
-        create_resp = await client.post(
-            f"{_GRAPH}/{ig_user_id}/media",
-            data={
-                "image_url": image_url,
-                "caption": caption or "",
-                "access_token": user_token,
-            },
-        )
-        _raise_graph_error(create_resp, "IG media container")
-        container_id = create_resp.json()["id"]
+        if video_url:
+            create = await client.post(
+                f"{_GRAPH}/{ig_user_id}/media",
+                data={"media_type": "REELS", "video_url": video_url,
+                      "caption": caption or "", "access_token": user_token},
+            )
+            _raise_graph_error(create, "IG reel container")
+            container_id = create.json()["id"]
+            # Reels process asynchronously — wait for FINISHED before publishing.
+            for _ in range(30):
+                await asyncio.sleep(4)
+                st = await client.get(
+                    f"{_GRAPH}/{container_id}",
+                    params={"fields": "status_code", "access_token": user_token},
+                )
+                _raise_graph_error(st, "IG reel status")
+                code = st.json().get("status_code")
+                if code == "FINISHED":
+                    break
+                if code == "ERROR":
+                    raise RevOSError("Instagram could not process the video.", code="ig_media_failed", status_code=502)
+            media_id = await _ig_publish_container(client, ig_user_id, user_token, container_id)
 
-        # Step 2 — publish container
-        pub_resp = await client.post(
-            f"{_GRAPH}/{ig_user_id}/media_publish",
-            data={"creation_id": container_id, "access_token": user_token},
-        )
-    _raise_graph_error(pub_resp, "IG media publish")
-    media_id = pub_resp.json()["id"]
-    return PublishResult(
-        external_id=media_id,
-        url=f"https://www.instagram.com/p/{media_id}/",
-    )
+        elif len(urls) > 1:
+            child_ids: list[str] = []
+            for url in urls[:10]:
+                child = await client.post(
+                    f"{_GRAPH}/{ig_user_id}/media",
+                    data={"image_url": url, "is_carousel_item": "true", "access_token": user_token},
+                )
+                _raise_graph_error(child, "IG carousel item")
+                child_ids.append(child.json()["id"])
+            create = await client.post(
+                f"{_GRAPH}/{ig_user_id}/media",
+                data={"media_type": "CAROUSEL", "children": ",".join(child_ids),
+                      "caption": caption or "", "access_token": user_token},
+            )
+            _raise_graph_error(create, "IG carousel container")
+            media_id = await _ig_publish_container(client, ig_user_id, user_token, create.json()["id"])
+
+        else:
+            if not urls:
+                raise RevOSError("Instagram posts require an image or video.", code="missing_media", status_code=400)
+            create = await client.post(
+                f"{_GRAPH}/{ig_user_id}/media",
+                data={"image_url": urls[0], "caption": caption or "", "access_token": user_token},
+            )
+            _raise_graph_error(create, "IG media container")
+            media_id = await _ig_publish_container(client, ig_user_id, user_token, create.json()["id"])
+
+    return PublishResult(external_id=media_id, url=f"https://www.instagram.com/p/{media_id}/")

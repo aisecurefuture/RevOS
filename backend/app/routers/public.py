@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app.core.exceptions import ComplianceError, NotFoundError
 from app.core.net import client_ip as _client_ip
@@ -186,6 +186,34 @@ async def track(
         db, name=body.name, brand_id=body.brand_id, properties=body.properties,
         utm=body.utm, ip=_client_ip(request), session_id=body.session_id)
     return {"ok": True}
+
+
+@router.get("/social-media/{token}")
+async def social_media(token: str, _rl: None = Depends(_read_limit)) -> Response:
+    """Serve a stored media file over a signed, expiring public link so Meta
+    can fetch it for Instagram publishing. The token carries only the storage
+    key and is signed + time-limited — no directory traversal, no enumeration."""
+    from app.core.security import read_signed_token
+    from app.services import social_connection_service as scs
+    from app.services.storage_service import get_storage
+
+    try:
+        data = read_signed_token(
+            token, salt=scs.SOCIAL_MEDIA_URL_SALT, max_age_seconds=scs.SOCIAL_MEDIA_URL_TTL,
+        )
+    except Exception as exc:  # AuthError on tamper/expiry
+        raise NotFoundError("Media link is invalid or has expired.") from exc
+
+    key = data.get("k", "")
+    if not isinstance(key, str) or not key.startswith("media/"):
+        raise NotFoundError("Media not found.")
+    try:
+        content = get_storage().read(key)
+    except FileNotFoundError as exc:
+        raise NotFoundError("Media not found.") from exc
+    return Response(content=content, media_type=scs._media_mime(key), headers={
+        "Cache-Control": "private, max-age=3600",
+    })
 
 
 @router.get("/u/{code}")

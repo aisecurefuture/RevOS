@@ -858,6 +858,19 @@ async def _tiktok_access_token(conn: SocialConnection, token_data: dict) -> str:
 _IMAGE_EXTS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
 _VIDEO_EXTS = {".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4", ".webm": "video/webm"}
 
+# Signed, short-lived public URL for a stored media key — Instagram (and IG
+# Reels) publish by having Meta FETCH the media over the internet, so unlike
+# the byte-push platforms these need a temporarily-public, tamper-proof link.
+SOCIAL_MEDIA_URL_SALT = "social-public-media"
+SOCIAL_MEDIA_URL_TTL = 3600  # 1 hour — long enough for Meta's fetch during publish
+
+
+def public_media_url(storage_key: str) -> str:
+    from app.core.security import make_signed_token
+
+    token = make_signed_token({"k": storage_key}, salt=SOCIAL_MEDIA_URL_SALT)
+    return f"{settings.public_base_url}/api/public/social-media/{token}"
+
 
 def _media_mime(ref: str) -> str:
     """Best-effort MIME from a storage key / URL extension."""
@@ -963,20 +976,40 @@ async def _dispatch_publish(post: SocialPost, conn: SocialConnection, token_data
     """Platform switch → PublishResult. Pure — reads tokens, calls the adapter,
     performs no DB writes. Shared by immediate and scheduled publishing."""
     if conn.platform == SocialPlatform.facebook:
+        refs = post.media_urls
+        video = next((r for r in refs if _is_video_ref(r)), None)
+        if video:
+            return await meta_client.publish_video_to_page(
+                page_id=token_data["page_id"], page_token=token_data["access_token"],
+                video=await _fetch_media_bytes(video), caption=post.caption,
+            )
+        if refs:
+            photos = [await _fetch_media_bytes(r) for r in refs[:10]]
+            return await meta_client.publish_photos_to_page(
+                page_id=token_data["page_id"], page_token=token_data["access_token"],
+                photos=photos, caption=post.caption,
+            )
         return await meta_client.publish_to_page(
             page_id=token_data["page_id"],
             page_token=token_data["access_token"],
             caption=post.caption,
         )
     if conn.platform == SocialPlatform.instagram:
-        image_url = post.media_urls[0] if post.media_urls else None
-        if not image_url:
-            raise RevOSError("Instagram posts require at least one image URL.", code="missing_media", status_code=400)
+        if not post.media_urls:
+            raise RevOSError("Instagram posts require at least one photo or video.", code="missing_media", status_code=400)
+        # Meta FETCHES the media — expose each as a signed public URL, not a
+        # storage key. (Storage keys are already public-ish only via this route.)
+        refs = post.media_urls
+        video = next((r for r in refs if _is_video_ref(r)), None)
+        if video:
+            return await meta_client.publish_to_instagram(
+                ig_user_id=token_data["ig_user_id"], user_token=token_data["access_token"],
+                video_url=public_media_url(video), caption=post.caption,
+            )
+        image_urls = [public_media_url(r) for r in refs if not _is_video_ref(r)][:10]
         return await meta_client.publish_to_instagram(
-            ig_user_id=token_data["ig_user_id"],
-            user_token=token_data["access_token"],
-            image_url=image_url,
-            caption=post.caption,
+            ig_user_id=token_data["ig_user_id"], user_token=token_data["access_token"],
+            image_urls=image_urls, caption=post.caption,
         )
     if conn.platform == SocialPlatform.youtube:
         video_url = post.media_urls[0] if post.media_urls else None
