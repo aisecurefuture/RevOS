@@ -24,6 +24,9 @@ const CONTENT_SECURITY_POLICY = [
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
+  // Video/audio previews use blob: URLs (client-side URL.createObjectURL);
+  // finished renditions stream from the API ('self') or storage (https:).
+  "media-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self'",
   "frame-ancestors 'none'",
