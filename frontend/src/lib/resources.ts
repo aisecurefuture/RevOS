@@ -332,11 +332,20 @@ function qs(params: Record<string, string | undefined>): string {
 }
 
 export const marketplaceApi = {
-  // Your own roster (for the "rank against" + request pickers).
+  // Your own roster (for the "rank against" + request pickers, and management).
   myCreators: (params: Record<string, string | undefined> = {}) =>
     apiFetch<MatchCreator[]>(`/matching/creators${qs(params)}`),
+  createCreator: (data: Record<string, unknown>) =>
+    apiFetch<MatchCreator>("/matching/creators", { method: "POST", body: JSON.stringify(data) }),
+  updateCreator: (id: string, data: Record<string, unknown>) =>
+    apiFetch<MatchCreator>(`/matching/creators/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
   myProducts: (params: Record<string, string | undefined> = {}) =>
     apiFetch<MatchProduct[]>(`/matching/products${qs(params)}`),
+  createProduct: (data: Record<string, unknown>) =>
+    apiFetch<MatchProduct>("/matching/products", { method: "POST", body: JSON.stringify(data) }),
+  updateProduct: (id: string, data: Record<string, unknown>) =>
+    apiFetch<MatchProduct>(`/matching/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   // Cross-tenant, consent-gated discovery.
   discoverCreators: (params: Record<string, string | undefined> = {}) =>
