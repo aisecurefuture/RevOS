@@ -90,6 +90,13 @@ from app.models.matching import (
 )
 from app.models.offer import Offer, OfferStatus, OfferType
 from app.models.pitch_video import PitchVideoJob, PitchVideoJobStatus, PitchVideoVoiceMode
+from app.models.reputation import (
+    Certification,
+    CertificationStatus,
+    CertificationSubjectType,
+    Review,
+    ReviewDirection,
+)
 from app.models.persona_identity import (
     PersonaConsent,
     PersonaIdentity,
@@ -141,6 +148,9 @@ __all__ = [
     "Creator", "CreatorManagement", "CreatorStatus", "AudienceSource",
     "CreatorManager", "MatchProduct", "MatchProductStatus",
     "CollaborationRequest", "CollaborationDirection", "CollaborationStatus",
+    # reputation
+    "Certification", "CertificationStatus", "CertificationSubjectType",
+    "Review", "ReviewDirection",
     # pitch video
     "ListingVideoJob", "ListingVideoJobStatus",
     "PitchVideoJob", "PitchVideoJobStatus", "PitchVideoVoiceMode",
