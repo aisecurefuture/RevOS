@@ -93,9 +93,12 @@ export function WorkspacesTab({ setNotice }: { setNotice: (s: string | null) => 
           <div className="space-y-2">
             {collabs.map((c) => {
               const role = roleFor(c);
-              const label = role === "creator"
-                ? myCreators.find((x) => x.id === c.creator_id)?.display_name ?? "Your creator"
-                : myProducts.find((x) => x.id === c.product_id)?.name ?? "Your product";
+              const creatorLabel = c.creator_name
+                ?? myCreators.find((x) => x.id === c.creator_id)?.display_name
+                ?? "Unknown creator";
+              const brandLabel = c.brand_name
+                ?? myProducts.find((x) => x.id === c.product_id)?.name
+                ?? "Unknown brand";
               return (
                 <Card
                   key={c.id}
@@ -103,13 +106,15 @@ export function WorkspacesTab({ setNotice }: { setNotice: (s: string | null) => 
                   onClick={() => setSelectedId(c.id)}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-medium text-slate-800">{label}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-800">
+                        {brandLabel} <span className="text-slate-400">×</span> {creatorLabel}
+                      </p>
                       <p className="text-xs text-slate-500">
                         You're the {role} · {new Date(c.created_at).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATE_STYLE[c.state]}`}>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATE_STYLE[c.state]}`}>
                       {c.state}
                     </span>
                   </div>
@@ -257,6 +262,10 @@ function WorkspaceDetail({
             </Button>
           ) : null}
         </div>
+        <p className="text-sm font-medium text-slate-800">
+          {collab.brand_name ?? "Unknown brand"} <span className="text-slate-400">×</span>{" "}
+          {collab.creator_name ?? "Unknown creator"}
+        </p>
         <p className="text-xs text-slate-500">
           State: <span className="font-medium">{collab.state}</span>
           {collab.ended_at ? ` · ended ${new Date(collab.ended_at).toLocaleDateString()}` : ""}

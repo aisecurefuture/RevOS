@@ -34,7 +34,8 @@ from app.models.collaboration import (
     ShareStatus,
     SharedResourceType,
 )
-from app.models.matching import CollaborationDirection, CollaborationRequest
+from app.models.matching import CollaborationDirection, CollaborationRequest, Creator, MatchProduct
+from app.schemas.collaboration import CollaborationOut
 
 
 # --- Spawn on acceptance ----------------------------------------------------
@@ -83,7 +84,7 @@ async def get_collaboration(db: AsyncSession, collaboration_id: uuid.UUID,
 
 async def list_collaborations(db: AsyncSession, account_id: uuid.UUID, *,
                               state: str | None = None, limit: int = 50, offset: int = 0
-                              ) -> list[Collaboration]:
+                              ) -> list[CollaborationOut]:
     stmt = select(Collaboration).where(
         or_(Collaboration.brand_account_id == account_id,
             Collaboration.creator_account_id == account_id),
@@ -91,7 +92,61 @@ async def list_collaborations(db: AsyncSession, account_id: uuid.UUID, *,
     if state:
         stmt = stmt.where(Collaboration.state == state)
     stmt = stmt.order_by(Collaboration.created_at.desc()).limit(limit).offset(offset)
-    return list((await db.execute(stmt)).scalars().all())
+    collabs = list((await db.execute(stmt)).scalars().all())
+    creator_names, brand_names = await _party_names(db, collabs)
+    return [
+        CollaborationOut.model_validate(c).model_copy(update={
+            "creator_name": creator_names.get(c.creator_id),
+            "brand_name": brand_names.get(c.id),
+        })
+        for c in collabs
+    ]
+
+
+async def _party_names(db: AsyncSession, collabs: list[Collaboration],
+                       ) -> tuple[dict[uuid.UUID, str], dict[uuid.UUID, str]]:
+    """Resolve both sides' display names for a batch of collaborations, so a
+    workspace list item can show who it's actually with — not just the
+    viewer's own side. Brand name prefers the linked product's brand
+    (precise); falls back to the brand-side account's own brand otherwise."""
+    if not collabs:
+        return {}, {}
+
+    creator_ids = {c.creator_id for c in collabs}
+    creators = (await db.execute(
+        select(Creator.id, Creator.display_name).where(Creator.id.in_(creator_ids))
+    )).all()
+    creator_names = {row[0]: row[1] for row in creators}
+
+    product_ids = {c.product_id for c in collabs if c.product_id}
+    product_brand_id: dict[uuid.UUID, uuid.UUID] = {}
+    if product_ids:
+        products = (await db.execute(
+            select(MatchProduct.id, MatchProduct.brand_id).where(MatchProduct.id.in_(product_ids))
+        )).all()
+        product_brand_id = {row[0]: row[1] for row in products if row[1] is not None}
+
+    brand_ids = set(product_brand_id.values())
+    brand_accounts = {c.brand_account_id for c in collabs}
+    brand_name_by_id: dict[uuid.UUID, str] = {}
+    brand_name_by_account: dict[uuid.UUID, str] = {}
+    if brand_ids or brand_accounts:
+        rows = (await db.execute(
+            select(Brand.id, Brand.account_id, Brand.name).where(
+                or_(Brand.id.in_(brand_ids), Brand.account_id.in_(brand_accounts)),
+                Brand.deleted_at.is_(None))
+        )).all()
+        for brand_id, brand_account_id, name in rows:
+            brand_name_by_id[brand_id] = name
+            brand_name_by_account.setdefault(brand_account_id, name)
+
+    brand_names: dict[uuid.UUID, str] = {}
+    for c in collabs:
+        linked = product_brand_id.get(c.product_id) if c.product_id else None
+        name = brand_name_by_id.get(linked) if linked else None
+        brand_names[c.id] = name or brand_name_by_account.get(c.brand_account_id)
+
+    return creator_names, brand_names
 
 
 async def end_collaboration(db: AsyncSession, collab: Collaboration,

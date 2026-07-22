@@ -319,6 +319,8 @@ export interface Collaboration {
   title?: string | null;
   ended_at?: string | null;
   created_at: string;
+  creator_name?: string | null;
+  brand_name?: string | null;
 }
 
 export interface CollaborationShare {
