@@ -12,11 +12,17 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.config import settings
+from app.core.exceptions import RevOSError
+from app.core.security import make_signed_token, read_signed_token
 from app.models.base import utcnow
 from app.models.matching import Creator, CreatorStatus, MatchProduct, MatchProductStatus
 from app.services import matching_service
 from app.services.crud import list_active
 from app.services.industry_taxonomy import size_tier_for
+
+_CLAIM_SALT = "creator-claim"
+_CLAIM_MAX_AGE_DAYS = 14
 
 _MATCH_POOL_CAP = 500   # creators/products scored per match request
 
@@ -201,3 +207,42 @@ async def matches_for_creator(
     )
     ranked = matching_service.rank_products(creator, products, weights)
     return [{"product": p, "score": s.as_dict()} for p, s in ranked[:limit]]
+
+
+# --- Creator-portal groundwork: claim a managed Creator record --------------
+def make_claim_invite(creator_id: uuid.UUID) -> dict:
+    """Only the account that owns/manages the Creator record may generate this
+    (enforced by the router via tenant-scoped get_active before calling)."""
+    token = make_signed_token({"creator_id": str(creator_id)}, salt=_CLAIM_SALT)
+    return {
+        "token": token,
+        "claim_url": f"{settings.public_base_url}/claim-creator?token={token}",
+        "expires_in_days": _CLAIM_MAX_AGE_DAYS,
+    }
+
+
+async def claim_creator(db: AsyncSession, token: str, *, user_id: uuid.UUID) -> Creator:
+    data = read_signed_token(token, salt=_CLAIM_SALT,
+                             max_age_seconds=_CLAIM_MAX_AGE_DAYS * 24 * 60 * 60)
+    creator = await db.get(Creator, uuid.UUID(data["creator_id"]))
+    if creator is None or creator.deleted_at is not None:
+        raise RevOSError("This creator profile no longer exists.", code="not_found", status_code=404)
+    if creator.claimed_by_user_id is not None:
+        if creator.claimed_by_user_id == user_id:
+            return creator   # idempotent — already claimed by you
+        raise RevOSError("This profile has already been claimed by someone else.",
+                         code="already_claimed", status_code=409)
+
+    creator.claimed_by_user_id = user_id
+    creator.claimed_at = utcnow()
+    db.add(creator)
+    await db.flush()
+    await db.refresh(creator)
+    return creator
+
+
+async def list_claimed_by(db: AsyncSession, user_id: uuid.UUID) -> list[Creator]:
+    stmt = select(Creator).where(
+        Creator.claimed_by_user_id == user_id, Creator.deleted_at.is_(None),
+    ).order_by(Creator.created_at.desc())
+    return list((await db.execute(stmt)).scalars().all())

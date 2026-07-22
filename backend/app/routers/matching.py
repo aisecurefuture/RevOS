@@ -29,6 +29,8 @@ from app.schemas.matching import (
     CollaborationRequestCreate,
     CollaborationRequestOut,
     CollaborationRespond,
+    CreatorClaimInviteOut,
+    CreatorClaimRequest,
     CreatorCreate,
     CreatorDiscoveryOut,
     CreatorMatchOut,
@@ -97,6 +99,30 @@ async def create_creator(
     return creator
 
 
+@router.get("/creators/claimed/mine", response_model=list[CreatorOut])
+async def list_my_claimed_creators(
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> list[Creator]:
+    """Creator-portal groundwork: profiles this user has verified themselves
+    against — the anchor for a future creator-facing dashboard."""
+    return await creator_service.list_claimed_by(db, user.id)
+
+
+@router.post("/creators/claim", response_model=CreatorOut)
+async def claim_creator(
+    body: CreatorClaimRequest,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_authenticated)],
+    _: None = Depends(verify_csrf),
+) -> Creator:
+    creator = await creator_service.claim_creator(db, body.token, user_id=user.id)
+    await write_audit(db, action="creator.claim", user_id=user.id,
+                      entity_type="creator", entity_id=str(creator.id), request=request)
+    return creator
+
+
 @router.get("/creators/{creator_id}", response_model=CreatorOut)
 async def get_creator(
     creator_id: uuid.UUID,
@@ -120,6 +146,23 @@ async def update_creator(
     await write_audit(db, action="creator.update", user_id=user.id,
                       entity_type="creator", entity_id=str(creator_id), request=request)
     return creator
+
+
+@router.post("/creators/{creator_id}/claim-invite", response_model=CreatorClaimInviteOut)
+async def create_claim_invite(
+    creator_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Only the account that manages this Creator record may invite them to
+    claim it — get_active enforces that (tenant-scoped: 404s otherwise)."""
+    creator = await get_active(db, Creator, creator_id)
+    invite = creator_service.make_claim_invite(creator.id)
+    await write_audit(db, action="creator.claim_invite", user_id=user.id,
+                      entity_type="creator", entity_id=str(creator_id), request=request)
+    return invite
 
 
 @router.delete("/creators/{creator_id}", response_model=Message)
