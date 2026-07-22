@@ -868,6 +868,7 @@ export interface IndustryBenchmarkRow {
   period_label: string;
   updated_by_user_id: string;
   updated_at: string;
+  is_stale: boolean;
 }
 
 export interface BenchmarkExtractRow {
