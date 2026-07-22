@@ -19,6 +19,7 @@ from app.models.approval import ApprovalAction, ApprovalRequest, ApprovalStatus
 from app.models.base import BaseModel, IDModel, TimestampModel, utcnow
 from app.models.autopilot import AutopilotConfig
 from app.models.avatar_job import AvatarJobStatus, AvatarVideoJob
+from app.models.benchmark import IndustryBenchmark
 from app.models.brand import Audience, Brand, BrandType, BrandVoice, BuyerPersona
 from app.models.brand_book import BrandBook, BrandClaim, BrandFact, ClaimCategory
 from app.models.campaign import (
@@ -178,6 +179,8 @@ __all__ = [
     # reputation
     "Certification", "CertificationStatus", "CertificationSubjectType",
     "Review", "ReviewDirection",
+    # benchmarks
+    "IndustryBenchmark",
     # pitch video
     "ListingVideoJob", "ListingVideoJobStatus",
     "PitchVideoJob", "PitchVideoJobStatus", "PitchVideoVoiceMode",
