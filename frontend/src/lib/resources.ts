@@ -350,6 +350,15 @@ export const marketplaceApi = {
     apiFetch<MatchCreator>("/matching/creators", { method: "POST", body: JSON.stringify(data) }),
   updateCreator: (id: string, data: Record<string, unknown>) =>
     apiFetch<MatchCreator>(`/matching/creators/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  getCreator: (id: string) => apiFetch<MatchCreator>(`/matching/creators/${id}`),
+
+  // Creator-portal groundwork (Phase 6).
+  myClaimedCreators: () => apiFetch<MatchCreator[]>("/matching/creators/claimed/mine"),
+  claimCreator: (token: string) =>
+    apiFetch<MatchCreator>("/matching/creators/claim", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
 
   myProducts: (params: Record<string, string | undefined> = {}) =>
     apiFetch<MatchProduct[]>(`/matching/products${qs(params)}`),
