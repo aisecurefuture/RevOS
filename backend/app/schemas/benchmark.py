@@ -5,11 +5,18 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.base import utcnow
 from app.services.industry_taxonomy import CATEGORIES
 
 _PLATFORMS = {"all", "facebook", "instagram", "linkedin", "threads", "tiktok", "twitter", "youtube"}
+
+# BM4: a figure this old is worth checking against a fresher report. Both
+# Quid/Rival IQ and Socialinsider publish roughly annually, so 6 months is a
+# "you might be missing a refresh" nudge, not a hard expiry — stale data still
+# serves (it's still better than nothing) until an admin replaces it.
+STALE_AFTER_DAYS = 180
 
 
 class IndustryBenchmarkCreate(BaseModel):
@@ -49,6 +56,12 @@ class IndustryBenchmarkOut(BaseModel):
     period_label: str
     updated_by_user_id: uuid.UUID
     updated_at: datetime
+    is_stale: bool = False   # computed below — not a DB column
+
+    @model_validator(mode="after")
+    def _compute_stale(self):
+        self.is_stale = (utcnow() - self.updated_at).days >= STALE_AFTER_DAYS
+        return self
 
 
 class BenchmarkExtractRequest(BaseModel):

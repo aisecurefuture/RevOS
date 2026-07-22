@@ -73,6 +73,13 @@ export default function BenchmarksAdminPage() {
 
       <ManualAddForm onCreated={() => { setNotice("Benchmark added."); void load(); }} setError={setError} />
 
+      {!loading && rows.some((r) => r.is_stale) ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {rows.filter((r) => r.is_stale).length} benchmark(s) haven&apos;t been updated in 6+ months —
+          worth checking Quid/Socialinsider for a fresher report.
+        </div>
+      ) : null}
+
       <Card>
         <CardTitle>Current figures</CardTitle>
         {loading ? (
@@ -107,7 +114,14 @@ export default function BenchmarksAdminPage() {
                         </a>
                       ) : r.source}
                     </td>
-                    <td className="px-2 py-2 text-slate-500">{r.period_label}</td>
+                    <td className="px-2 py-2 text-slate-500">
+                      {r.period_label}
+                      {r.is_stale ? (
+                        <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                          Stale
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="px-2 py-2 text-right">
                       <button onClick={() => void remove(r.id)} className="text-xs text-red-500 hover:underline">
                         Delete
