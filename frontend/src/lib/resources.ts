@@ -8,6 +8,8 @@ import type {
   CollaborationRequest,
   Contact,
   ContactImportResult,
+  Collaboration,
+  CollaborationShare,
   ContentItem,
   CreatorDiscovery,
   Deal,
@@ -25,6 +27,7 @@ import type {
   PipelineStage,
   ProductDiscovery,
   PublishResult,
+  SharedBrandBook,
   Sequence,
   SocialCampaign,
   SocialPost,
@@ -345,6 +348,11 @@ export const marketplaceApi = {
     apiFetch<MatchProduct[]>(`/matching/products${qs(params)}`),
   createProduct: (data: Record<string, unknown>) =>
     apiFetch<MatchProduct>("/matching/products", { method: "POST", body: JSON.stringify(data) }),
+  importOfferProduct: (data: Record<string, unknown>) =>
+    apiFetch<MatchProduct>("/matching/products/import-offer", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   updateProduct: (id: string, data: Record<string, unknown>) =>
     apiFetch<MatchProduct>(`/matching/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
@@ -373,4 +381,24 @@ export const marketplaceApi = {
   // Insight dashboards (own subjects only).
   creatorInsights: (id: string) => apiFetch<Insights>(`/matching/creators/${id}/insights`),
   productInsights: (id: string) => apiFetch<Insights>(`/matching/products/${id}/insights`),
+};
+
+export const workspaceApi = {
+  list: (state?: string) =>
+    apiFetch<Collaboration[]>(`/matching/workspaces${state ? `?state=${state}` : ""}`),
+  get: (id: string) => apiFetch<Collaboration>(`/matching/workspaces/${id}`),
+  end: (id: string) =>
+    apiFetch<Collaboration>(`/matching/workspaces/${id}/end`, { method: "POST" }),
+  shares: (id: string) => apiFetch<CollaborationShare[]>(`/matching/workspaces/${id}/shares`),
+  shareBrandBook: (id: string, brandId: string) =>
+    apiFetch<CollaborationShare>(`/matching/workspaces/${id}/shares/brand-book`, {
+      method: "POST",
+      body: JSON.stringify({ brand_id: brandId }),
+    }),
+  revokeShare: (workspaceId: string, shareId: string) =>
+    apiFetch<{ status: string }>(`/matching/workspaces/${workspaceId}/shares/${shareId}`, {
+      method: "DELETE",
+    }),
+  readSharedBrandBook: (workspaceId: string, shareId: string) =>
+    apiFetch<SharedBrandBook>(`/matching/workspaces/${workspaceId}/shares/${shareId}/brand-book`),
 };
