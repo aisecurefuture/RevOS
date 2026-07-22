@@ -17,7 +17,9 @@ from app.deps import (
     require_platform_admin,
     verify_csrf,
 )
+from app.models.base import utcnow
 from app.models.matching import CollaborationDirection, CollaborationRequest, Creator, MatchProduct
+from app.models.reputation import Review
 from app.models.user import AdminUser
 from app.schemas.common import Message
 from app.schemas.matching import (
@@ -36,9 +38,8 @@ from app.schemas.matching import (
     ProductDiscoveryOut,
     ProductMatchOut,
 )
-from app.models.base import utcnow
-from app.schemas.reputation import ReputationScoreOut
-from app.services import collaboration_service, creator_service, reputation_service
+from app.schemas.reputation import ReputationScoreOut, ReviewCreate, ReviewOut, ReviewRespond
+from app.services import collaboration_service, creator_service, reputation_service, review_service
 from app.services.crud import get_active, soft_delete
 
 router = APIRouter(prefix="/matching", tags=["matching"])
@@ -323,6 +324,17 @@ async def list_collaborations(
         db, _account_id(), box=box, status=status, limit=limit, offset=offset)
 
 
+@router.get("/collaborations/pending-reviews", response_model=list[CollaborationRequestOut])
+async def pending_review_prompts(
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> list[CollaborationRequest]:
+    """Accepted collaborations you were a party to but haven't reviewed yet —
+    the "leave a review" prompt surface. Registered ABOVE /{request_id} so the
+    literal "pending-reviews" segment isn't swallowed as a UUID path param."""
+    return await review_service.pending_review_prompts(db, _account_id())
+
+
 @router.get("/collaborations/{request_id}", response_model=CollaborationRequestOut)
 async def get_collaboration(
     request_id: uuid.UUID,
@@ -369,6 +381,91 @@ async def withdraw_collaboration(
     await write_audit(db, action="collaboration.withdrawn", user_id=user.id,
                       entity_type="collaboration_request", entity_id=str(req.id), request=request)
     return req
+
+
+# --- Reviews (RK3 — feedback workflow) --------------------------------------
+@router.post("/collaborations/{request_id}/reviews", response_model=ReviewOut, status_code=201)
+async def submit_review(
+    request_id: uuid.UUID,
+    body: ReviewCreate,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> Review:
+    if body.collaboration_request_id != request_id:
+        raise RevOSError("collaboration_request_id must match the URL.",
+                         code="mismatched_collaboration", status_code=400)
+    collab = await _load_request_as_party(db, request_id)
+    review = await review_service.submit_review(
+        db, collab, reviewer_account_id=_account_id(), reviewer_user_id=user.id,
+        rating=body.rating, dimension_ratings=body.dimension_ratings, comment=body.comment)
+    await write_audit(db, action="review.submit", user_id=user.id,
+                      entity_type="review", entity_id=str(review.id), request=request)
+    return review
+
+
+@router.get("/collaborations/{request_id}/reviews", response_model=list[ReviewOut])
+async def list_collaboration_reviews(
+    request_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> list[Review]:
+    await _load_request_as_party(db, request_id)   # 403s / 404s for non-parties
+    return await review_service.list_for_collaboration(db, request_id)
+
+
+@router.post("/reviews/{review_id}/respond", response_model=ReviewOut)
+async def respond_to_review(
+    review_id: uuid.UUID,
+    body: ReviewRespond,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> Review:
+    review = await db.get(Review, review_id)
+    if review is None or review.deleted_at is not None:
+        raise RevOSError("Review not found.", code="not_found", status_code=404)
+    review = await review_service.respond_to_review(
+        db, review, actor_account_id=_account_id(), response=body.response)
+    await write_audit(db, action="review.respond", user_id=user.id,
+                      entity_type="review", entity_id=str(review.id), request=request)
+    return review
+
+
+@router.get("/creators/{creator_id}/reviews", response_model=list[ReviewOut])
+async def creator_reviews(
+    creator_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> list[Review]:
+    creator = await db.get(Creator, creator_id)
+    if creator is None or creator.deleted_at is not None:
+        raise RevOSError("Creator not found.", code="not_found", status_code=404)
+    if not await _reputation_visible(creator):
+        raise RevOSError("This creator's reviews are not visible.", code="forbidden", status_code=403)
+    return await review_service.list_for_subject(
+        db, subject_type="creator", subject_id=creator_id, limit=limit, offset=offset)
+
+
+@router.get("/products/{product_id}/reviews", response_model=list[ReviewOut])
+async def product_reviews(
+    product_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> list[Review]:
+    product = await db.get(MatchProduct, product_id)
+    if product is None or product.deleted_at is not None:
+        raise RevOSError("Product not found.", code="not_found", status_code=404)
+    if not await _reputation_visible(product):
+        raise RevOSError("This product's reviews are not visible.", code="forbidden", status_code=403)
+    return await review_service.list_for_subject(
+        db, subject_type="match_product", subject_id=product_id, limit=limit, offset=offset)
 
 
 # --- Platform-admin brokering ----------------------------------------------
