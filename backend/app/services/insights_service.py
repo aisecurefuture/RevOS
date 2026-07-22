@@ -21,6 +21,14 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.models.collaboration import (
+    AssetState,
+    Collaboration,
+    CollaborationAsset,
+    CollaborationDeliverable,
+    CollaborationState,
+    DeliverableStatus,
+)
 from app.models.matching import (
     CollaborationRequest,
     CollaborationStatus,
@@ -127,6 +135,49 @@ async def _creator_cohort_benchmarks(db: AsyncSession, creator: Creator) -> list
     return benchmarks
 
 
+# --- Collaboration workspace rollup (CW4) -----------------------------------
+async def _collaboration_rollup(db: AsyncSession, *, subject_type: str, subject_id: uuid.UUID,
+                                now) -> dict:
+    """Per-collaboration outcomes for this subject — the workspace (Phase 5)
+    feeding the dashboards (Phase 4), so a track record built there shows up
+    here, not just raw follower/engagement numbers."""
+    subject_col = (Collaboration.creator_id if subject_type == "creator"
+                  else Collaboration.product_id)
+    collabs = (await db.execute(select(Collaboration.id, Collaboration.state).where(
+        subject_col == subject_id, Collaboration.deleted_at.is_(None)))).all()
+    collab_ids = [c.id for c in collabs]
+    total = len(collabs)
+    active = sum(1 for c in collabs if c.state == CollaborationState.active)
+
+    if not collab_ids:
+        return {
+            "collaborations_total": 0, "collaborations_active": 0,
+            "published_assets": 0, "deliverables_total": 0,
+            "deliverables_approved": 0, "deliverables_overdue": 0,
+        }
+
+    published_assets = int((await db.execute(select(func.count()).where(
+        CollaborationAsset.collaboration_id.in_(collab_ids),
+        CollaborationAsset.state == AssetState.published,
+        CollaborationAsset.deleted_at.is_(None)))).scalar_one())
+
+    deliverables = (await db.execute(select(
+        CollaborationDeliverable.status, CollaborationDeliverable.due_at).where(
+        CollaborationDeliverable.collaboration_id.in_(collab_ids),
+        CollaborationDeliverable.deleted_at.is_(None)))).all()
+    deliverables_total = len(deliverables)
+    deliverables_approved = sum(1 for d in deliverables if d.status == DeliverableStatus.approved)
+    deliverables_overdue = sum(
+        1 for d in deliverables
+        if d.status != DeliverableStatus.approved and d.due_at is not None and d.due_at < now)
+
+    return {
+        "collaborations_total": total, "collaborations_active": active,
+        "published_assets": published_assets, "deliverables_total": deliverables_total,
+        "deliverables_approved": deliverables_approved, "deliverables_overdue": deliverables_overdue,
+    }
+
+
 # --- Recommendations --------------------------------------------------------
 def _rec(priority: str, title: str, detail: str) -> dict:
     return {"priority": priority, "title": title, "detail": detail}
@@ -172,6 +223,17 @@ def _recommendations(*, is_creator: bool, discoverable: bool, reputation, metric
                              f"You're at {eng['you'] * 100:.1f}% vs a cohort average of "
                              f"{eng['cohort_avg'] * 100:.1f}%. More interactive content helps."))
 
+    overdue = metrics.get("deliverables_overdue", 0)
+    if overdue:
+        recs.append(_rec("high", "You have overdue deliverables",
+                         f"{overdue} deliverable{'s are' if overdue != 1 else ' is'} past its due date "
+                         "in an active collaboration — missed deadlines hurt reliability."))
+
+    if metrics.get("collaborations_total", 0) > 0 and metrics.get("published_assets", 0) == 0:
+        recs.append(_rec("medium", "Get a draft over the finish line",
+                         "You have collaborations underway but nothing published yet — draft and "
+                         "approve a post to start building a real track record."))
+
     return recs
 
 
@@ -185,6 +247,8 @@ async def creator_insights(db: AsyncSession, creator: Creator, *, now) -> dict:
         db, subject_type="creator", subject_id=creator.id, account_id=creator.account_id, now=now)
     metrics["engagement_rate"] = creator.engagement_rate
     metrics["follower_count"] = creator.follower_count
+    metrics.update(await _collaboration_rollup(
+        db, subject_type="creator", subject_id=creator.id, now=now))
     benchmarks = await _creator_cohort_benchmarks(db, creator)
     recs = _recommendations(is_creator=True, discoverable=creator.discoverable, reputation=rep,
                             metrics=metrics, benchmarks=benchmarks, verified_certs=inputs.verified_certs)
@@ -204,6 +268,8 @@ async def product_insights(db: AsyncSession, product: MatchProduct, *, now) -> d
         db, subject_type="match_product", subject_id=product.id, account_id=product.account_id, now=now)
     metrics = await _subject_metrics(
         db, subject_type="match_product", subject_id=product.id, account_id=product.account_id, now=now)
+    metrics.update(await _collaboration_rollup(
+        db, subject_type="product", subject_id=product.id, now=now))
     recs = _recommendations(is_creator=False, discoverable=product.discoverable, reputation=rep,
                             metrics=metrics, benchmarks=[], verified_certs=inputs.verified_certs)
     return {
