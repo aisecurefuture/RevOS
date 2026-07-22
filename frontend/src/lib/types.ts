@@ -346,6 +346,53 @@ export interface SharedBrandBook {
   is_published: boolean;
 }
 
+export type AssetKind = "text" | "image" | "video";
+export type AssetState = "draft" | "in_review" | "changes_requested" | "approved" | "published";
+export type ApprovalDecision = "approved" | "changes_requested";
+
+export interface CollaborationAsset {
+  id: string;
+  collaboration_id: string;
+  created_by_account_id: string;
+  kind: AssetKind;
+  title?: string | null;
+  current_version: number;
+  state: AssetState;
+  linked_social_post_id?: string | null;
+  created_at: string;
+}
+
+export interface AssetVersion {
+  id: string;
+  asset_id: string;
+  version: number;
+  created_by_account_id: string;
+  caption?: string | null;
+  media_urls: string[];
+  created_at: string;
+}
+
+export interface AssetComment {
+  id: string;
+  asset_id: string;
+  version?: number | null;
+  author_account_id: string;
+  author_user_id: string;
+  body: string;
+  created_at: string;
+}
+
+export interface AssetApproval {
+  id: string;
+  asset_id: string;
+  version: number;
+  account_id: string;
+  user_id: string;
+  decision: ApprovalDecision;
+  note?: string | null;
+  created_at: string;
+}
+
 export interface PipelineStage {
   id: string;
   name: string;

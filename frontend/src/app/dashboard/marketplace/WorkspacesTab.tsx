@@ -16,6 +16,8 @@ import type {
   SharedBrandBook,
 } from "@/lib/types";
 
+import { AssetsPanel } from "./AssetsPanel";
+
 const STATE_STYLE: Record<string, string> = {
   active: "bg-green-100 text-green-700",
   paused: "bg-amber-100 text-amber-700",
@@ -285,6 +287,13 @@ function WorkspaceDetail({
           </div>
         )}
       </Card>
+
+      <AssetsPanel
+        collab={collab}
+        role={role}
+        myBrands={myBrands}
+        setNotice={setNotice}
+      />
 
       <Card>
         <CardTitle>Shared with this collaboration</CardTitle>

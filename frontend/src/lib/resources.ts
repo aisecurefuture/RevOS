@@ -3,8 +3,12 @@
 import { apiFetch, apiUpload } from "./api";
 import type {
   Approval,
+  AssetApproval,
+  AssetComment,
+  AssetVersion,
   Brand,
   Campaign,
+  CollaborationAsset,
   CollaborationRequest,
   Contact,
   ContactImportResult,
@@ -401,4 +405,48 @@ export const workspaceApi = {
     }),
   readSharedBrandBook: (workspaceId: string, shareId: string) =>
     apiFetch<SharedBrandBook>(`/matching/workspaces/${workspaceId}/shares/${shareId}/brand-book`),
+
+  // CW2 — shared assets + two-sided review-before-post.
+  listAssets: (workspaceId: string) =>
+    apiFetch<CollaborationAsset[]>(`/matching/workspaces/${workspaceId}/assets`),
+  createAsset: (workspaceId: string, data: Record<string, unknown>) =>
+    apiFetch<CollaborationAsset>(`/matching/workspaces/${workspaceId}/assets`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getAsset: (workspaceId: string, assetId: string) =>
+    apiFetch<CollaborationAsset>(`/matching/workspaces/${workspaceId}/assets/${assetId}`),
+  addVersion: (workspaceId: string, assetId: string, data: Record<string, unknown>) =>
+    apiFetch<AssetVersion>(`/matching/workspaces/${workspaceId}/assets/${assetId}/versions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  listVersions: (workspaceId: string, assetId: string) =>
+    apiFetch<AssetVersion[]>(`/matching/workspaces/${workspaceId}/assets/${assetId}/versions`),
+  listAssetComments: (workspaceId: string, assetId: string) =>
+    apiFetch<AssetComment[]>(`/matching/workspaces/${workspaceId}/assets/${assetId}/comments`),
+  addAssetComment: (workspaceId: string, assetId: string, body: string, version?: number) =>
+    apiFetch<AssetComment>(`/matching/workspaces/${workspaceId}/assets/${assetId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body, version }),
+    }),
+  listAssetApprovals: (workspaceId: string, assetId: string, version?: number) =>
+    apiFetch<AssetApproval[]>(
+      `/matching/workspaces/${workspaceId}/assets/${assetId}/approvals${version ? `?version=${version}` : ""}`,
+    ),
+  approveAsset: (workspaceId: string, assetId: string, note?: string) =>
+    apiFetch<CollaborationAsset>(`/matching/workspaces/${workspaceId}/assets/${assetId}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+  requestAssetChanges: (workspaceId: string, assetId: string, note?: string) =>
+    apiFetch<CollaborationAsset>(`/matching/workspaces/${workspaceId}/assets/${assetId}/request-changes`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+  publishAsset: (workspaceId: string, assetId: string, brandId: string, platform: string) =>
+    apiFetch<SocialPost>(`/matching/workspaces/${workspaceId}/assets/${assetId}/publish`, {
+      method: "POST",
+      body: JSON.stringify({ brand_id: brandId, platform }),
+    }),
 };
