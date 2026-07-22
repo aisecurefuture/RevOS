@@ -15,6 +15,7 @@ from app.models.collaboration import (
     Collaboration,
     CollaborationAsset,
     CollaborationDeliverable,
+    CollaborationMessage,
     CollaborationShare,
 )
 from app.models.user import AdminUser
@@ -30,11 +31,14 @@ from app.schemas.collaboration import (
     BriefUpsert,
     CollaborationAssetOut,
     CollaborationBriefOut,
+    CollaborationMessageOut,
     CollaborationOut,
     CollaborationShareOut,
     DeliverableCreate,
     DeliverableOut,
     DeliverableUpdate,
+    MessageCreate,
+    MessageReport,
     ShareBrandBookCreate,
     SharedBrandBookOut,
 )
@@ -411,3 +415,58 @@ async def update_deliverable(
                       entity_type="collaboration_deliverable", entity_id=str(deliverable_id),
                       request=request)
     return d
+
+
+# --- Phase 6: full messaging threads ----------------------------------------
+@router.get("/{collaboration_id}/messages", response_model=list[CollaborationMessageOut])
+async def list_messages(
+    collaboration_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> list[CollaborationMessage]:
+    collab = await workspace_service.get_collaboration(db, collaboration_id, _account_id())
+    return await workspace_service.list_messages(db, collab, _account_id())
+
+
+@router.post("/{collaboration_id}/messages", response_model=CollaborationMessageOut, status_code=201)
+async def send_message(
+    collaboration_id: uuid.UUID,
+    body: MessageCreate,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> CollaborationMessage:
+    collab = await workspace_service.get_collaboration(db, collaboration_id, _account_id())
+    message = await workspace_service.send_message(
+        db, collab, sender_account_id=_account_id(), sender_user_id=user.id, body=body.body)
+    await write_audit(db, action="collaboration.message_send", user_id=user.id,
+                      entity_type="collaboration_message", entity_id=str(message.id), request=request)
+    return message
+
+
+async def _load_message(db: DbSession, collaboration_id: uuid.UUID, message_id: uuid.UUID
+                        ) -> CollaborationMessage:
+    message = await db.get(CollaborationMessage, message_id)
+    if message is None or message.deleted_at is not None or message.collaboration_id != collaboration_id:
+        raise RevOSError("Message not found.", code="not_found", status_code=404)
+    return message
+
+
+@router.post("/{collaboration_id}/messages/{message_id}/report", response_model=CollaborationMessageOut)
+async def report_message(
+    collaboration_id: uuid.UUID,
+    message_id: uuid.UUID,
+    body: MessageReport,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> CollaborationMessage:
+    collab = await workspace_service.get_collaboration(db, collaboration_id, _account_id())
+    message = await _load_message(db, collaboration_id, message_id)
+    message = await workspace_service.report_message(
+        db, message, collab, reporter_account_id=_account_id(), reason=body.reason)
+    await write_audit(db, action="collaboration.message_report", user_id=user.id,
+                      entity_type="collaboration_message", entity_id=str(message_id), request=request)
+    return message

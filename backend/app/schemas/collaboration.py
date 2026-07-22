@@ -228,3 +228,26 @@ class OfferImportCreate(BaseModel):
     category: str | None = Field(default=None, max_length=120)
     status: str | None = None
     discoverable: bool = False
+
+
+# --- Phase 6: full messaging threads ----------------------------------------
+class MessageCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class MessageReport(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class CollaborationMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    collaboration_id: uuid.UUID
+    sender_account_id: uuid.UUID
+    sender_user_id: uuid.UUID
+    body: str
+    is_flagged: bool
+    flagged_reason: str | None = None
+    flagged_at: datetime | None = None
+    created_at: datetime

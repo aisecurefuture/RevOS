@@ -427,6 +427,18 @@ export interface Deliverable {
   created_at: string;
 }
 
+export interface CollaborationMessage {
+  id: string;
+  collaboration_id: string;
+  sender_account_id: string;
+  sender_user_id: string;
+  body: string;
+  is_flagged: boolean;
+  flagged_reason?: string | null;
+  flagged_at?: string | null;
+  created_at: string;
+}
+
 export interface PipelineStage {
   id: string;
   name: string;

@@ -234,3 +234,23 @@ class CollaborationDeliverable(BaseModel, table=True):
         default=DeliverableStatus.pending, sa_type=sa.String, max_length=16, index=True)
     asset_id: uuid.UUID | None = Field(default=None, foreign_key="collaboration_assets.id", index=True)
     completed_at: datetime | None = Field(default=None)
+
+
+class CollaborationMessage(BaseModel, table=True):
+    """A free-form message in a collaboration's thread — unlocked only after
+    acceptance (the workspace exists), unlike CollaborationRequest's single
+    pre-accept message. "Block" is the existing end_collaboration action (either
+    party can end the collaboration unilaterally, which stops new messages);
+    "report" flags a message for platform-admin review without deleting it."""
+
+    __tablename__ = "collaboration_messages"
+
+    collaboration_id: uuid.UUID = Field(foreign_key="collaborations.id", index=True)
+    sender_account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
+    sender_user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
+    body: str = Field(max_length=4000)
+
+    is_flagged: bool = Field(default=False, index=True)
+    flagged_by_account_id: uuid.UUID | None = Field(default=None, foreign_key="accounts.id")
+    flagged_reason: str | None = Field(default=None, max_length=500)
+    flagged_at: datetime | None = Field(default=None)
