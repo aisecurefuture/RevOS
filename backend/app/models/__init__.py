@@ -85,9 +85,12 @@ from app.models.collaboration import (
     CollaborationAssetApproval,
     CollaborationAssetComment,
     CollaborationAssetVersion,
+    CollaborationBrief,
+    CollaborationDeliverable,
     CollaborationKind,
     CollaborationShare,
     CollaborationState,
+    DeliverableStatus,
     ShareStatus,
     SharedResourceType,
 )
@@ -169,6 +172,7 @@ __all__ = [
     "CollaborationAsset", "AssetKind", "AssetState",
     "CollaborationAssetVersion", "CollaborationAssetComment",
     "CollaborationAssetApproval", "ApprovalDecision",
+    "CollaborationBrief", "CollaborationDeliverable", "DeliverableStatus",
     # reputation
     "Certification", "CertificationStatus", "CertificationSubjectType",
     "Review", "ReviewDirection",

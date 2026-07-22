@@ -13,6 +13,7 @@ from app.models.collaboration import (
     AssetState,
     CollaborationKind,
     CollaborationState,
+    DeliverableStatus,
 )
 from app.models.social import SocialPlatform
 
@@ -149,6 +150,73 @@ class AssetApprovalOut(BaseModel):
     user_id: uuid.UUID
     decision: ApprovalDecision
     note: str | None = None
+    created_at: datetime
+
+
+# --- CW3: briefs, deliverables, disclosure & usage rights -------------------
+class BriefUpsert(BaseModel):
+    """Full replace — the brief is a shared doc, not a patch-field API."""
+
+    goals: str | None = Field(default=None, max_length=5000)
+    key_messages: list[str] = Field(default_factory=list)
+    dos: list[str] = Field(default_factory=list)
+    donts: list[str] = Field(default_factory=list)
+    deadline: datetime | None = None
+    requires_disclosure: bool = True
+    disclosure_text: str | None = Field(default=None, max_length=200)
+    usage_rights: str | None = Field(default=None, max_length=5000)
+    usage_duration_days: int | None = Field(default=None, ge=0)
+    whitelisting_allowed: bool = False
+    boost_allowed: bool = False
+
+
+class CollaborationBriefOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    collaboration_id: uuid.UUID
+    updated_by_account_id: uuid.UUID
+    goals: str | None = None
+    key_messages: list[str] = Field(default_factory=list)
+    dos: list[str] = Field(default_factory=list)
+    donts: list[str] = Field(default_factory=list)
+    deadline: datetime | None = None
+    requires_disclosure: bool
+    disclosure_text: str | None = None
+    usage_rights: str | None = None
+    usage_duration_days: int | None = None
+    whitelisting_allowed: bool
+    boost_allowed: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class DeliverableCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=250)
+    description: str | None = Field(default=None, max_length=5000)
+    due_at: datetime | None = None
+
+
+class DeliverableUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=250)
+    description: str | None = Field(default=None, max_length=5000)
+    due_at: datetime | None = None
+    status: DeliverableStatus | None = None
+    asset_id: uuid.UUID | None = None
+
+
+class DeliverableOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    collaboration_id: uuid.UUID
+    created_by_account_id: uuid.UUID
+    title: str
+    description: str | None = None
+    due_at: datetime | None = None
+    status: DeliverableStatus
+    asset_id: uuid.UUID | None = None
+    completed_at: datetime | None = None
     created_at: datetime
 
 
