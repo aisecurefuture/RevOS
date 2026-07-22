@@ -47,6 +47,17 @@ async def create_personal_account(db: AsyncSession, user: AdminUser) -> Account:
     return account
 
 
+async def get_personal_account(db: AsyncSession, user_id: uuid.UUID) -> Account | None:
+    """Every user gets exactly one personal account at signup — this is the
+    "act as yourself" account, e.g. for a creator who's claimed their own
+    marketplace profile."""
+    stmt = select(Account).where(
+        Account.owner_user_id == user_id, Account.type == AccountType.personal,
+        Account.deleted_at.is_(None),
+    )
+    return (await db.execute(stmt)).scalars().first()
+
+
 async def create_team_account(db: AsyncSession, user: AdminUser, name: str) -> Account:
     """Create a team workspace owned by the user (owner membership)."""
     account = Account(
