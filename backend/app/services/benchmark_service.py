@@ -31,11 +31,16 @@ _EXTRACT_SYSTEM = (
     "copied from a published industry report (e.g. Rival IQ/Quid, Socialinsider). "
     "Return ONLY a JSON array (no prose, no markdown fences) of objects shaped "
     "exactly like: "
-    '{"industry_category": "<slug>", "platform": "<platform>", "metric": '
-    '"engagement_rate", "value": <decimal fraction>}. '
-    f"industry_category MUST be one of exactly: {', '.join(CATEGORIES)} — map the "
-    "report's industry name to the closest one of these, or omit the row entirely "
-    "if nothing fits. "
+    '{"industry_category": "<slug>", "industry_label": "<verbatim industry name '
+    'from the report>", "platform": "<platform>", "metric": "engagement_rate", '
+    '"value": <decimal fraction>}. '
+    "industry_label MUST be the industry name exactly as the report states it "
+    "(e.g. \"Veterinary Services\", \"Nonprofit\") — never omit or paraphrase it, "
+    "even when it doesn't map cleanly onto a category below. "
+    f"industry_category MUST be one of exactly: {', '.join(CATEGORIES)} — map "
+    "industry_label to the closest one of these for cohort-comparison purposes; "
+    "use \"other\" only when nothing fits, and still include the real "
+    "industry_label in that case rather than dropping the row. "
     f"platform MUST be one of exactly: {', '.join(sorted(_VALID_PLATFORMS))} — use "
     "\"all\" if the figure isn't platform-specific. "
     "value is a decimal fraction, e.g. a reported \"2.1%\" becomes 0.021 — never "
@@ -133,6 +138,8 @@ def extract_from_text(text: str) -> dict:
             dropped += 1
             continue
         category = item.get("industry_category")
+        label = item.get("industry_label")
+        label = label.strip()[:120] if isinstance(label, str) and label.strip() else None
         platform = item.get("platform", "all")
         metric = item.get("metric", "engagement_rate")
         value = item.get("value")
@@ -141,7 +148,7 @@ def extract_from_text(text: str) -> dict:
             dropped += 1
             continue
         rows.append({
-            "industry_category": category, "platform": platform,
+            "industry_category": category, "industry_label": label, "platform": platform,
             "metric": metric, "value": float(value),
         })
 

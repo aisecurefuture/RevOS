@@ -26,13 +26,33 @@ async def test_extract_parses_valid_rows(monkeypatch):
     from app.services import ai_service
 
     monkeypatch.setattr(ai_service, "analyze", lambda **kw: json.dumps([
-        {"industry_category": "real_estate", "platform": "instagram", "metric": "engagement_rate", "value": 0.021},
-        {"industry_category": "creators", "platform": "all", "metric": "engagement_rate", "value": 0.037},
+        {"industry_category": "real_estate", "industry_label": "Real Estate", "platform": "instagram",
+         "metric": "engagement_rate", "value": 0.021},
+        {"industry_category": "creators", "industry_label": "Creators", "platform": "all",
+         "metric": "engagement_rate", "value": 0.037},
     ]))
     result = benchmark_service.extract_from_text("Real Estate: 2.1% IG. Creators: 3.7% overall.")
     assert len(result["rows"]) == 2
     assert result["rows"][0]["value"] == 0.021
+    assert result["rows"][0]["industry_label"] == "Real Estate"
     assert result["unparsed_note"] is None
+
+
+@pytest.mark.asyncio
+async def test_extract_preserves_industry_label_even_when_rolled_up_to_other(monkeypatch):
+    """The core bug this test guards against: an industry that doesn't fit any
+    of the 11 rollup categories used to have its real name discarded entirely
+    once the category was forced to "other". It must survive in industry_label."""
+    from app.services import ai_service
+
+    monkeypatch.setattr(ai_service, "analyze", lambda **kw: json.dumps([
+        {"industry_category": "other", "industry_label": "Veterinary Services",
+         "platform": "all", "metric": "engagement_rate", "value": 0.018},
+    ]))
+    result = benchmark_service.extract_from_text("Veterinary Services: 1.8% overall.")
+    assert len(result["rows"]) == 1
+    assert result["rows"][0]["industry_category"] == "other"
+    assert result["rows"][0]["industry_label"] == "Veterinary Services"
 
 
 @pytest.mark.asyncio

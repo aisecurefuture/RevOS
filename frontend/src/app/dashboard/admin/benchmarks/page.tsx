@@ -80,6 +80,17 @@ export default function BenchmarksAdminPage() {
         </div>
       ) : null}
 
+      {!loading && rows.some((r) => r.industry_category === "other") ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {rows.filter((r) => r.industry_category === "other").length} benchmark(s) didn&apos;t fit any
+          category and rolled up to &quot;Other&quot; — check the &quot;Industry (as reported)&quot; column
+          below; if the same industry keeps showing up, add it to the taxonomy
+          (<code className="rounded bg-amber-100 px-1">industry_taxonomy.py</code> /{" "}
+          <code className="rounded bg-amber-100 px-1">industries.ts</code>) so future imports roll it up
+          correctly.
+        </div>
+      ) : null}
+
       <Card>
         <CardTitle>Current figures</CardTitle>
         {loading ? (
@@ -91,7 +102,8 @@ export default function BenchmarksAdminPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 text-left text-xs uppercase text-slate-400">
                 <tr>
-                  <th className="px-2 py-2">Industry</th>
+                  <th className="px-2 py-2">Category</th>
+                  <th className="px-2 py-2">Industry (as reported)</th>
                   <th className="px-2 py-2">Platform</th>
                   <th className="px-2 py-2">Metric</th>
                   <th className="px-2 py-2">Value</th>
@@ -103,7 +115,15 @@ export default function BenchmarksAdminPage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-2 py-2 capitalize">{r.industry_category.replace(/_/g, " ")}</td>
+                    <td className="px-2 py-2 capitalize">
+                      {r.industry_category.replace(/_/g, " ")}
+                      {r.industry_category === "other" ? (
+                        <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                          Review
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-2 py-2 text-slate-500">{r.industry_label ?? "—"}</td>
                     <td className="px-2 py-2 capitalize">{r.platform}</td>
                     <td className="px-2 py-2">{r.metric}</td>
                     <td className="px-2 py-2 font-medium">{fmtPct(r.value)}</td>
@@ -142,6 +162,7 @@ function ManualAddForm({
   onCreated, setError,
 }: { onCreated: () => void; setError: (e: string | null) => void }) {
   const [category, setCategory] = useState<IndustryCategory>(CATEGORIES[0]);
+  const [industryLabel, setIndustryLabel] = useState("");
   const [platform, setPlatform] = useState("all");
   const [valuePct, setValuePct] = useState("");
   const [source, setSource] = useState("");
@@ -157,10 +178,12 @@ function ManualAddForm({
     setError(null);
     try {
       await benchmarksApi.create({
-        industry_category: category, platform, metric: "engagement_rate", value,
+        industry_category: category, industry_label: industryLabel.trim() || undefined,
+        platform, metric: "engagement_rate", value,
         source: source.trim(), source_url: sourceUrl.trim() || undefined, period_label: period.trim(),
       });
       setValuePct("");
+      setIndustryLabel("");
       onCreated();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to save");
@@ -178,6 +201,10 @@ function ManualAddForm({
             <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
           ))}
         </select>
+        <input
+          value={industryLabel} onChange={(e) => setIndustryLabel(e.target.value)}
+          placeholder="Industry as reported (optional)" className={inp}
+        />
         <select value={platform} onChange={(e) => setPlatform(e.target.value)} className={`${inp} capitalize`}>
           {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
@@ -294,7 +321,12 @@ function PasteAndParse({
               </p>
               <div className="space-y-2">
                 {draft.map((row, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
+                  <div
+                    key={i}
+                    className={`flex flex-wrap items-center gap-2 rounded-lg border p-2 ${
+                      row.industry_category === "other" ? "border-amber-300 bg-amber-50" : "border-slate-200"
+                    }`}
+                  >
                     <select
                       value={row.industry_category}
                       onChange={(e) => updateRow(i, { industry_category: e.target.value })}
@@ -302,6 +334,17 @@ function PasteAndParse({
                     >
                       {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
                     </select>
+                    <input
+                      value={row.industry_label ?? ""}
+                      onChange={(e) => updateRow(i, { industry_label: e.target.value || null })}
+                      placeholder="Industry as reported"
+                      className={`${inp} w-44 py-1`}
+                    />
+                    {row.industry_category === "other" ? (
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-amber-700">
+                        Didn&apos;t match a category
+                      </span>
+                    ) : null}
                     <select
                       value={row.platform}
                       onChange={(e) => updateRow(i, { platform: e.target.value })}
