@@ -393,6 +393,40 @@ export interface AssetApproval {
   created_at: string;
 }
 
+export interface CollaborationBrief {
+  id: string;
+  collaboration_id: string;
+  updated_by_account_id: string;
+  goals?: string | null;
+  key_messages: string[];
+  dos: string[];
+  donts: string[];
+  deadline?: string | null;
+  requires_disclosure: boolean;
+  disclosure_text?: string | null;
+  usage_rights?: string | null;
+  usage_duration_days?: number | null;
+  whitelisting_allowed: boolean;
+  boost_allowed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DeliverableStatus = "pending" | "in_progress" | "delivered" | "approved";
+
+export interface Deliverable {
+  id: string;
+  collaboration_id: string;
+  created_by_account_id: string;
+  title: string;
+  description?: string | null;
+  due_at?: string | null;
+  status: DeliverableStatus;
+  asset_id?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+}
+
 export interface PipelineStage {
   id: string;
   name: string;

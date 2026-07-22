@@ -9,6 +9,7 @@ import type {
   Brand,
   Campaign,
   CollaborationAsset,
+  CollaborationBrief,
   CollaborationRequest,
   Contact,
   ContactImportResult,
@@ -17,6 +18,7 @@ import type {
   ContentItem,
   CreatorDiscovery,
   Deal,
+  Deliverable,
   Insights,
   AnalyticsOverview,
   EmailMessage,
@@ -448,5 +450,26 @@ export const workspaceApi = {
     apiFetch<SocialPost>(`/matching/workspaces/${workspaceId}/assets/${assetId}/publish`, {
       method: "POST",
       body: JSON.stringify({ brand_id: brandId, platform }),
+    }),
+
+  // CW3 — brief + deliverables.
+  getBrief: (workspaceId: string) =>
+    apiFetch<CollaborationBrief | null>(`/matching/workspaces/${workspaceId}/brief`),
+  upsertBrief: (workspaceId: string, data: Record<string, unknown>) =>
+    apiFetch<CollaborationBrief>(`/matching/workspaces/${workspaceId}/brief`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  listDeliverables: (workspaceId: string) =>
+    apiFetch<Deliverable[]>(`/matching/workspaces/${workspaceId}/deliverables`),
+  createDeliverable: (workspaceId: string, data: Record<string, unknown>) =>
+    apiFetch<Deliverable>(`/matching/workspaces/${workspaceId}/deliverables`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateDeliverable: (workspaceId: string, deliverableId: string, data: Record<string, unknown>) =>
+    apiFetch<Deliverable>(`/matching/workspaces/${workspaceId}/deliverables/${deliverableId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
     }),
 };
