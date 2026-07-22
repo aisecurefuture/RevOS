@@ -253,3 +253,24 @@ async def _await_publish(
         publish_id, last_status, attempts,
     )
     return publish_id
+
+
+# ---------------------------------------------------------------------------
+# Audience stats (Phase 6 — live insights ingestion).
+# ---------------------------------------------------------------------------
+from app.services.social.base import AudienceStats  # noqa: E402
+
+
+async def get_audience_stats(access_token: str) -> AudienceStats:
+    """follower_count from user/info/. TikTok's Login Kit doesn't expose a
+    recent-videos endpoint without the additional video.list scope on an
+    audited app, so engagement_rate stays None until that's granted."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            f"{_API}/user/info/",
+            params={"fields": "open_id,follower_count"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        _raise_api_error(resp, "audience_stats")
+        user = resp.json().get("data", {}).get("user", {})
+        return AudienceStats(follower_count=user.get("follower_count"), engagement_rate=None)

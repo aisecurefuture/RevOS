@@ -134,6 +134,27 @@ def ingest_social_comments() -> dict:
     return asyncio.run(_run_ingest_social_comments())
 
 
+async def _run_ingest_live_insights() -> dict:
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            from app.services import live_insights_service
+
+            result = await live_insights_service.ingest_all(session)
+            await session.commit()
+            return result
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="revos.ingest_live_insights")
+def ingest_live_insights() -> dict:
+    """Pull follower/engagement stats from creators' connected accounts into
+    the matching engine. No-op unless LIVE_INSIGHTS_INGESTION_ENABLED."""
+    return asyncio.run(_run_ingest_live_insights())
+
+
 async def _run_scheduled_posts() -> dict:
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     factory = async_sessionmaker(engine, expire_on_commit=False)

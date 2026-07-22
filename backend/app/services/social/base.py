@@ -24,6 +24,19 @@ class PublishOutcome:
 
 
 @dataclass
+class AudienceStats:
+    """Follower/engagement snapshot pulled from a connected account (Phase 6 —
+    live insights ingestion). ``engagement_rate`` is 0..1, averaged over
+    ``sample_size`` recent posts; either field may be ``None`` when the
+    platform's API doesn't expose it under the app's current access tier —
+    callers must treat that as "unknown", never fabricate a number."""
+
+    follower_count: int | None
+    engagement_rate: float | None
+    sample_size: int | None = None
+
+
+@dataclass
 class IncomingComment:
     """A comment fetched from any platform, normalized for the comment-reply
     pipeline (see social_comment_service)."""

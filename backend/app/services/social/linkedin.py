@@ -249,3 +249,21 @@ async def publish_share(
         # to the body id if a future API version moves it there.
         external_id = resp.headers.get("x-restli-id") or resp.json().get("id", "")
         return PublishResult(external_id=external_id)
+
+
+# ---------------------------------------------------------------------------
+# Audience stats (Phase 6 — live insights ingestion).
+# ---------------------------------------------------------------------------
+from app.services.social.base import AudienceStats  # noqa: E402
+
+
+async def get_audience_stats(access_token: str) -> AudienceStats:
+    """Deliberately a no-op. Follower/analytics data for a personal profile
+    (or an organization page) requires LinkedIn's Marketing Developer
+    Platform / Community Management API — a separate, harder partnership tier
+    beyond the Sign In with LinkedIn (openid/profile) scope this app requests
+    for OAuth + posting. There is no endpoint reachable with the current
+    access to call here. Returns empty stats so the ingestion loop skips
+    LinkedIn cleanly rather than erroring; revisit if/when that partnership
+    is in place."""
+    return AudienceStats(follower_count=None, engagement_rate=None)

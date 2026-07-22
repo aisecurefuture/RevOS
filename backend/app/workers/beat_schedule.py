@@ -40,4 +40,12 @@ BEAT_SCHEDULE: dict = {
         "task": "revos.ingest_social_comments",
         "schedule": 900.0,  # every 15 minutes
     },
+    # Pull follower/engagement stats from creators' connected accounts into
+    # the matching engine. No-op unless LIVE_INSIGHTS_INGESTION_ENABLED. Daily
+    # — these numbers don't move minute to minute, and this respects platform
+    # rate limits across a whole creator roster.
+    "ingest-live-insights": {
+        "task": "revos.ingest_live_insights",
+        "schedule": 86400.0,
+    },
 }
