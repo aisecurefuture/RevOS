@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from app.config import settings
 from app.core.audit import write_audit
 from app.core.exceptions import RevOSError
 from app.core.tenancy import get_active_account
@@ -41,6 +42,8 @@ from app.schemas.matching import (
     MatchProductUpdate,
     ProductDiscoveryOut,
     ProductMatchOut,
+    PublicPageSettingsOut,
+    PublicPageSettingsUpdate,
 )
 from app.schemas.reputation import (
     InsightsOut,
@@ -53,6 +56,7 @@ from app.services import (
     collaboration_service,
     creator_service,
     insights_service,
+    public_profile_service,
     reputation_service,
     review_service,
 )
@@ -179,6 +183,43 @@ async def create_claim_invite(
     await write_audit(db, action="creator.claim_invite", user_id=user.id,
                       entity_type="creator", entity_id=str(creator_id), request=request)
     return invite
+
+
+def _public_settings_out(creator: Creator) -> dict:
+    return {
+        "enabled": creator.public_page_enabled,
+        "slug": creator.public_slug,
+        "fields": creator.public_fields or [],
+        "share_url": f"{settings.public_base_url}/c/{creator.public_slug}" if creator.public_slug else None,
+        "view_count": creator.public_view_count,
+    }
+
+
+@router.get("/creators/{creator_id}/public-page", response_model=PublicPageSettingsOut)
+async def get_public_page_settings(
+    creator_id: uuid.UUID,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> dict:
+    creator = await _load_own_creator(db, creator_id, user)
+    return _public_settings_out(creator)
+
+
+@router.patch("/creators/{creator_id}/public-page", response_model=PublicPageSettingsOut)
+async def update_public_page_settings(
+    creator_id: uuid.UUID,
+    body: PublicPageSettingsUpdate,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> dict:
+    creator = await _load_own_creator(db, creator_id, user)
+    creator = await public_profile_service.update_public_page(
+        db, creator, enabled=body.enabled, slug=body.slug, fields=body.fields)
+    await write_audit(db, action="creator.public_page_update", user_id=user.id,
+                      entity_type="creator", entity_id=str(creator_id), request=request)
+    return _public_settings_out(creator)
 
 
 @router.delete("/creators/{creator_id}", response_model=Message)

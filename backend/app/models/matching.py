@@ -100,6 +100,19 @@ class Creator(TenantModel, table=True):
     claimed_by_user_id: uuid.UUID | None = Field(default=None, foreign_key="admin_users.id", index=True)
     claimed_at: datetime | None = Field(default=None)
 
+    # Public marketing page (Phase 6): a SEPARATE opt-in from `discoverable`.
+    # `discoverable` = visible to logged-in brands inside the marketplace.
+    # `public_page_enabled` = a no-login page on the open internet, meant to be
+    # shared on business cards/social bios via a QR code. Off by default; the
+    # creator also picks exactly which fields appear (public_fields), enforced
+    # server-side against an allow-list — never assume "discoverable" implies
+    # "public".
+    public_page_enabled: bool = Field(default=False, index=True)
+    public_slug: str | None = Field(default=None, unique=True, index=True, max_length=140)
+    public_fields: list = Field(default_factory=list, sa_type=JSON)
+    public_view_count: int = Field(default=0)
+    public_last_viewed_at: datetime | None = Field(default=None)
+
 
 class CreatorManager(TenantModel, table=True):
     """Many-to-many: users who co-manage a creator (agency/team case)."""

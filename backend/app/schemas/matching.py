@@ -246,3 +246,54 @@ class CollaborationRequestOut(BaseModel):
     responded_at: datetime | None = None
     expires_at: datetime | None = None
     created_at: datetime
+
+
+# --- Public creator page + QR sharing ---------------------------------------
+# Server-enforced allow-list — a creator can only surface fields on this list,
+# never anything else, regardless of what the client sends.
+PUBLIC_CREATOR_FIELDS: frozenset[str] = frozenset({
+    "reputation", "industry", "bio", "location", "certifications",
+    "follower_count", "engagement_rate", "topics", "size_tier",
+})
+
+
+class PublicPageSettingsUpdate(BaseModel):
+    enabled: bool
+    slug: str | None = Field(default=None, max_length=140)
+    fields: list[str] = Field(default_factory=list)
+
+
+class PublicPageSettingsOut(BaseModel):
+    enabled: bool
+    slug: str | None = None
+    fields: list[str]
+    share_url: str | None = None
+    view_count: int
+
+
+class PublicReputationOut(BaseModel):
+    overall: float
+    tier: str
+    percentile: int | None = None
+
+
+class PublicCertificationOut(BaseModel):
+    name: str
+    issuer: str | None = None
+    verified: bool
+
+
+class PublicCreatorPageOut(BaseModel):
+    display_name: str
+    handle: str | None = None
+    slug: str
+    bio: str | None = None
+    industry: str | None = None
+    location: str | None = None
+    size_tier: str | None = None
+    follower_count: int | None = None
+    engagement_rate: float | None = None
+    topics: list[str] = Field(default_factory=list)
+    reputation: PublicReputationOut | None = None
+    certifications: list[PublicCertificationOut] = Field(default_factory=list)
+    view_count: int
