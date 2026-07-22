@@ -92,3 +92,88 @@ class CollaborationShare(BaseModel, table=True):
         sa.UniqueConstraint("collaboration_id", "resource_type", "resource_id",
                             "shared_by_account_id", name="uq_collab_share_resource"),
     )
+
+
+# --- CW2: shared assets + two-sided review-before-post ----------------------
+class AssetKind(StrEnum):
+    text = "text"
+    image = "image"
+    video = "video"
+
+
+class AssetState(StrEnum):
+    draft = "draft"                    # a version exists, no decision recorded yet on it
+    in_review = "in_review"            # at least one party has weighed in
+    changes_requested = "changes_requested"
+    approved = "approved"              # both parties approved the CURRENT version
+    published = "published"            # handed off to the real publishing pipeline
+
+
+class ApprovalDecision(StrEnum):
+    approved = "approved"
+    changes_requested = "changes_requested"
+
+
+class CollaborationAsset(BaseModel, table=True):
+    """A piece of content being drafted inside a collaboration — text, image,
+    or video — that both sides review before it's posted. Versioned: each edit
+    is a new ``CollaborationAssetVersion``; approvals are recorded per-version,
+    so a new draft always needs fresh sign-off from both parties."""
+
+    __tablename__ = "collaboration_assets"
+
+    collaboration_id: uuid.UUID = Field(foreign_key="collaborations.id", index=True)
+    created_by_account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
+
+    kind: AssetKind = Field(sa_type=sa.String, max_length=10, index=True)
+    title: str | None = Field(default=None, max_length=250)
+    current_version: int = Field(default=1)
+    state: AssetState = Field(default=AssetState.draft, sa_type=sa.String, max_length=20, index=True)
+
+    # Set once this asset is handed off to a real SocialPost (the existing
+    # content/social publishing + approval pipeline takes over from there).
+    linked_social_post_id: uuid.UUID | None = Field(default=None, index=True)
+
+
+class CollaborationAssetVersion(BaseModel, table=True):
+    __tablename__ = "collaboration_asset_versions"
+
+    asset_id: uuid.UUID = Field(foreign_key="collaboration_assets.id", index=True)
+    version: int = Field(index=True)
+    created_by_account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
+
+    caption: str | None = Field(default=None, sa_type=sa.Text)
+    media_urls: list = Field(default_factory=list, sa_type=sa.JSON)
+
+    __table_args__ = (
+        sa.UniqueConstraint("asset_id", "version", name="uq_asset_version"),
+    )
+
+
+class CollaborationAssetComment(BaseModel, table=True):
+    __tablename__ = "collaboration_asset_comments"
+
+    asset_id: uuid.UUID = Field(foreign_key="collaboration_assets.id", index=True)
+    version: int | None = Field(default=None)   # None = general comment, not version-specific
+    author_account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
+    author_user_id: uuid.UUID = Field(foreign_key="admin_users.id", index=True)
+    body: str = Field(max_length=2000)
+
+
+class CollaborationAssetApproval(BaseModel, table=True):
+    """One party's decision on a specific version. Re-deciding on the same
+    version overwrites (upsert, enforced by the unique constraint); a new
+    version simply has no rows yet, so prior decisions never carry forward."""
+
+    __tablename__ = "collaboration_asset_approvals"
+
+    asset_id: uuid.UUID = Field(foreign_key="collaboration_assets.id", index=True)
+    version: int = Field(index=True)
+    account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="admin_users.id")
+    decision: ApprovalDecision = Field(sa_type=sa.String, max_length=20)
+    note: str | None = Field(default=None, max_length=1000)
+
+    __table_args__ = (
+        sa.UniqueConstraint("asset_id", "version", "account_id", name="uq_asset_approval_party"),
+    )
