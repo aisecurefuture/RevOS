@@ -25,8 +25,11 @@ from app.models.collaboration import (
     CollaborationAssetApproval,
     CollaborationAssetComment,
     CollaborationAssetVersion,
+    CollaborationBrief,
+    CollaborationDeliverable,
     CollaborationShare,
     CollaborationState,
+    DeliverableStatus,
     ShareStatus,
     SharedResourceType,
 )
@@ -386,3 +389,89 @@ async def publish_asset(db: AsyncSession, asset: CollaborationAsset, collab: Col
     await db.flush()
     await db.refresh(asset)
     return asset, post
+
+
+# --- CW3: briefs, deliverables, disclosure & usage rights --------------------
+async def get_brief(db: AsyncSession, collab: Collaboration,
+                    account_id: uuid.UUID) -> CollaborationBrief | None:
+    _require_party(collab, account_id)
+    return (await db.execute(select(CollaborationBrief).where(
+        CollaborationBrief.collaboration_id == collab.id,
+        CollaborationBrief.deleted_at.is_(None)))).scalar_one_or_none()
+
+
+async def upsert_brief(db: AsyncSession, collab: Collaboration, *,
+                       account_id: uuid.UUID, data: dict) -> CollaborationBrief:
+    """The brief is a shared doc, not a per-party record — either party may
+    edit the whole thing; the last editor is tracked for context, not as a
+    permission gate."""
+    _require_party(collab, account_id)
+    if collab.state == CollaborationState.ended:
+        raise RevOSError("This collaboration has ended.", code="collaboration_ended", status_code=409)
+
+    brief = (await db.execute(select(CollaborationBrief).where(
+        CollaborationBrief.collaboration_id == collab.id))).scalar_one_or_none()
+    if brief is None:
+        brief = CollaborationBrief(collaboration_id=collab.id, updated_by_account_id=account_id, **data)
+        db.add(brief)
+    else:
+        for key, value in data.items():
+            setattr(brief, key, value)
+        brief.updated_by_account_id = account_id
+        db.add(brief)
+    await db.flush()
+    await db.refresh(brief)
+    return brief
+
+
+async def create_deliverable(db: AsyncSession, collab: Collaboration, *,
+                             created_by_account_id: uuid.UUID, title: str,
+                             description: str | None, due_at) -> CollaborationDeliverable:
+    _require_party(collab, created_by_account_id)
+    if collab.state == CollaborationState.ended:
+        raise RevOSError("This collaboration has ended.", code="collaboration_ended", status_code=409)
+    d = CollaborationDeliverable(
+        collaboration_id=collab.id, created_by_account_id=created_by_account_id,
+        title=title, description=description, due_at=due_at)
+    db.add(d)
+    await db.flush()
+    await db.refresh(d)
+    return d
+
+
+async def list_deliverables(db: AsyncSession, collab: Collaboration,
+                            account_id: uuid.UUID) -> list[CollaborationDeliverable]:
+    _require_party(collab, account_id)
+    stmt = select(CollaborationDeliverable).where(
+        CollaborationDeliverable.collaboration_id == collab.id,
+        CollaborationDeliverable.deleted_at.is_(None),
+    ).order_by(CollaborationDeliverable.due_at.asc().nulls_last())
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def get_deliverable(db: AsyncSession, deliverable_id: uuid.UUID, account_id: uuid.UUID
+                          ) -> tuple[CollaborationDeliverable, Collaboration]:
+    d = await db.get(CollaborationDeliverable, deliverable_id)
+    if d is None or d.deleted_at is not None:
+        raise RevOSError("Deliverable not found.", code="not_found", status_code=404)
+    collab = await db.get(Collaboration, d.collaboration_id)
+    _require_party(collab, account_id)
+    return d, collab
+
+
+async def update_deliverable(db: AsyncSession, d: CollaborationDeliverable, collab: Collaboration, *,
+                             account_id: uuid.UUID, data: dict) -> CollaborationDeliverable:
+    _require_party(collab, account_id)
+    if "asset_id" in data and data["asset_id"] is not None:
+        asset = await db.get(CollaborationAsset, data["asset_id"])
+        if asset is None or asset.collaboration_id != collab.id:
+            raise RevOSError("That draft doesn't belong to this collaboration.",
+                             code="invalid_asset", status_code=400)
+    for key, value in data.items():
+        setattr(d, key, value)
+    if data.get("status") == DeliverableStatus.approved and d.completed_at is None:
+        d.completed_at = utcnow()
+    db.add(d)
+    await db.flush()
+    await db.refresh(d)
+    return d

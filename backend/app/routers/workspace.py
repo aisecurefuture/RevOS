@@ -11,7 +11,12 @@ from app.core.audit import write_audit
 from app.core.exceptions import RevOSError
 from app.core.tenancy import get_active_account
 from app.deps import DbSession, require_authenticated, require_editor, verify_csrf
-from app.models.collaboration import Collaboration, CollaborationAsset, CollaborationShare
+from app.models.collaboration import (
+    Collaboration,
+    CollaborationAsset,
+    CollaborationDeliverable,
+    CollaborationShare,
+)
 from app.models.user import AdminUser
 from app.schemas.collaboration import (
     AssetApprovalOut,
@@ -22,9 +27,14 @@ from app.schemas.collaboration import (
     AssetPublishCreate,
     AssetVersionCreate,
     AssetVersionOut,
+    BriefUpsert,
     CollaborationAssetOut,
+    CollaborationBriefOut,
     CollaborationOut,
     CollaborationShareOut,
+    DeliverableCreate,
+    DeliverableOut,
+    DeliverableUpdate,
     ShareBrandBookCreate,
     SharedBrandBookOut,
 )
@@ -318,3 +328,86 @@ async def publish_asset(
     await write_audit(db, action="collaboration.asset_publish", user_id=user.id,
                       entity_type="collaboration_asset", entity_id=str(asset_id), request=request)
     return post
+
+
+# --- CW3: briefs, deliverables, disclosure & usage rights --------------------
+@router.get("/{collaboration_id}/brief", response_model=CollaborationBriefOut | None)
+async def get_brief(
+    collaboration_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+):
+    collab = await workspace_service.get_collaboration(db, collaboration_id, _account_id())
+    return await workspace_service.get_brief(db, collab, _account_id())
+
+
+@router.put("/{collaboration_id}/brief", response_model=CollaborationBriefOut)
+async def upsert_brief(
+    collaboration_id: uuid.UUID,
+    body: BriefUpsert,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+):
+    collab = await workspace_service.get_collaboration(db, collaboration_id, _account_id())
+    brief = await workspace_service.upsert_brief(
+        db, collab, account_id=_account_id(), data=body.model_dump())
+    await write_audit(db, action="collaboration.brief_update", user_id=user.id,
+                      entity_type="collaboration", entity_id=str(collaboration_id), request=request)
+    return brief
+
+
+@router.get("/{collaboration_id}/deliverables", response_model=list[DeliverableOut])
+async def list_deliverables(
+    collaboration_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> list[CollaborationDeliverable]:
+    collab = await workspace_service.get_collaboration(db, collaboration_id, _account_id())
+    return await workspace_service.list_deliverables(db, collab, _account_id())
+
+
+@router.post("/{collaboration_id}/deliverables", response_model=DeliverableOut, status_code=201)
+async def create_deliverable(
+    collaboration_id: uuid.UUID,
+    body: DeliverableCreate,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> CollaborationDeliverable:
+    collab = await workspace_service.get_collaboration(db, collaboration_id, _account_id())
+    d = await workspace_service.create_deliverable(
+        db, collab, created_by_account_id=_account_id(), title=body.title,
+        description=body.description, due_at=body.due_at)
+    await write_audit(db, action="collaboration.deliverable_create", user_id=user.id,
+                      entity_type="collaboration_deliverable", entity_id=str(d.id), request=request)
+    return d
+
+
+async def _load_deliverable(db: DbSession, collaboration_id: uuid.UUID, deliverable_id: uuid.UUID,
+                            account_id: uuid.UUID) -> tuple[CollaborationDeliverable, Collaboration]:
+    d, collab = await workspace_service.get_deliverable(db, deliverable_id, account_id)
+    if d.collaboration_id != collaboration_id:
+        raise RevOSError("Deliverable not found.", code="not_found", status_code=404)
+    return d, collab
+
+
+@router.patch("/{collaboration_id}/deliverables/{deliverable_id}", response_model=DeliverableOut)
+async def update_deliverable(
+    collaboration_id: uuid.UUID,
+    deliverable_id: uuid.UUID,
+    body: DeliverableUpdate,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> CollaborationDeliverable:
+    d, collab = await _load_deliverable(db, collaboration_id, deliverable_id, _account_id())
+    d = await workspace_service.update_deliverable(
+        db, d, collab, account_id=_account_id(), data=body.model_dump(exclude_unset=True))
+    await write_audit(db, action="collaboration.deliverable_update", user_id=user.id,
+                      entity_type="collaboration_deliverable", entity_id=str(deliverable_id),
+                      request=request)
+    return d

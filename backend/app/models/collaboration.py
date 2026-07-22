@@ -177,3 +177,60 @@ class CollaborationAssetApproval(BaseModel, table=True):
     __table_args__ = (
         sa.UniqueConstraint("asset_id", "version", "account_id", name="uq_asset_approval_party"),
     )
+
+
+# --- CW3: briefs, deliverables, disclosure & usage rights --------------------
+class DeliverableStatus(StrEnum):
+    pending = "pending"
+    in_progress = "in_progress"
+    delivered = "delivered"
+    approved = "approved"
+
+
+class CollaborationBrief(BaseModel, table=True):
+    """1:1 with a Collaboration — a shared, co-authored brief. Either party may
+    edit; the last editor is tracked, not a per-field lock (simple, matches how
+    a real shared doc gets negotiated). Carries the compliance substrate the
+    roadmap calls for: FTC disclosure requirements and content usage/licensing
+    terms, agreed up front rather than argued about after a post goes live."""
+
+    __tablename__ = "collaboration_briefs"
+
+    collaboration_id: uuid.UUID = Field(foreign_key="collaborations.id", index=True, unique=True)
+    updated_by_account_id: uuid.UUID = Field(foreign_key="accounts.id")
+
+    goals: str | None = Field(default=None, sa_type=sa.Text)
+    key_messages: list = Field(default_factory=list, sa_type=sa.JSON)
+    dos: list = Field(default_factory=list, sa_type=sa.JSON)
+    donts: list = Field(default_factory=list, sa_type=sa.JSON)
+    deadline: datetime | None = Field(default=None)
+
+    # Disclosure (FTC #ad etc.) — on by default; a party has to consciously
+    # turn it off, not consciously turn it on.
+    requires_disclosure: bool = Field(default=True)
+    disclosure_text: str | None = Field(default=None, max_length=200)   # e.g. "#ad #sponsored"
+
+    # Usage / licensing rights.
+    usage_rights: str | None = Field(default=None, sa_type=sa.Text)
+    usage_duration_days: int | None = Field(default=None)   # None = unspecified/perpetual
+    whitelisting_allowed: bool = Field(default=False)
+    boost_allowed: bool = Field(default=False)
+
+
+class CollaborationDeliverable(BaseModel, table=True):
+    """One concrete deliverable in a collaboration's plan, e.g. "3 posts + 1
+    reel by Fri" — tracked to completion, optionally linked to the
+    CollaborationAsset that fulfills it once drafted."""
+
+    __tablename__ = "collaboration_deliverables"
+
+    collaboration_id: uuid.UUID = Field(foreign_key="collaborations.id", index=True)
+    created_by_account_id: uuid.UUID = Field(foreign_key="accounts.id", index=True)
+
+    title: str = Field(max_length=250)
+    description: str | None = Field(default=None, sa_type=sa.Text)
+    due_at: datetime | None = Field(default=None, index=True)
+    status: DeliverableStatus = Field(
+        default=DeliverableStatus.pending, sa_type=sa.String, max_length=16, index=True)
+    asset_id: uuid.UUID | None = Field(default=None, foreign_key="collaboration_assets.id", index=True)
+    completed_at: datetime | None = Field(default=None)
