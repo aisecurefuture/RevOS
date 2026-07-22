@@ -6,9 +6,9 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          DEFAULT: "#4f46e5", // indigo-600
-          dark: "#4338ca",
-          light: "#6366f1",
+          DEFAULT: "#7c3aed", // violet-600
+          dark: "#6d28d9", // violet-700
+          light: "#8b5cf6", // violet-500
         },
       },
     },
