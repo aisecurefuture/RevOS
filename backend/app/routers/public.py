@@ -20,12 +20,14 @@ from app.core.tenancy import set_active_account
 from app.deps import DbSession
 from app.models.campaign import Form, FormSubmission
 from app.schemas.analytics import TrackEventRequest
+from app.schemas.matching import PublicCreatorPageOut
 from app.services import (
     consent_service,
     event_service,
     form_service,
     integrations_service,
     landing_service,
+    public_profile_service,
     public_render,
     utm_service,
 )
@@ -175,6 +177,18 @@ async def collab_respond(token: str, db: DbSession) -> HTMLResponse:
         "The collaboration has been accepted — the other side has been notified."
         if accepted else "You’ve declined this collaboration request."),
         headers=_LANDING_HEADERS)
+
+
+@router.get("/creators/{slug}", response_model=PublicCreatorPageOut)
+async def public_creator_page(slug: str, db: DbSession,
+                              _rl: None = Depends(_read_limit)) -> dict:
+    """A creator's public marketing page — no login. Fields shown are exactly
+    what the creator opted into (public_profile_service.PUBLIC_CREATOR_FIELDS
+    allow-list), never more."""
+    page = await public_profile_service.get_public_page(db, slug)
+    if page is None:
+        raise NotFoundError("This creator page doesn't exist or isn't public.")
+    return page
 
 
 @router.get("/forms/{slug}", response_class=HTMLResponse)
