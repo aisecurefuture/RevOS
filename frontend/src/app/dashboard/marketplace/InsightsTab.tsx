@@ -92,6 +92,18 @@ function MetricTiles({ m }: { m: Record<string, number | null> }) {
       {m.follower_count != null ? (
         <StatTile label="Followers" value={m.follower_count.toLocaleString()} />
       ) : null}
+      {m.collaborations_total != null ? (
+        <StatTile label="Collaborations" value={`${m.collaborations_total} (${m.collaborations_active ?? 0} active)`} />
+      ) : null}
+      {m.published_assets != null ? (
+        <StatTile label="Published from workspace" value={String(m.published_assets)} />
+      ) : null}
+      {m.deliverables_total ? (
+        <StatTile
+          label="Deliverables"
+          value={`${m.deliverables_approved ?? 0}/${m.deliverables_total} approved`}
+        />
+      ) : null}
     </div>
   );
 }
