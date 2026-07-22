@@ -444,3 +444,55 @@ async def like_page_comment(comment_id: str, page_token: str) -> None:
             data={"access_token": page_token},
         )
     _raise_graph_error(resp, "page comment like")
+
+
+# ---------------------------------------------------------------------------
+# Audience stats (Phase 6 — live insights ingestion). Requires
+# pages_read_engagement (Page) / instagram_basic (IG), which the app already
+# requests for comment reading — no extra scope beyond what's granted there.
+# ---------------------------------------------------------------------------
+from app.services.social.base import AudienceStats  # noqa: E402
+
+
+async def _post_engagement_rate(client: httpx.AsyncClient, posts_field_url: str,
+                                token: str, followers: int | None) -> tuple[float | None, int | None]:
+    if not followers:
+        return None, None
+    resp = await client.get(posts_field_url, params={
+        "fields": "like_count,comments_count", "limit": 10, "access_token": token,
+    })
+    if not resp.is_success:
+        return None, None
+    data = resp.json().get("data", [])
+    if not data:
+        return None, 0
+    total = sum((p.get("like_count") or p.get("likes", {}).get("summary", {}).get("total_count", 0) or 0)
+               + (p.get("comments_count") or p.get("comments", {}).get("summary", {}).get("total_count", 0) or 0)
+               for p in data)
+    return (total / len(data)) / followers, len(data)
+
+
+async def get_page_audience_stats(page_id: str, access_token: str) -> AudienceStats:
+    """Facebook Page: fan_count for followers; engagement averaged over the
+    last ~10 posts' likes+comments."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        prof = await client.get(f"{_GRAPH}/{page_id}", params={
+            "fields": "fan_count", "access_token": access_token})
+        _raise_graph_error(prof, "page_audience_stats")
+        followers = prof.json().get("fan_count")
+        rate, sample = await _post_engagement_rate(
+            client, f"{_GRAPH}/{page_id}/posts", access_token, followers)
+        return AudienceStats(follower_count=followers, engagement_rate=rate, sample_size=sample)
+
+
+async def get_instagram_audience_stats(ig_user_id: str, access_token: str) -> AudienceStats:
+    """IG Business account: followers_count; engagement averaged over the
+    last ~10 media's like_count+comments_count."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        prof = await client.get(f"{_GRAPH}/{ig_user_id}", params={
+            "fields": "followers_count", "access_token": access_token})
+        _raise_graph_error(prof, "ig_audience_stats")
+        followers = prof.json().get("followers_count")
+        rate, sample = await _post_engagement_rate(
+            client, f"{_GRAPH}/{ig_user_id}/media", access_token, followers)
+        return AudienceStats(follower_count=followers, engagement_rate=rate, sample_size=sample)

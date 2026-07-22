@@ -268,3 +268,47 @@ async def reply_to_comment(parent_comment_id: str, access_token: str, text: str)
         )
     _raise_api_error(resp, "reply_comment")
     return resp.json()["id"]
+
+
+# ---------------------------------------------------------------------------
+# Audience stats (Phase 6 — live insights ingestion).
+# ---------------------------------------------------------------------------
+from app.services.social.base import AudienceStats  # noqa: E402
+
+
+async def get_audience_stats(access_token: str) -> AudienceStats:
+    """subscriberCount from channels.list; engagement averaged over the last
+    ~10 uploaded videos' (likeCount+commentCount)/subscriberCount. Three calls
+    (channel → uploads playlist → recent videos), all standard Data API v3."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        chan = await client.get(f"{_API}/channels", params={
+            "part": "statistics,contentDetails", "mine": "true"}, headers=headers)
+        _raise_api_error(chan, "audience_stats_channel")
+        items = chan.json().get("items", [])
+        if not items:
+            return AudienceStats(follower_count=None, engagement_rate=None)
+        stats = items[0].get("statistics", {})
+        followers = int(stats["subscriberCount"]) if not stats.get("hiddenSubscriberCount") \
+            and stats.get("subscriberCount") is not None else None
+        uploads_id = items[0].get("contentDetails", {}).get("relatedPlaylists", {}).get("uploads")
+        if not followers or not uploads_id:
+            return AudienceStats(follower_count=followers, engagement_rate=None)
+
+        pl = await client.get(f"{_API}/playlistItems", params={
+            "part": "contentDetails", "playlistId": uploads_id, "maxResults": 10}, headers=headers)
+        if not pl.is_success:
+            return AudienceStats(follower_count=followers, engagement_rate=None)
+        video_ids = [i["contentDetails"]["videoId"] for i in pl.json().get("items", [])]
+        if not video_ids:
+            return AudienceStats(follower_count=followers, engagement_rate=None, sample_size=0)
+
+        vids = await client.get(f"{_API}/videos", params={
+            "part": "statistics", "id": ",".join(video_ids)}, headers=headers)
+        if not vids.is_success:
+            return AudienceStats(follower_count=followers, engagement_rate=None)
+        video_stats = vids.json().get("items", [])
+        total = sum(int(v["statistics"].get("likeCount", 0)) + int(v["statistics"].get("commentCount", 0))
+                   for v in video_stats)
+        rate = (total / len(video_stats)) / followers if video_stats else None
+        return AudienceStats(follower_count=followers, engagement_rate=rate, sample_size=len(video_stats))

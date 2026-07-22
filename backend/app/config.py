@@ -282,6 +282,17 @@ class Settings(BaseSettings):
     # AI usage bounded.
     social_comment_max_drafts_per_poll: int = 15
 
+    # --- Live insights ingestion (Phase 6 — matching engine) -----------------
+    # Periodically pull follower/engagement stats from a creator's connected
+    # accounts into Creator.follower_count/engagement_rate, so the marketplace,
+    # reputation, and insight dashboards reflect real numbers instead of
+    # manual entry. Off by default — most platforms' audience-stats endpoints
+    # (Meta Page/IG insights, YouTube channel stats, etc.) require App Review
+    # beyond what's needed for publishing/comments. Flip this on once the
+    # relevant scopes are granted; the ingestion loop skips any platform whose
+    # adapter can't (yet) fetch stats, so partial rollout is safe.
+    live_insights_ingestion_enabled: bool = False
+
     # Hard ceiling on any request body (bytes). Above the media upload cap so
     # that route's own limit applies first; this is the global DoS backstop.
     max_request_bytes: int = 256 * 1024 * 1024

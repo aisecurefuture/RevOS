@@ -242,3 +242,28 @@ async def reply_to_comment(user_id: str, access_token: str, reply_to_id: str, te
             "media_type": "TEXT", "text": text, "reply_to_id": reply_to_id, "access_token": access_token,
         })
     return result.external_id
+
+
+# ---------------------------------------------------------------------------
+# Audience stats (Phase 6 — live insights ingestion).
+# ---------------------------------------------------------------------------
+from app.services.social.base import AudienceStats  # noqa: E402
+
+
+async def get_audience_stats(user_id: str, access_token: str) -> AudienceStats:
+    """follower_count via the Threads Insights API. No reliable per-post
+    engagement metric is generally available on this API yet, so
+    engagement_rate stays None."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(f"{_GRAPH}/{user_id}/threads_insights", params={
+            "metric": "followers_count", "access_token": access_token,
+        })
+        if not resp.is_success:
+            return AudienceStats(follower_count=None, engagement_rate=None)
+        for m in resp.json().get("data", []):
+            if m.get("name") == "followers_count":
+                values = m.get("total_value", {}).get("value") or m.get("values")
+                followers = values if isinstance(values, int) else (
+                    values[-1]["value"] if isinstance(values, list) and values else None)
+                return AudienceStats(follower_count=followers, engagement_rate=None)
+        return AudienceStats(follower_count=None, engagement_rate=None)

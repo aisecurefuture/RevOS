@@ -267,3 +267,41 @@ async def publish_tweet(
         )
         _raise_api_error(resp, "publish_tweet")
         return PublishResult(external_id=resp.json()["data"]["id"])
+
+
+# ---------------------------------------------------------------------------
+# Audience stats (Phase 6 — live insights ingestion).
+# ---------------------------------------------------------------------------
+from app.services.social.base import AudienceStats  # noqa: E402
+
+
+async def get_audience_stats(access_token: str) -> AudienceStats:
+    """followers_count from users/me's public_metrics; engagement averaged
+    over the last ~10 tweets' like+retweet+reply counts."""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        me = await client.get(f"{_API}/users/me", params={"user.fields": "public_metrics"},
+                              headers={"Authorization": f"Bearer {access_token}"})
+        _raise_api_error(me, "audience_stats_me")
+        data = me.json().get("data", {})
+        user_id = data.get("id")
+        metrics = data.get("public_metrics", {})
+        followers = metrics.get("followers_count")
+        if not user_id or not followers:
+            return AudienceStats(follower_count=followers, engagement_rate=None)
+
+        tweets = await client.get(f"{_API}/users/{user_id}/tweets", params={
+            "tweet.fields": "public_metrics", "max_results": 10, "exclude": "retweets,replies"},
+            headers={"Authorization": f"Bearer {access_token}"})
+        if not tweets.is_success:
+            return AudienceStats(follower_count=followers, engagement_rate=None)
+        items = tweets.json().get("data", [])
+        if not items:
+            return AudienceStats(follower_count=followers, engagement_rate=None, sample_size=0)
+        total = sum(
+            t.get("public_metrics", {}).get("like_count", 0)
+            + t.get("public_metrics", {}).get("retweet_count", 0)
+            + t.get("public_metrics", {}).get("reply_count", 0)
+            for t in items
+        )
+        return AudienceStats(follower_count=followers, engagement_rate=(total / len(items)) / followers,
+                             sample_size=len(items))
