@@ -21,6 +21,7 @@ STALE_AFTER_DAYS = 180
 
 class IndustryBenchmarkCreate(BaseModel):
     industry_category: str
+    industry_label: str | None = Field(default=None, max_length=120)
     platform: str = "all"
     metric: str = Field(default="engagement_rate", max_length=40)
     value: float
@@ -48,6 +49,7 @@ class IndustryBenchmarkOut(BaseModel):
 
     id: uuid.UUID
     industry_category: str
+    industry_label: str | None = None
     platform: str
     metric: str
     value: float
@@ -76,6 +78,10 @@ class BenchmarkExtractRequest(BaseModel):
 
 class BenchmarkExtractRow(BaseModel):
     industry_category: str
+    # Verbatim industry name as stated in the source report — always kept,
+    # even when industry_category rolls up to "other", so the real industry
+    # is never silently discarded.
+    industry_label: str | None = None
     platform: str
     metric: str
     value: float

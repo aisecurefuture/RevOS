@@ -860,6 +860,7 @@ export const billingApi = {
 export interface IndustryBenchmarkRow {
   id: string;
   industry_category: string;
+  industry_label: string | null;
   platform: string;
   metric: string;
   value: number;
@@ -873,6 +874,7 @@ export interface IndustryBenchmarkRow {
 
 export interface BenchmarkExtractRow {
   industry_category: string;
+  industry_label: string | null;
   platform: string;
   metric: string;
   value: number;

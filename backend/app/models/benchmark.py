@@ -29,6 +29,12 @@ class IndustryBenchmark(BaseModel, table=True):
     # how published reports segment ("Real Estate", "Beauty", ...), unlike
     # RevOS's ~55 fine-grained industry slugs.
     industry_category: str = Field(index=True, max_length=40)
+    # The verbatim industry name as stated in the source report (e.g.
+    # "Veterinary Services"), independent of industry_category. Rollup into
+    # one of the 11 CATEGORIES is lossy by design (reports use finer-grained
+    # segments than our cohort buckets do) — this column is what keeps the
+    # real industry from disappearing when a row rolls up to "other".
+    industry_label: str | None = Field(default=None, max_length=120)
     # A SocialPlatform value, or the sentinel "all" for a cross-platform
     # figure. NOT nullable: Postgres treats every NULL as distinct in a unique
     # index, which would silently defeat uq_benchmark_figure for "all" rows.
