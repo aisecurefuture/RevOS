@@ -14,7 +14,14 @@ from app.core.exceptions import RevOSError
 from app.deps import DbSession, require_platform_admin, verify_csrf
 from app.models.benchmark import IndustryBenchmark
 from app.models.user import AdminUser
-from app.schemas.benchmark import IndustryBenchmarkCreate, IndustryBenchmarkOut
+from app.schemas.benchmark import (
+    BenchmarkBulkCreate,
+    BenchmarkBulkResult,
+    BenchmarkExtractRequest,
+    BenchmarkExtractResult,
+    IndustryBenchmarkCreate,
+    IndustryBenchmarkOut,
+)
 from app.schemas.common import Message
 from app.services import benchmark_service
 
@@ -59,3 +66,30 @@ async def delete_benchmark(
     await write_audit(db, action="benchmark.delete", user_id=admin.id,
                       entity_type="industry_benchmark", entity_id=str(benchmark_id), request=request)
     return Message(status="deleted")
+
+
+@router.post("/extract", response_model=BenchmarkExtractResult)
+async def extract_benchmarks(
+    body: BenchmarkExtractRequest,
+    _admin: Annotated[AdminUser, Depends(require_platform_admin)],
+) -> dict:
+    """Paste-and-parse assist (BM3): raw report text in, DRAFT rows out —
+    nothing saves here. The admin reviews/edits, then POSTs to /bulk."""
+    return benchmark_service.extract_from_text(body.text)
+
+
+@router.post("/bulk", response_model=BenchmarkBulkResult, status_code=201)
+async def bulk_create_benchmarks(
+    body: BenchmarkBulkCreate,
+    request: Request,
+    db: DbSession,
+    admin: Annotated[AdminUser, Depends(require_platform_admin)],
+    _: None = Depends(verify_csrf),
+) -> dict:
+    result = await benchmark_service.bulk_create(
+        db, rows=[r.model_dump() for r in body.rows], source=body.source,
+        source_url=body.source_url, period_label=body.period_label,
+        updated_by_user_id=admin.id)
+    await write_audit(db, action="benchmark.bulk_create", user_id=admin.id,
+                      entity_type="industry_benchmark", entity_id=body.source, request=request)
+    return result
