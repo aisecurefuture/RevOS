@@ -11,6 +11,7 @@ import type {
   ContentItem,
   CreatorDiscovery,
   Deal,
+  Insights,
   AnalyticsOverview,
   EmailMessage,
   Form,
@@ -368,4 +369,8 @@ export const marketplaceApi = {
     }),
   withdraw: (id: string) =>
     apiFetch<CollaborationRequest>(`/matching/collaborations/${id}/withdraw`, { method: "POST" }),
+
+  // Insight dashboards (own subjects only).
+  creatorInsights: (id: string) => apiFetch<Insights>(`/matching/creators/${id}/insights`),
+  productInsights: (id: string) => apiFetch<Insights>(`/matching/products/${id}/insights`),
 };

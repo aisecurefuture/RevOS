@@ -251,6 +251,52 @@ export interface CollaborationRequest {
   created_at: string;
 }
 
+export interface ReputationDimension {
+  key: string;
+  score: number;
+  weight: number;
+  available: boolean;
+  detail: string;
+}
+
+export interface ReputationScore {
+  overall: number;
+  coverage: number;
+  review_count: number;
+  rationale: string;
+  dimensions: ReputationDimension[];
+}
+
+export interface InsightBenchmark {
+  metric: string;
+  you: number;
+  cohort_avg: number;
+  cohort_size: number;
+  percentile: number | null;
+  verdict: "above" | "below" | "on_par";
+}
+
+export interface InsightRecommendation {
+  priority: "high" | "medium" | "low";
+  title: string;
+  detail: string;
+}
+
+export interface Insights {
+  subject: {
+    id: string;
+    type: "creator" | "product";
+    name: string;
+    industry?: string | null;
+    industry_category?: string | null;
+    size_tier?: string | null;
+  };
+  reputation: ReputationScore;
+  metrics: Record<string, number | null>;
+  benchmarks: InsightBenchmark[];
+  recommendations: InsightRecommendation[];
+}
+
 export interface PipelineStage {
   id: string;
   name: string;

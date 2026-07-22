@@ -38,8 +38,20 @@ from app.schemas.matching import (
     ProductDiscoveryOut,
     ProductMatchOut,
 )
-from app.schemas.reputation import ReputationScoreOut, ReviewCreate, ReviewOut, ReviewRespond
-from app.services import collaboration_service, creator_service, reputation_service, review_service
+from app.schemas.reputation import (
+    InsightsOut,
+    ReputationScoreOut,
+    ReviewCreate,
+    ReviewOut,
+    ReviewRespond,
+)
+from app.services import (
+    collaboration_service,
+    creator_service,
+    insights_service,
+    reputation_service,
+    review_service,
+)
 from app.services.crud import get_active, soft_delete
 
 router = APIRouter(prefix="/matching", tags=["matching"])
@@ -160,6 +172,27 @@ async def product_reputation(
         db, subject_type="match_product", subject_id=product.id,
         account_id=product.account_id, now=utcnow())
     return score.as_dict()
+
+
+@router.get("/creators/{creator_id}/insights", response_model=InsightsOut)
+async def get_creator_insights(
+    creator_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> dict:
+    # Own dashboard only — get_active is tenant-scoped, so another tenant's id 404s.
+    creator = await get_active(db, Creator, creator_id)
+    return await insights_service.creator_insights(db, creator, now=utcnow())
+
+
+@router.get("/products/{product_id}/insights", response_model=InsightsOut)
+async def get_product_insights(
+    product_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> dict:
+    product = await get_active(db, MatchProduct, product_id)
+    return await insights_service.product_insights(db, product, now=utcnow())
 
 
 @router.get("/creators/{creator_id}/matches", response_model=list[ProductMatchOut])
