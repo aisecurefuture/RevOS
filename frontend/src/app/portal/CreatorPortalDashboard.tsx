@@ -6,6 +6,8 @@ import { ApiError } from "@/lib/api";
 import { marketplaceApi } from "@/lib/resources";
 import type { CollaborationRequest, Insights, MatchCreator } from "@/lib/types";
 
+import { PublicPagePanel } from "./PublicPagePanel";
+
 function scoreGlow(v: number): string {
   if (v >= 75) return "from-emerald-400 to-teal-400";
   if (v >= 55) return "from-sky-400 to-violet-400";
@@ -243,6 +245,8 @@ export function CreatorPortalDashboard({ creator }: { creator: MatchCreator }) {
           </div>
         )}
       </div>
+
+      <PublicPagePanel creator={creator} />
     </div>
   );
 }

@@ -33,6 +33,8 @@ import type {
   Offer,
   PipelineStage,
   ProductDiscovery,
+  PublicCreatorPage,
+  PublicPageSettings,
   PublishResult,
   SharedBrandBook,
   Sequence,
@@ -360,6 +362,15 @@ export const marketplaceApi = {
       body: JSON.stringify({ token }),
     }),
 
+  // Public creator page + QR sharing.
+  getPublicPageSettings: (id: string) =>
+    apiFetch<PublicPageSettings>(`/matching/creators/${id}/public-page`),
+  updatePublicPageSettings: (id: string, data: Record<string, unknown>) =>
+    apiFetch<PublicPageSettings>(`/matching/creators/${id}/public-page`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
   myProducts: (params: Record<string, string | undefined> = {}) =>
     apiFetch<MatchProduct[]>(`/matching/products${qs(params)}`),
   createProduct: (data: Record<string, unknown>) =>
@@ -496,4 +507,8 @@ export const workspaceApi = {
       method: "POST",
       body: JSON.stringify({ reason }),
     }),
+};
+
+export const publicCreatorApi = {
+  get: (slug: string) => apiFetch<PublicCreatorPage>(`/public/creators/${slug}`),
 };

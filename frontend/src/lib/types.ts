@@ -441,6 +441,54 @@ export interface CollaborationMessage {
   created_at: string;
 }
 
+export const PUBLIC_CREATOR_FIELDS = [
+  { key: "reputation", label: "Reputation score & tier" },
+  { key: "industry", label: "Industry" },
+  { key: "bio", label: "Bio" },
+  { key: "location", label: "Location" },
+  { key: "certifications", label: "Certifications" },
+  { key: "follower_count", label: "Follower count" },
+  { key: "engagement_rate", label: "Engagement rate" },
+  { key: "topics", label: "Topics" },
+  { key: "size_tier", label: "Size tier" },
+] as const;
+
+export interface PublicPageSettings {
+  enabled: boolean;
+  slug: string | null;
+  fields: string[];
+  share_url: string | null;
+  view_count: number;
+}
+
+export interface PublicReputation {
+  overall: number;
+  tier: string;
+  percentile: number | null;
+}
+
+export interface PublicCertification {
+  name: string;
+  issuer: string | null;
+  verified: boolean;
+}
+
+export interface PublicCreatorPage {
+  display_name: string;
+  handle: string | null;
+  slug: string;
+  bio?: string | null;
+  industry?: string | null;
+  location?: string | null;
+  size_tier?: string | null;
+  follower_count?: number | null;
+  engagement_rate?: number | null;
+  topics: string[];
+  reputation?: PublicReputation | null;
+  certifications: PublicCertification[];
+  view_count: number;
+}
+
 export interface PipelineStage {
   id: string;
   name: string;
