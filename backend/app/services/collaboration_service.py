@@ -34,6 +34,7 @@ from app.models.matching import (
     Creator,
     MatchProduct,
 )
+from app.services.account_service import get_personal_account
 
 _RESPOND_SALT = "collab-respond"
 EXPIRY_DAYS = 14
@@ -74,6 +75,15 @@ async def create_request(
         raise RevOSError("Creator not found.", code="not_found", status_code=404)
     product = await db.get(MatchProduct, product_id) if product_id else None
 
+    # Once a creator claims their profile, NEW requests route to their own
+    # account — the agency keeps its history (past collaborations, reviews,
+    # certs) untouched but no longer fields fresh requests for this creator.
+    creator_party_account_id = creator.account_id
+    if creator.claimed_by_user_id is not None:
+        personal = await get_personal_account(db, creator.claimed_by_user_id)
+        if personal is not None:
+            creator_party_account_id = personal.id
+
     if direction == CollaborationDirection.brand_to_creator:
         if product is None:
             raise RevOSError("A product is required to reach out to a creator.",
@@ -81,13 +91,19 @@ async def create_request(
         if not broker and product.account_id != initiator_account_id:
             raise RevOSError("You can only reach out with your own product.",
                              code="forbidden", status_code=403)
-        cross_tenant = creator.account_id != initiator_account_id
+        cross_tenant = creator_party_account_id != initiator_account_id
         if cross_tenant and not broker and not creator.discoverable:
             raise RevOSError("This creator is not open to marketplace requests.",
                              code="not_discoverable", status_code=403)
-        recipient_account_id = creator.account_id
+        recipient_account_id = creator_party_account_id
     else:  # creator_to_brand
-        if not broker and creator.account_id != initiator_account_id:
+        # Either the agency that manages this creator, or the creator
+        # themselves once they've claimed the profile, may reach out on
+        # their behalf.
+        is_agency = creator.account_id == initiator_account_id
+        is_claimed_self = (creator.claimed_by_user_id is not None
+                           and creator.claimed_by_user_id == initiator_user_id)
+        if not broker and not is_agency and not is_claimed_self:
             raise RevOSError("You can only reach out on behalf of your own creator.",
                              code="forbidden", status_code=403)
         if product is None:

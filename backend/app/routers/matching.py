@@ -123,13 +123,29 @@ async def claim_creator(
     return creator
 
 
+async def _load_own_creator(db: DbSession, creator_id: uuid.UUID, user: AdminUser) -> Creator:
+    """A creator record is 'yours' either by tenant ownership OR because you're
+    the person who claimed it (Phase 6 portal groundwork) — either grants
+    access to your own profile/insights, distinct from the public,
+    discoverable-gated view used by ``_reputation_visible``."""
+    creator = await db.get(Creator, creator_id)
+    if creator is None or creator.deleted_at is not None:
+        raise RevOSError("Creator not found.", code="not_found", status_code=404)
+    account_id = get_active_account()
+    owns = account_id is not None and creator.account_id == account_id
+    claimed_by_me = creator.claimed_by_user_id == user.id
+    if not (owns or claimed_by_me):
+        raise RevOSError("Creator not found.", code="not_found", status_code=404)
+    return creator
+
+
 @router.get("/creators/{creator_id}", response_model=CreatorOut)
 async def get_creator(
     creator_id: uuid.UUID,
     db: DbSession,
-    _user: Annotated[AdminUser, Depends(require_authenticated)],
+    user: Annotated[AdminUser, Depends(require_authenticated)],
 ) -> Creator:
-    return await get_active(db, Creator, creator_id)
+    return await _load_own_creator(db, creator_id, user)
 
 
 @router.patch("/creators/{creator_id}", response_model=CreatorOut)
@@ -180,21 +196,24 @@ async def delete_creator(
     return Message(status="deleted")
 
 
-async def _reputation_visible(subject) -> bool:
-    """A subject's reputation is visible if it's discoverable, or it's yours."""
-    return bool(getattr(subject, "discoverable", False)) or subject.account_id == get_active_account()
+async def _reputation_visible(subject, user_id: uuid.UUID | None = None) -> bool:
+    """A subject's reputation is visible if it's discoverable, it's yours by
+    tenant ownership, or you're the person who claimed it."""
+    return (bool(getattr(subject, "discoverable", False))
+            or subject.account_id == get_active_account()
+            or (user_id is not None and getattr(subject, "claimed_by_user_id", None) == user_id))
 
 
 @router.get("/creators/{creator_id}/reputation", response_model=ReputationScoreOut)
 async def creator_reputation(
     creator_id: uuid.UUID,
     db: DbSession,
-    _user: Annotated[AdminUser, Depends(require_authenticated)],
+    user: Annotated[AdminUser, Depends(require_authenticated)],
 ) -> dict:
     creator = await db.get(Creator, creator_id)
     if creator is None or creator.deleted_at is not None:
         raise RevOSError("Creator not found.", code="not_found", status_code=404)
-    if not await _reputation_visible(creator):
+    if not await _reputation_visible(creator, user.id):
         raise RevOSError("This creator's reputation is not visible.", code="forbidden", status_code=403)
     score = await reputation_service.reputation_for(
         db, subject_type="creator", subject_id=creator.id,
@@ -223,10 +242,10 @@ async def product_reputation(
 async def get_creator_insights(
     creator_id: uuid.UUID,
     db: DbSession,
-    _user: Annotated[AdminUser, Depends(require_authenticated)],
+    user: Annotated[AdminUser, Depends(require_authenticated)],
 ) -> dict:
-    # Own dashboard only — get_active is tenant-scoped, so another tenant's id 404s.
-    creator = await get_active(db, Creator, creator_id)
+    # Own dashboard only — by tenant ownership OR having claimed the profile.
+    creator = await _load_own_creator(db, creator_id, user)
     return await insights_service.creator_insights(db, creator, now=utcnow())
 
 
@@ -535,14 +554,14 @@ async def respond_to_review(
 async def creator_reviews(
     creator_id: uuid.UUID,
     db: DbSession,
-    _user: Annotated[AdminUser, Depends(require_authenticated)],
+    user: Annotated[AdminUser, Depends(require_authenticated)],
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> list[Review]:
     creator = await db.get(Creator, creator_id)
     if creator is None or creator.deleted_at is not None:
         raise RevOSError("Creator not found.", code="not_found", status_code=404)
-    if not await _reputation_visible(creator):
+    if not await _reputation_visible(creator, user.id):
         raise RevOSError("This creator's reviews are not visible.", code="forbidden", status_code=403)
     return await review_service.list_for_subject(
         db, subject_type="creator", subject_id=creator_id, limit=limit, offset=offset)
