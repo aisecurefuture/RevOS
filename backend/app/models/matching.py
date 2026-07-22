@@ -90,6 +90,16 @@ class Creator(TenantModel, table=True):
     # (live reference) rather than re-entering a parallel "creator book".
     brand_id: uuid.UUID | None = Field(default=None, foreign_key="brands.id", index=True)
 
+    # Creator-portal groundwork (Phase 6): a self-service user can verify
+    # themselves against an agency-managed Creator record via a signed invite
+    # link, WITHOUT transferring tenant ownership (account_id stays with
+    # whoever manages the record — certifications/reputation history keep their
+    # integrity). This only grants read access to their own listing for now;
+    # wiring a claimed user into collaborations/messaging as a full party is a
+    # deliberately separate, later step.
+    claimed_by_user_id: uuid.UUID | None = Field(default=None, foreign_key="admin_users.id", index=True)
+    claimed_at: datetime | None = Field(default=None)
+
 
 class CreatorManager(TenantModel, table=True):
     """Many-to-many: users who co-manage a creator (agency/team case)."""

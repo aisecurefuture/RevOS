@@ -107,7 +107,19 @@ class CreatorOut(BaseModel):
     notes: str | None = None
     contact_id: uuid.UUID | None = None
     brand_id: uuid.UUID | None = None       # link a Brand → reuse its Brand Book
+    claimed_by_user_id: uuid.UUID | None = None
+    claimed_at: datetime | None = None
     created_at: datetime
+
+
+class CreatorClaimInviteOut(BaseModel):
+    token: str
+    claim_url: str
+    expires_in_days: int
+
+
+class CreatorClaimRequest(BaseModel):
+    token: str
 
 
 # --- MatchProduct -----------------------------------------------------------
