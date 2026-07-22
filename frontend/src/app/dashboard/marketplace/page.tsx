@@ -8,13 +8,15 @@ import { DiscoverTab } from "./DiscoverTab";
 import { InsightsTab } from "./InsightsTab";
 import { RequestsTab } from "./RequestsTab";
 import { RosterTab } from "./RosterTab";
+import { WorkspacesTab } from "./WorkspacesTab";
 
-type Tab = "discover" | "requests" | "roster" | "insights";
+type Tab = "discover" | "requests" | "roster" | "workspaces" | "insights";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "discover", label: "Discover" },
   { key: "requests", label: "Requests" },
   { key: "roster", label: "My roster" },
+  { key: "workspaces", label: "Workspaces" },
   { key: "insights", label: "Insights" },
 ];
 
@@ -53,6 +55,7 @@ export default function MarketplacePage() {
       {tab === "discover" ? <DiscoverTab setNotice={setNotice} /> : null}
       {tab === "requests" ? <RequestsTab setNotice={setNotice} /> : null}
       {tab === "roster" ? <RosterTab setNotice={setNotice} /> : null}
+      {tab === "workspaces" ? <WorkspacesTab setNotice={setNotice} /> : null}
       {tab === "insights" ? <InsightsTab /> : null}
     </>
   );

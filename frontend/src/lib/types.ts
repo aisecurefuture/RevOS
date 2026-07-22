@@ -209,6 +209,7 @@ export interface MatchCreator {
   engagement_rate?: number | null;
   discoverable: boolean;
   status: string;
+  brand_id?: string | null;
 }
 
 export interface MatchProduct {
@@ -219,6 +220,8 @@ export interface MatchProduct {
   description?: string | null;
   status: string;
   discoverable: boolean;
+  brand_id?: string | null;
+  offer_id?: string | null;
 }
 
 export interface CreatorDiscovery {
@@ -295,6 +298,52 @@ export interface Insights {
   metrics: Record<string, number | null>;
   benchmarks: InsightBenchmark[];
   recommendations: InsightRecommendation[];
+}
+
+export type CollaborationKind = "one_off" | "ambassador";
+export type CollaborationState = "active" | "paused" | "completed" | "ended";
+
+export interface Collaboration {
+  id: string;
+  collaboration_request_id: string;
+  brand_account_id: string;
+  creator_account_id: string;
+  creator_id: string;
+  product_id?: string | null;
+  kind: CollaborationKind;
+  state: CollaborationState;
+  title?: string | null;
+  ended_at?: string | null;
+  created_at: string;
+}
+
+export interface CollaborationShare {
+  id: string;
+  collaboration_id: string;
+  shared_by_account_id: string;
+  resource_type: string;
+  resource_id: string;
+  scope?: string | null;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  status: "active" | "revoked" | "expired";
+  created_at: string;
+}
+
+export interface SharedBrandBook {
+  brand_id: string;
+  mission?: string | null;
+  vision?: string | null;
+  positioning?: string | null;
+  elevator_pitch?: string | null;
+  target_summary?: string | null;
+  key_messages: unknown[];
+  core_values: unknown[];
+  brand_story?: string | null;
+  voice_spectrum: Record<string, number>;
+  banned_terms: string[];
+  required_disclaimers: string[];
+  is_published: boolean;
 }
 
 export interface PipelineStage {

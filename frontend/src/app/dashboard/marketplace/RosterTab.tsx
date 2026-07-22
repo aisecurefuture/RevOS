@@ -7,8 +7,8 @@ import { Card } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { ApiError } from "@/lib/api";
 import { INDUSTRIES } from "@/lib/industries";
-import { marketplaceApi } from "@/lib/resources";
-import type { MatchCreator, MatchProduct } from "@/lib/types";
+import { brandsApi, marketplaceApi, offersApi } from "@/lib/resources";
+import type { Brand, MatchCreator, MatchProduct, Offer } from "@/lib/types";
 
 type Kind = "creators" | "products";
 
@@ -192,6 +192,8 @@ const INPUT =
   "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 const LABEL = "mb-1 block text-xs font-medium text-slate-500";
 
+type ProductSource = "new" | "offer";
+
 function AddModal({
   kind, onClose, onCreated,
 }: { kind: Kind; onClose: () => void; onCreated: () => void }) {
@@ -204,7 +206,26 @@ function AddModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSave = name.trim().length > 0 && !saving;
+  // Reuse: link an existing Brand (its Brand Book carries over — no re-entry).
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [brandId, setBrandId] = useState("");
+
+  // Products only: seed from an existing Offer instead of starting blank.
+  const [source, setSource] = useState<ProductSource>("new");
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [offerId, setOfferId] = useState("");
+
+  useEffect(() => {
+    void brandsApi.list().then(setBrands).catch(() => setBrands([]));
+    if (kind === "products") {
+      void offersApi.list().then(setOffers).catch(() => setOffers([]));
+    }
+  }, [kind]);
+
+  const importingOffer = kind === "products" && source === "offer";
+  const canSave = importingOffer
+    ? !!offerId && !saving
+    : name.trim().length > 0 && !saving;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -218,6 +239,14 @@ function AddModal({
           handle: handle.trim() || undefined,
           industry: industry || undefined,
           follower_count: followers ? Number(followers) : undefined,
+          brand_id: brandId || undefined,
+          discoverable,
+        });
+      } else if (importingOffer) {
+        await marketplaceApi.importOfferProduct({
+          offer_id: offerId,
+          industry: industry || undefined,
+          status: "active",
           discoverable,
         });
       } else {
@@ -225,6 +254,7 @@ function AddModal({
           name: name.trim(),
           industry: industry || undefined,
           description: description.trim() || undefined,
+          brand_id: brandId || undefined,
           status: "active",
           discoverable,
         });
@@ -245,33 +275,95 @@ function AddModal({
           {kind === "creators" ? "Add a creator" : "Add a product"}
         </h2>
         {error ? <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
-        <form onSubmit={save} className="space-y-3">
-          <div>
-            <label className={LABEL}>{kind === "creators" ? "Display name *" : "Product name *"}</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} className={INPUT} required />
+
+        {kind === "products" ? (
+          <div className="mb-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSource("new")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                source === "new" ? "bg-brand text-white" : "border border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              New product
+            </button>
+            <button
+              type="button"
+              onClick={() => setSource("offer")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
+                source === "offer" ? "bg-brand text-white" : "border border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              Import from an offer
+            </button>
           </div>
-          {kind === "creators" ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={LABEL}>Handle</label>
-                <input value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="@handle" className={INPUT} />
-              </div>
-              <div>
-                <label className={LABEL}>Followers</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={followers}
-                  onChange={(e) => setFollowers(e.target.value)}
-                  className={INPUT}
-                />
-              </div>
+        ) : null}
+
+        <form onSubmit={save} className="space-y-3">
+          {importingOffer ? (
+            <div>
+              <label className={LABEL}>Offer *</label>
+              <select value={offerId} onChange={(e) => setOfferId(e.target.value)} className={INPUT} required>
+                <option value="">Select an offer…</option>
+                {offers.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                Name, description, and brand carry over from the offer — no need to retype them.
+              </p>
+              {offers.length === 0 ? (
+                <p className="mt-1 text-xs text-amber-600">
+                  No offers found. Create one under Offers first, or add a new product instead.
+                </p>
+              ) : null}
             </div>
           ) : (
-            <div>
-              <label className={LABEL}>Description</label>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className={INPUT} />
-            </div>
+            <>
+              <div>
+                <label className={LABEL}>{kind === "creators" ? "Display name *" : "Product name *"}</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} className={INPUT} required />
+              </div>
+              {kind === "creators" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={LABEL}>Handle</label>
+                    <input value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="@handle" className={INPUT} />
+                  </div>
+                  <div>
+                    <label className={LABEL}>Followers</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={followers}
+                      onChange={(e) => setFollowers(e.target.value)}
+                      className={INPUT}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className={LABEL}>Description</label>
+                  <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className={INPUT} />
+                </div>
+              )}
+              <div>
+                <label className={LABEL}>
+                  Link a brand <span className="font-normal text-slate-400">(optional — reuses its Brand Book)</span>
+                </label>
+                <select value={brandId} onChange={(e) => setBrandId(e.target.value)} className={INPUT}>
+                  <option value="">None</option>
+                  {brands.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                {brands.length === 0 ? (
+                  <p className="mt-1 text-xs text-slate-400">
+                    Already done your brand book? Create the brand first and link it here — no need to redo it.
+                  </p>
+                ) : null}
+              </div>
+            </>
           )}
           <div>
             <label className={LABEL}>Industry</label>
