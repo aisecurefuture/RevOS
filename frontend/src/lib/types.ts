@@ -210,6 +210,8 @@ export interface MatchCreator {
   discoverable: boolean;
   status: string;
   brand_id?: string | null;
+  claimed_by_user_id?: string | null;
+  claimed_at?: string | null;
 }
 
 export interface MatchProduct {
