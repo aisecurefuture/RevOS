@@ -77,7 +77,14 @@ from app.models.lead import (
 from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
 from app.models.media import MediaAsset, MediaKind, MediaStatus, MediaVariant
 from app.models.collaboration import (
+    ApprovalDecision,
+    AssetKind,
+    AssetState,
     Collaboration,
+    CollaborationAsset,
+    CollaborationAssetApproval,
+    CollaborationAssetComment,
+    CollaborationAssetVersion,
     CollaborationKind,
     CollaborationShare,
     CollaborationState,
@@ -159,6 +166,9 @@ __all__ = [
     # collaboration workspace
     "Collaboration", "CollaborationKind", "CollaborationState",
     "CollaborationShare", "SharedResourceType", "ShareStatus",
+    "CollaborationAsset", "AssetKind", "AssetState",
+    "CollaborationAssetVersion", "CollaborationAssetComment",
+    "CollaborationAssetApproval", "ApprovalDecision",
     # reputation
     "Certification", "CertificationStatus", "CertificationSubjectType",
     "Review", "ReviewDirection",
