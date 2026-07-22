@@ -77,3 +77,20 @@ class ReviewOut(BaseModel):
     response: str | None = None
     response_at: datetime | None = None
     created_at: datetime
+
+
+# --- Reputation score (RK2) --------------------------------------------------
+class ReputationDimensionOut(BaseModel):
+    key: str
+    score: float
+    weight: float
+    available: bool
+    detail: str
+
+
+class ReputationScoreOut(BaseModel):
+    overall: float
+    coverage: float
+    review_count: int
+    rationale: str
+    dimensions: list[ReputationDimensionOut]
