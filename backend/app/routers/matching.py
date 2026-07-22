@@ -36,7 +36,9 @@ from app.schemas.matching import (
     ProductDiscoveryOut,
     ProductMatchOut,
 )
-from app.services import collaboration_service, creator_service
+from app.models.base import utcnow
+from app.schemas.reputation import ReputationScoreOut
+from app.services import collaboration_service, creator_service, reputation_service
 from app.services.crud import get_active, soft_delete
 
 router = APIRouter(prefix="/matching", tags=["matching"])
@@ -118,6 +120,45 @@ async def delete_creator(
     await write_audit(db, action="creator.delete", user_id=user.id,
                       entity_type="creator", entity_id=str(creator_id), request=request)
     return Message(status="deleted")
+
+
+async def _reputation_visible(subject) -> bool:
+    """A subject's reputation is visible if it's discoverable, or it's yours."""
+    return bool(getattr(subject, "discoverable", False)) or subject.account_id == get_active_account()
+
+
+@router.get("/creators/{creator_id}/reputation", response_model=ReputationScoreOut)
+async def creator_reputation(
+    creator_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> dict:
+    creator = await db.get(Creator, creator_id)
+    if creator is None or creator.deleted_at is not None:
+        raise RevOSError("Creator not found.", code="not_found", status_code=404)
+    if not await _reputation_visible(creator):
+        raise RevOSError("This creator's reputation is not visible.", code="forbidden", status_code=403)
+    score = await reputation_service.reputation_for(
+        db, subject_type="creator", subject_id=creator.id,
+        account_id=creator.account_id, now=utcnow())
+    return score.as_dict()
+
+
+@router.get("/products/{product_id}/reputation", response_model=ReputationScoreOut)
+async def product_reputation(
+    product_id: uuid.UUID,
+    db: DbSession,
+    _user: Annotated[AdminUser, Depends(require_authenticated)],
+) -> dict:
+    product = await db.get(MatchProduct, product_id)
+    if product is None or product.deleted_at is not None:
+        raise RevOSError("Product not found.", code="not_found", status_code=404)
+    if not await _reputation_visible(product):
+        raise RevOSError("This product's reputation is not visible.", code="forbidden", status_code=403)
+    score = await reputation_service.reputation_for(
+        db, subject_type="match_product", subject_id=product.id,
+        account_id=product.account_id, now=utcnow())
+    return score.as_dict()
 
 
 @router.get("/creators/{creator_id}/matches", response_model=list[ProductMatchOut])
