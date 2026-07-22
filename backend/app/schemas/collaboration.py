@@ -32,6 +32,11 @@ class CollaborationOut(BaseModel):
     title: str | None = None
     ended_at: datetime | None = None
     created_at: datetime
+    # Denormalized display names for both parties — so a workspace list item
+    # never shows only one side. Not persisted columns; populated in
+    # workspace_service.list_collaborations.
+    creator_name: str | None = None
+    brand_name: str | None = None
 
 
 class ShareBrandBookCreate(BaseModel):

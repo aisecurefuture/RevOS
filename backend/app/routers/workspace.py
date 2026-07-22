@@ -63,7 +63,7 @@ async def list_workspaces(
     state: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-) -> list[Collaboration]:
+) -> list[CollaborationOut]:
     return await workspace_service.list_collaborations(
         db, _account_id(), state=state, limit=limit, offset=offset)
 

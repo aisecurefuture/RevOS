@@ -167,6 +167,37 @@ async def test_expired_share_is_not_readable(async_session_factory):
 
 
 @pytest.mark.asyncio
+async def test_list_collaborations_includes_both_party_names(async_session_factory):
+    """The workspace list must show who a collaboration is actually with —
+    not just the viewer's own side (a prior bug where the list only ever
+    rendered the creator's name, never the brand's)."""
+    async with async_session_factory() as s:
+        brand = Brand(name="Acme Co", slug="acme-names", account_id=ACCT_BRAND)
+        s.add(brand)
+        await s.flush()
+        product = MatchProduct(name="Staging", status=MatchProductStatus.active,
+                               account_id=ACCT_BRAND, brand_id=brand.id)
+        s.add(product)
+        creator = Creator(display_name="Ava Williams", status=CreatorStatus.active,
+                          account_id=ACCT_CREATOR)
+        s.add(creator)
+        await s.flush()
+
+        req = await _accepted_request(s, creator_id=creator.id, product_id=product.id)
+        await workspace_service.spawn_collaboration(s, req)
+
+        listed = await workspace_service.list_collaborations(s, ACCT_BRAND)
+        assert len(listed) == 1
+        assert listed[0].creator_name == "Ava Williams"
+        assert listed[0].brand_name == "Acme Co"
+
+        # The creator side sees the same pair of names.
+        listed_from_creator = await workspace_service.list_collaborations(s, ACCT_CREATOR)
+        assert listed_from_creator[0].creator_name == "Ava Williams"
+        assert listed_from_creator[0].brand_name == "Acme Co"
+
+
+@pytest.mark.asyncio
 async def test_product_from_offer_seeds_and_links(async_session_factory):
     async with async_session_factory() as s:
         brand = Brand(name="Acme", slug="acme-off", account_id=ACCT_BRAND)
