@@ -98,40 +98,81 @@ async def _subject_metrics(db: AsyncSession, *, subject_type: str, subject_id: u
 
 
 # --- Cohort benchmarks (creators) -------------------------------------------
-async def _creator_cohort_benchmarks(db: AsyncSession, creator: Creator) -> list[dict]:
+async def engagement_benchmark(db: AsyncSession, creator: Creator) -> dict | None:
+    """Engagement-rate benchmark for this creator: RevOS's own peer cohort
+    when there's enough data (>= _MIN_COHORT), else the curated third-party
+    industry-report figure (BM1/BM2) as a fallback — never both, and every
+    result is explicitly tagged with which one it is. Shared by the private
+    insights dashboard and the public creator page so the "cohort vs
+    industry-report" decision lives in exactly one place."""
+    if creator.engagement_rate is None:
+        return None
     category = rollup(creator.industry)
-    if not category or not creator.size_tier:
-        return []
-    slugs = [s for s, c in INDUSTRY_CATEGORY.items() if c == category]
-    cohort = (
-        Creator.industry.in_(slugs), Creator.size_tier == creator.size_tier,
-        Creator.status == CreatorStatus.active, Creator.deleted_at.is_(None),
-    )
-    agg = (await db.execute(
-        select(func.count(), func.avg(Creator.engagement_rate), func.avg(Creator.follower_count)).where(*cohort)
-    )).one()
-    cohort_size = int(agg[0])
-    if cohort_size < _MIN_COHORT:
-        return []
-    avg_eng, avg_fol = agg[1], agg[2]
 
+    if category and creator.size_tier:
+        slugs = [s for s, c in INDUSTRY_CATEGORY.items() if c == category]
+        cohort = (
+            Creator.industry.in_(slugs), Creator.size_tier == creator.size_tier,
+            Creator.status == CreatorStatus.active, Creator.deleted_at.is_(None),
+        )
+        agg = (await db.execute(
+            select(func.count(), func.avg(Creator.engagement_rate)).where(*cohort)
+        )).one()
+        cohort_size = int(agg[0])
+        if cohort_size >= _MIN_COHORT and agg[1] is not None:
+            avg_eng = float(agg[1])
+            below = int((await db.execute(
+                select(func.count()).where(*cohort, Creator.engagement_rate < creator.engagement_rate)
+            )).scalar_one())
+            return {
+                "metric": "engagement_rate", "you": round(creator.engagement_rate, 4),
+                "cohort_avg": round(avg_eng, 4), "cohort_size": cohort_size,
+                "percentile": round(below / cohort_size * 100),
+                "verdict": _verdict(creator.engagement_rate, avg_eng),
+                "source": "revos_cohort", "citation": None,
+            }
+
+    if category:
+        from app.services import benchmark_service
+        row = await benchmark_service.get_current(
+            db, industry_category=category, metric="engagement_rate", platform=creator.primary_platform)
+        if row is not None:
+            return {
+                "metric": "engagement_rate", "you": round(creator.engagement_rate, 4),
+                "cohort_avg": round(row.value, 4), "cohort_size": 0, "percentile": None,
+                "verdict": _verdict(creator.engagement_rate, row.value),
+                "source": "industry_report",
+                "citation": f"{row.source} ({row.period_label})",
+            }
+    return None
+
+
+async def _creator_cohort_benchmarks(db: AsyncSession, creator: Creator) -> list[dict]:
     benchmarks: list[dict] = []
-    if creator.engagement_rate is not None and avg_eng is not None:
-        below = int((await db.execute(
-            select(func.count()).where(*cohort, Creator.engagement_rate < creator.engagement_rate)
-        )).scalar_one())
-        benchmarks.append({
-            "metric": "engagement_rate", "you": round(creator.engagement_rate, 4),
-            "cohort_avg": round(float(avg_eng), 4), "cohort_size": cohort_size,
-            "percentile": round(below / cohort_size * 100),
-            "verdict": _verdict(creator.engagement_rate, float(avg_eng)),
-        })
-    if creator.follower_count is not None and avg_fol is not None:
-        benchmarks.append({
-            "metric": "follower_count", "you": creator.follower_count,
-            "cohort_avg": round(float(avg_fol)), "cohort_size": cohort_size,
-            "percentile": None, "verdict": _verdict(creator.follower_count, float(avg_fol)),
-        })
+    eng = await engagement_benchmark(db, creator)
+    if eng is not None:
+        benchmarks.append(eng)
+
+    category = rollup(creator.industry)
+    if category and creator.size_tier and creator.follower_count is not None:
+        slugs = [s for s, c in INDUSTRY_CATEGORY.items() if c == category]
+        cohort = (
+            Creator.industry.in_(slugs), Creator.size_tier == creator.size_tier,
+            Creator.status == CreatorStatus.active, Creator.deleted_at.is_(None),
+        )
+        agg = (await db.execute(
+            select(func.count(), func.avg(Creator.follower_count)).where(*cohort)
+        )).one()
+        cohort_size = int(agg[0])
+        # Follower count has no third-party-report equivalent to fall back to
+        # — it stays RevOS-cohort-only.
+        if cohort_size >= _MIN_COHORT and agg[1] is not None:
+            benchmarks.append({
+                "metric": "follower_count", "you": creator.follower_count,
+                "cohort_avg": round(float(agg[1])), "cohort_size": cohort_size,
+                "percentile": None, "verdict": _verdict(creator.follower_count, float(agg[1])),
+                "source": "revos_cohort", "citation": None,
+            })
     return benchmarks
 
 

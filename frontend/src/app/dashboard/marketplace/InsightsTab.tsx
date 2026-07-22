@@ -118,14 +118,21 @@ function BenchmarkRow({ b }: { b: InsightBenchmark }) {
   const isRate = b.metric === "engagement_rate";
   const fmt = (v: number) => (isRate ? `${(v * 100).toFixed(1)}%` : v.toLocaleString());
   const label = b.metric.replace(/_/g, " ");
+  const fromReport = b.source === "industry_report";
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 py-2 last:border-0">
-      <span className="text-sm capitalize text-slate-700">{label}</span>
-      <span className="text-xs text-slate-500">
-        You <b className={VERDICT_STYLE[b.verdict]}>{fmt(b.you)}</b> · cohort avg {fmt(b.cohort_avg)}
-        {b.percentile != null ? ` · top ${100 - b.percentile}%` : ""}
-        <span className="ml-1 text-slate-400">({b.cohort_size} peers)</span>
-      </span>
+    <div className="border-b border-slate-100 py-2 last:border-0">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm capitalize text-slate-700">{label}</span>
+        <span className="text-xs text-slate-500">
+          You <b className={VERDICT_STYLE[b.verdict]}>{fmt(b.you)}</b> ·{" "}
+          {fromReport ? "industry avg" : "cohort avg"} {fmt(b.cohort_avg)}
+          {b.percentile != null ? ` · top ${100 - b.percentile}%` : ""}
+          {!fromReport ? <span className="ml-1 text-slate-400">({b.cohort_size} peers)</span> : null}
+        </span>
+      </div>
+      {fromReport && b.citation ? (
+        <p className="mt-0.5 text-right text-[11px] text-slate-400">Source: {b.citation}</p>
+      ) : null}
     </div>
   );
 }

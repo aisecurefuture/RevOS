@@ -293,6 +293,7 @@ class PublicCreatorPageOut(BaseModel):
     size_tier: str | None = None
     follower_count: int | None = None
     engagement_rate: float | None = None
+    engagement_benchmark: dict | None = None   # BenchmarkOut shape — cohort or industry-report
     topics: list[str] = Field(default_factory=list)
     reputation: PublicReputationOut | None = None
     certifications: list[PublicCertificationOut] = Field(default_factory=list)

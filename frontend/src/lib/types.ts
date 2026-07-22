@@ -279,6 +279,8 @@ export interface InsightBenchmark {
   cohort_size: number;
   percentile: number | null;
   verdict: "above" | "below" | "on_par";
+  source: "revos_cohort" | "industry_report";
+  citation: string | null;
 }
 
 export interface InsightRecommendation {
@@ -483,6 +485,7 @@ export interface PublicCreatorPage {
   size_tier?: string | null;
   follower_count?: number | null;
   engagement_rate?: number | null;
+  engagement_benchmark?: InsightBenchmark | null;
   topics: string[];
   reputation?: PublicReputation | null;
   certifications: PublicCertification[];

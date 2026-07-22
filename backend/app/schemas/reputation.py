@@ -104,6 +104,8 @@ class BenchmarkOut(BaseModel):
     cohort_size: int
     percentile: int | None = None
     verdict: str          # above | below | on_par
+    source: str = "revos_cohort"    # revos_cohort | industry_report
+    citation: str | None = None     # set when source == industry_report
 
 
 class RecommendationOut(BaseModel):

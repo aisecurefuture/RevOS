@@ -108,6 +108,15 @@ export default function PublicCreatorPageRoute() {
               </div>
             ) : null}
 
+            {page.engagement_benchmark ? (
+              <p className="mb-6 text-center text-xs text-white/40">
+                {page.engagement_benchmark.verdict === "above" ? "Above" : page.engagement_benchmark.verdict === "below" ? "Below" : "In line with"}{" "}
+                the {page.engagement_benchmark.source === "industry_report" ? "industry" : "peer"} average of{" "}
+                {(page.engagement_benchmark.cohort_avg * 100).toFixed(1)}%
+                {page.engagement_benchmark.citation ? ` · ${page.engagement_benchmark.citation}` : ""}
+              </p>
+            ) : null}
+
             {page.topics.length > 0 ? (
               <div className="mb-6 flex flex-wrap justify-center gap-2">
                 {page.topics.map((t) => (

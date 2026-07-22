@@ -137,6 +137,13 @@ async def get_public_page(db: AsyncSession, slug: str) -> dict | None:
         out["follower_count"] = creator.follower_count
     if "engagement_rate" in fields:
         out["engagement_rate"] = creator.engagement_rate
+        # A comparative claim needs a citation for credibility — the same
+        # cohort-first/industry-report-fallback benchmark used on the
+        # private dashboard (insights_service.engagement_benchmark), just
+        # surfaced publicly since the creator already opted into showing the
+        # raw number.
+        from app.services import insights_service
+        out["engagement_benchmark"] = await insights_service.engagement_benchmark(db, creator)
     if "topics" in fields:
         out["topics"] = creator.topics or []
 
