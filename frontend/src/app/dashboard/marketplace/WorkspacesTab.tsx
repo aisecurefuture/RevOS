@@ -19,6 +19,7 @@ import type {
 import { AssetsPanel } from "./AssetsPanel";
 import { BriefPanel } from "./BriefPanel";
 import { DeliverablesPanel } from "./DeliverablesPanel";
+import { MessagesPanel } from "./MessagesPanel";
 
 const STATE_STYLE: Record<string, string> = {
   active: "bg-green-100 text-green-700",
@@ -289,6 +290,8 @@ function WorkspaceDetail({
           </div>
         )}
       </Card>
+
+      <MessagesPanel collab={collab} role={role} />
 
       <BriefPanel collab={collab} />
 

@@ -27,6 +27,7 @@ from app.models.collaboration import (
     CollaborationAssetVersion,
     CollaborationBrief,
     CollaborationDeliverable,
+    CollaborationMessage,
     CollaborationShare,
     CollaborationState,
     DeliverableStatus,
@@ -475,3 +476,48 @@ async def update_deliverable(db: AsyncSession, d: CollaborationDeliverable, coll
     await db.flush()
     await db.refresh(d)
     return d
+
+
+# --- Phase 6: full messaging threads ----------------------------------------
+async def send_message(db: AsyncSession, collab: Collaboration, *,
+                       sender_account_id: uuid.UUID, sender_user_id: uuid.UUID,
+                       body: str) -> CollaborationMessage:
+    _require_party(collab, sender_account_id)
+    if collab.state == CollaborationState.ended:
+        # "Block" — either party can end the collaboration unilaterally, which
+        # immediately cuts off new messages from both sides.
+        raise RevOSError("This collaboration has ended — messaging is closed.",
+                         code="collaboration_ended", status_code=403)
+
+    message = CollaborationMessage(
+        collaboration_id=collab.id, sender_account_id=sender_account_id,
+        sender_user_id=sender_user_id, body=body.strip())
+    db.add(message)
+    await db.flush()
+    await db.refresh(message)
+    return message
+
+
+async def list_messages(db: AsyncSession, collab: Collaboration,
+                        account_id: uuid.UUID) -> list[CollaborationMessage]:
+    _require_party(collab, account_id)
+    stmt = select(CollaborationMessage).where(
+        CollaborationMessage.collaboration_id == collab.id,
+        CollaborationMessage.deleted_at.is_(None),
+    ).order_by(CollaborationMessage.created_at.asc())
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def report_message(db: AsyncSession, message: CollaborationMessage, collab: Collaboration, *,
+                         reporter_account_id: uuid.UUID, reason: str) -> CollaborationMessage:
+    _require_party(collab, reporter_account_id)
+    if reporter_account_id == message.sender_account_id:
+        raise RevOSError("You can't report your own message.", code="forbidden", status_code=403)
+    message.is_flagged = True
+    message.flagged_by_account_id = reporter_account_id
+    message.flagged_reason = reason.strip()
+    message.flagged_at = utcnow()
+    db.add(message)
+    await db.flush()
+    await db.refresh(message)
+    return message

@@ -10,6 +10,7 @@ import type {
   Campaign,
   CollaborationAsset,
   CollaborationBrief,
+  CollaborationMessage,
   CollaborationRequest,
   Contact,
   ContactImportResult,
@@ -471,5 +472,19 @@ export const workspaceApi = {
     apiFetch<Deliverable>(`/matching/workspaces/${workspaceId}/deliverables/${deliverableId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    }),
+
+  // Phase 6 — full messaging threads.
+  listMessages: (workspaceId: string) =>
+    apiFetch<CollaborationMessage[]>(`/matching/workspaces/${workspaceId}/messages`),
+  sendMessage: (workspaceId: string, body: string) =>
+    apiFetch<CollaborationMessage>(`/matching/workspaces/${workspaceId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    }),
+  reportMessage: (workspaceId: string, messageId: string, reason: string) =>
+    apiFetch<CollaborationMessage>(`/matching/workspaces/${workspaceId}/messages/${messageId}/report`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
     }),
 };
