@@ -4,6 +4,7 @@
 // PLATFORM_ADMIN_EMAILS allowlist (every endpoint requires it); this page
 // additionally hides itself for non-admins as a UX nicety.
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/PageHeader";
@@ -62,7 +63,15 @@ export default function AdminPage() {
 
   return (
     <>
-      <PageHeader title="Platform Admin" description="Manage tenants and users across the platform." />
+      <PageHeader
+        title="Platform Admin"
+        description="Manage tenants and users across the platform."
+        actions={
+          <Link href="/dashboard/admin/benchmarks" className="text-sm text-brand hover:underline">
+            Industry Benchmarks →
+          </Link>
+        }
+      />
       {error ? <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       {notice ? <div className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</div> : null}
 

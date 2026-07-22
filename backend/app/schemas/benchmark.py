@@ -71,3 +71,17 @@ class BenchmarkExtractRow(BaseModel):
 class BenchmarkExtractResult(BaseModel):
     rows: list[BenchmarkExtractRow]
     unparsed_note: str | None = None
+
+
+class BenchmarkBulkCreate(BaseModel):
+    """Save admin-reviewed rows from the extraction draft."""
+
+    source: str = Field(min_length=1, max_length=200)
+    source_url: str | None = Field(default=None, max_length=500)
+    period_label: str = Field(min_length=1, max_length=40)
+    rows: list[BenchmarkExtractRow] = Field(min_length=1)
+
+
+class BenchmarkBulkResult(BaseModel):
+    created: int
+    skipped: list[BenchmarkExtractRow]

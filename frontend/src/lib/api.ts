@@ -855,3 +855,53 @@ export const billingApi = {
   cancel: () =>
     apiFetch<BillingStatus>("/billing/cancel", { method: "POST" }),
 };
+
+// --- Third-party industry benchmarks (BM1/BM3) ------------------------------
+export interface IndustryBenchmarkRow {
+  id: string;
+  industry_category: string;
+  platform: string;
+  metric: string;
+  value: number;
+  source: string;
+  source_url: string | null;
+  period_label: string;
+  updated_by_user_id: string;
+  updated_at: string;
+}
+
+export interface BenchmarkExtractRow {
+  industry_category: string;
+  platform: string;
+  metric: string;
+  value: number;
+}
+
+export interface BenchmarkExtractResult {
+  rows: BenchmarkExtractRow[];
+  unparsed_note: string | null;
+}
+
+export interface BenchmarkBulkResult {
+  created: number;
+  skipped: BenchmarkExtractRow[];
+}
+
+export const benchmarksApi = {
+  list: (industryCategory?: string) =>
+    apiFetch<IndustryBenchmarkRow[]>(
+      `/benchmarks${industryCategory ? `?industry_category=${industryCategory}` : ""}`,
+    ),
+  create: (data: Record<string, unknown>) =>
+    apiFetch<IndustryBenchmarkRow>("/benchmarks", { method: "POST", body: JSON.stringify(data) }),
+  remove: (id: string) => apiFetch<{ status: string }>(`/benchmarks/${id}`, { method: "DELETE" }),
+  extract: (text: string, source: string, sourceUrl: string | undefined, periodLabel: string) =>
+    apiFetch<BenchmarkExtractResult>("/benchmarks/extract", {
+      method: "POST",
+      body: JSON.stringify({ text, source, source_url: sourceUrl, period_label: periodLabel }),
+    }),
+  bulkCreate: (data: {
+    source: string; source_url?: string; period_label: string; rows: BenchmarkExtractRow[];
+  }) =>
+    apiFetch<BenchmarkBulkResult>("/benchmarks/bulk", { method: "POST", body: JSON.stringify(data) }),
+};
