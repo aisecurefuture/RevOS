@@ -60,17 +60,17 @@ export function RecommendedForYou() {
   }
 
   return (
-    <Card className="mb-4 border-brand/30 bg-brand/[0.03]" data-tour="recommended">
+    <Card className="mb-4 border-violet-400/25 bg-violet-500/[0.04]" data-tour="recommended">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <CardTitle>Recommended for you</CardTitle>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-white/45">
             A quick-start path for {who}. You can use everything else anytime from the sidebar.
           </p>
         </div>
         <button
           onClick={dismiss}
-          className="shrink-0 text-xs text-slate-400 hover:text-slate-600"
+          className="shrink-0 text-xs text-white/35 hover:text-white/70"
           aria-label="Dismiss recommendations"
         >
           Dismiss
@@ -81,19 +81,19 @@ export function RecommendedForYou() {
           <Link
             key={f.href}
             href={f.href}
-            className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-brand/50 hover:bg-brand/[0.04]"
+            className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 transition-colors hover:border-violet-400/40 hover:bg-violet-500/[0.06]"
           >
             <span aria-hidden className="text-lg">{f.icon}</span>
             <span className="min-w-0">
-              <span className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+              <span className="flex items-center gap-1.5 text-sm font-medium text-white/85">
                 {i === 0 ? (
-                  <span className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand">
+                  <span className="rounded-full bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300">
                     Start here
                   </span>
                 ) : null}
                 {f.label}
               </span>
-              <span className="mt-0.5 block text-xs text-slate-500">{f.blurb}</span>
+              <span className="mt-0.5 block text-xs text-white/45">{f.blurb}</span>
             </span>
           </Link>
         ))}

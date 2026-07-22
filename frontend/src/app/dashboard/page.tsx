@@ -44,7 +44,7 @@ export default function OverviewPage() {
   return (
     <>
       {justSubscribed && (
-        <div className="mb-4 rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
+        <div className="mb-4 rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
           Welcome to RevOS! Your subscription is active. You&apos;re all set.
         </div>
       )}
@@ -53,7 +53,7 @@ export default function OverviewPage() {
         description="Revenue, leads, and pipeline at a glance — across the selected brand."
       />
       {error ? (
-        <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+        <div className="mb-4 rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>
       ) : null}
 
       <RecommendedForYou />
@@ -94,22 +94,22 @@ export default function OverviewPage() {
             </Card>
             <Card>
               <CardTitle>Tasks requiring approval</CardTitle>
-              <p className="text-3xl font-semibold text-slate-900">{data.pending_approvals}</p>
-              <p className="mt-1 text-xs text-slate-400">Pending in the approval queue</p>
+              <p className="text-3xl font-semibold tracking-tight text-white">{data.pending_approvals}</p>
+              <p className="mt-1 text-xs text-white/35">Pending in the approval queue</p>
             </Card>
             <Card className="lg:col-span-2">
               <CardTitle>Recent activity</CardTitle>
               {data.recent_activity.length === 0 ? (
-                <p className="text-sm text-slate-400">No activity yet.</p>
+                <p className="text-sm text-white/35">No activity yet.</p>
               ) : (
-                <ul className="space-y-1 text-sm text-slate-600">
+                <ul className="space-y-1 text-sm text-white/70">
                   {data.recent_activity.map((a, i) => (
                     <li key={i} className="flex justify-between">
                       <span>
                         {a.action}
                         {a.entity_type ? ` · ${a.entity_type}` : ""}
                       </span>
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-white/35">
                         {new Date(a.at).toLocaleString()}
                       </span>
                     </li>
@@ -127,26 +127,26 @@ export default function OverviewPage() {
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div>
-      <p className="text-2xl font-semibold text-slate-900">{value}</p>
-      <p className="text-xs text-slate-400">{label}</p>
+      <p className="text-2xl font-semibold tracking-tight text-white">{value}</p>
+      <p className="text-xs text-white/35">{label}</p>
     </div>
   );
 }
 
 function BarList({ items }: { items: { label: string; value: number }[] }) {
   const max = Math.max(1, ...items.map((i) => i.value));
-  if (items.length === 0) return <p className="text-sm text-slate-400">No data yet.</p>;
+  if (items.length === 0) return <p className="text-sm text-white/35">No data yet.</p>;
   return (
     <div className="space-y-2">
       {items.map((item) => (
         <div key={item.label}>
-          <div className="mb-0.5 flex justify-between text-xs text-slate-500">
+          <div className="mb-0.5 flex justify-between text-xs text-white/50">
             <span className="capitalize">{item.label}</span>
             <span>{item.value}</span>
           </div>
-          <div className="h-2 rounded-full bg-slate-100">
+          <div className="h-2 rounded-full bg-white/10">
             <div
-              className="h-2 rounded-full bg-brand"
+              className="h-2 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
               style={{ width: `${(item.value / max) * 100}%` }}
             />
           </div>

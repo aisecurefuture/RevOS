@@ -32,23 +32,23 @@ function VerifyEmailBanner() {
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-6 py-2 text-sm text-amber-800">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-400/20 bg-amber-500/10 px-6 py-2 text-sm text-amber-200">
       <span>
         Verify your email address to connect social accounts, invite teammates, or publish content.
       </span>
       <span className="flex items-center gap-2">
         {sent ? (
-          <span className="text-xs text-amber-700">Verification email sent — check your inbox.</span>
+          <span className="text-xs text-amber-300">Verification email sent — check your inbox.</span>
         ) : (
           <button
             onClick={() => void resend()}
             disabled={busy}
-            className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900 hover:bg-amber-200"
+            className="rounded-full bg-amber-400/15 px-3 py-1 text-xs font-medium text-amber-200 hover:bg-amber-400/25"
           >
             {busy ? "Sending…" : "Resend verification email"}
           </button>
         )}
-        {error ? <span className="text-xs text-red-600">{error}</span> : null}
+        {error ? <span className="text-xs text-red-400">{error}</span> : null}
       </span>
     </div>
   );
@@ -85,7 +85,7 @@ function Shell({ children }: { children: ReactNode }) {
 
   if (loading || billingLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-screen items-center justify-center bg-[#0b0713]">
         <Spinner label="Loading your console…" />
       </div>
     );
@@ -96,9 +96,18 @@ function Shell({ children }: { children: ReactNode }) {
 
   return (
     <TourProvider>
-      <div className="flex h-screen overflow-hidden">
+      <div className="relative flex h-screen overflow-hidden bg-[#0b0713] text-white">
+        <div
+          className="pointer-events-none fixed inset-0 z-0 opacity-40"
+          style={{
+            background:
+              "radial-gradient(60rem 40rem at 15% -10%, rgba(129,92,255,0.30), transparent 60%)," +
+              "radial-gradient(50rem 35rem at 110% 10%, rgba(236,72,153,0.20), transparent 55%)," +
+              "radial-gradient(40rem 30rem at 50% 120%, rgba(56,189,248,0.14), transparent 55%)",
+          }}
+        />
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
           <Topbar onMenuClick={() => setSidebarOpen(true)} />
           {!user.email_verified ? <VerifyEmailBanner /> : null}
           <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
