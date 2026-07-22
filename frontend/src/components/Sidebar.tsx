@@ -81,8 +81,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       data-tour={item.href === "/dashboard/brand-book" ? "brand-book" : undefined}
       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
         isActive(item.href)
-          ? "bg-gradient-to-r from-violet-500/20 to-fuchsia-500/10 text-white"
-          : "text-white/55 hover:bg-white/[0.06] hover:text-white"
+          ? "bg-violet-50 text-violet-700"
+          : "text-slate-600 hover:bg-slate-100"
       }`}
     >
       <span aria-hidden>{item.icon}</span>
@@ -100,22 +100,17 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         />
       ) : null}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-60 shrink-0 -translate-x-full flex-col border-r border-white/10 bg-white/[0.02] backdrop-blur-xl transition-transform duration-200 md:static md:z-auto md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-60 shrink-0 -translate-x-full flex-col border-r border-slate-200 bg-white transition-transform duration-200 md:static md:z-auto md:translate-x-0 ${
           open ? "translate-x-0" : ""
         }`}
       >
-        <div className="flex h-16 items-center justify-between border-b border-white/10 px-5">
-          <span className="flex items-center gap-2 font-semibold tracking-tight text-white">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 text-xs">
-              ✦
-            </span>
-            RevOS<span className="text-violet-400">360</span>
-          </span>
+        <div className="flex h-16 items-center justify-between border-b border-slate-200 px-5">
+          <img src="/logo.svg" alt="RevOS360" width={130} height={29} />
           <button
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="rounded-lg p-1 text-white/40 hover:bg-white/[0.06] md:hidden"
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 md:hidden"
           >
             ✕
           </button>
@@ -136,7 +131,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   type="button"
                   onClick={() => toggleGroup(group.key)}
                   aria-expanded={!isCollapsed}
-                  className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-white/30 hover:bg-white/[0.04] hover:text-white/60"
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 hover:bg-slate-50 hover:text-slate-600"
                 >
                   {group.label}
                   <span aria-hidden className={`transition-transform ${isCollapsed ? "" : "rotate-90"}`}>
@@ -148,7 +143,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                     {items.map((item) => (
                       <div key={item.href}>
                         {item.subGroup ? (
-                          <div className="mt-2 px-3 pb-0.5 text-[10px] font-semibold uppercase tracking-widest text-white/25">
+                          <div className="mt-2 px-3 pb-0.5 text-[10px] font-semibold uppercase tracking-widest text-slate-300">
                             {item.subGroup}
                           </div>
                         ) : null}
@@ -162,14 +157,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           })}
         </nav>
 
-        <div className="space-y-0.5 border-t border-white/10 p-3">
+        <div className="space-y-0.5 border-t border-slate-200 p-3">
           {user?.is_platform_admin ? itemLink(PLATFORM_ADMIN_ITEM) : null}
           {UTILITY_ITEMS.filter(visible).map(itemLink)}
-          <div className="px-3 pt-2 text-xs text-white/25">
+          <div className="px-3 pt-2 text-xs text-slate-400">
             <p className="mb-1">Approval-first automation</p>
             <div className="flex gap-3">
-              <Link href="/privacy" className="hover:text-white/60 hover:underline">Privacy</Link>
-              <Link href="/terms" className="hover:text-white/60 hover:underline">Terms</Link>
+              <Link href="/privacy" className="hover:text-slate-600 hover:underline">Privacy</Link>
+              <Link href="/terms" className="hover:text-slate-600 hover:underline">Terms</Link>
             </div>
           </div>
         </div>
@@ -192,8 +187,8 @@ function ApprovalsPin({ active }: { active: boolean }) {
       data-tour="approvals"
       className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
         active
-          ? "border-violet-400/50 bg-gradient-to-r from-violet-500/20 to-fuchsia-500/10 text-white"
-          : "border-violet-400/25 bg-violet-500/[0.06] text-white/70 hover:border-violet-400/50 hover:bg-violet-500/10 hover:text-white"
+          ? "border-brand bg-brand/10 text-brand"
+          : "border-brand/30 bg-brand/5 text-slate-700 hover:border-brand hover:bg-brand/10"
       }`}
     >
       <span className="flex items-center gap-3">

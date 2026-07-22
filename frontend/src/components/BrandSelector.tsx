@@ -7,11 +7,11 @@ export function BrandSelector() {
 
   return (
     <label className="flex items-center gap-2 text-sm">
-      <span className="hidden text-white/50 sm:inline">Brand</span>
+      <span className="hidden text-slate-500 sm:inline">Brand</span>
       <select
         value={selectedBrandId ?? ""}
         onChange={(e) => setSelectedBrandId(e.target.value || null)}
-        className="rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-sm text-white/80 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400 [&>option]:bg-[#16121f] [&>option]:text-white"
+        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
       >
         <option value="">All Brands</option>
         {brands.map((b) => (
