@@ -91,6 +91,19 @@ async def create_product(db: AsyncSession, data: dict) -> MatchProduct:
     return product
 
 
+async def product_from_offer(db: AsyncSession, offer, overrides: dict) -> MatchProduct:
+    """Seed a marketplace product from an existing Offer — reuse the homework:
+    name/description/brand come from the offer, and offer_id links them. The
+    caller layers marketplace-specific fields (industry, target audience,
+    discoverability) on top via ``overrides``."""
+    data = {
+        "name": offer.name, "description": offer.description,
+        "brand_id": offer.brand_id, "offer_id": offer.id,
+    }
+    data.update({k: v for k, v in overrides.items() if v is not None})
+    return await create_product(db, data)
+
+
 async def update_product(db: AsyncSession, product: MatchProduct, data: dict) -> MatchProduct:
     data = _derive_cohort_fields(dict(data))
     if data.get("discoverable") and not product.discoverable:
