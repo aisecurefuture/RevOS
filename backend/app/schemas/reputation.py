@@ -94,3 +94,36 @@ class ReputationScoreOut(BaseModel):
     review_count: int
     rationale: str
     dimensions: list[ReputationDimensionOut]
+
+
+# --- Insight dashboards (IK1) ------------------------------------------------
+class BenchmarkOut(BaseModel):
+    metric: str
+    you: float
+    cohort_avg: float
+    cohort_size: int
+    percentile: int | None = None
+    verdict: str          # above | below | on_par
+
+
+class RecommendationOut(BaseModel):
+    priority: str         # high | medium | low
+    title: str
+    detail: str
+
+
+class InsightSubjectOut(BaseModel):
+    id: str
+    type: str
+    name: str
+    industry: str | None = None
+    industry_category: str | None = None
+    size_tier: str | None = None
+
+
+class InsightsOut(BaseModel):
+    subject: InsightSubjectOut
+    reputation: ReputationScoreOut
+    metrics: dict
+    benchmarks: list[BenchmarkOut]
+    recommendations: list[RecommendationOut]

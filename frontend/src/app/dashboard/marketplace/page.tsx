@@ -5,15 +5,17 @@ import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 
 import { DiscoverTab } from "./DiscoverTab";
+import { InsightsTab } from "./InsightsTab";
 import { RequestsTab } from "./RequestsTab";
 import { RosterTab } from "./RosterTab";
 
-type Tab = "discover" | "requests" | "roster";
+type Tab = "discover" | "requests" | "roster" | "insights";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "discover", label: "Discover" },
   { key: "requests", label: "Requests" },
   { key: "roster", label: "My roster" },
+  { key: "insights", label: "Insights" },
 ];
 
 export default function MarketplacePage() {
@@ -51,6 +53,7 @@ export default function MarketplacePage() {
       {tab === "discover" ? <DiscoverTab setNotice={setNotice} /> : null}
       {tab === "requests" ? <RequestsTab setNotice={setNotice} /> : null}
       {tab === "roster" ? <RosterTab setNotice={setNotice} /> : null}
+      {tab === "insights" ? <InsightsTab /> : null}
     </>
   );
 }
