@@ -83,6 +83,7 @@ def register_routers(app: FastAPI) -> None:
         suppressions,
         video_script,
         webhooks,
+        workspace,
     )
 
     app.include_router(auth.router, prefix="/api")
@@ -121,6 +122,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(social_oauth.router, prefix="/api")
     app.include_router(media.router, prefix="/api")
     app.include_router(matching.router, prefix="/api")
+    app.include_router(workspace.router, prefix="/api")
     app.include_router(analytics.router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
     app.include_router(integration_credentials.router, prefix="/api")

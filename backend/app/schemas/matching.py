@@ -55,6 +55,7 @@ class CreatorCreate(BaseModel):
     audience_source: AudienceSource = AudienceSource.manual
     notes: str | None = Field(default=None, max_length=5000)
     contact_id: uuid.UUID | None = None
+    brand_id: uuid.UUID | None = None       # link a Brand → reuse its Brand Book
 
 
 class CreatorUpdate(BaseModel):
@@ -77,6 +78,7 @@ class CreatorUpdate(BaseModel):
     audience_source: AudienceSource | None = None
     notes: str | None = Field(default=None, max_length=5000)
     contact_id: uuid.UUID | None = None
+    brand_id: uuid.UUID | None = None       # link a Brand → reuse its Brand Book
 
 
 class CreatorOut(BaseModel):
@@ -104,6 +106,7 @@ class CreatorOut(BaseModel):
     audience_captured_at: datetime | None = None
     notes: str | None = None
     contact_id: uuid.UUID | None = None
+    brand_id: uuid.UUID | None = None       # link a Brand → reuse its Brand Book
     created_at: datetime
 
 

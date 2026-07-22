@@ -76,6 +76,14 @@ from app.models.lead import (
 )
 from app.models.listing_video import ListingVideoJob, ListingVideoJobStatus
 from app.models.media import MediaAsset, MediaKind, MediaStatus, MediaVariant
+from app.models.collaboration import (
+    Collaboration,
+    CollaborationKind,
+    CollaborationShare,
+    CollaborationState,
+    ShareStatus,
+    SharedResourceType,
+)
 from app.models.matching import (
     AudienceSource,
     CollaborationDirection,
@@ -148,6 +156,9 @@ __all__ = [
     "Creator", "CreatorManagement", "CreatorStatus", "AudienceSource",
     "CreatorManager", "MatchProduct", "MatchProductStatus",
     "CollaborationRequest", "CollaborationDirection", "CollaborationStatus",
+    # collaboration workspace
+    "Collaboration", "CollaborationKind", "CollaborationState",
+    "CollaborationShare", "SharedResourceType", "ShareStatus",
     # reputation
     "Certification", "CertificationStatus", "CertificationSubjectType",
     "Review", "ReviewDirection",

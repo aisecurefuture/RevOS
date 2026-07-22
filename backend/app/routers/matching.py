@@ -19,7 +19,9 @@ from app.deps import (
 )
 from app.models.base import utcnow
 from app.models.matching import CollaborationDirection, CollaborationRequest, Creator, MatchProduct
+from app.models.offer import Offer
 from app.models.reputation import Review
+from app.schemas.collaboration import OfferImportCreate
 from app.models.user import AdminUser
 from app.schemas.common import Message
 from app.schemas.matching import (
@@ -230,6 +232,25 @@ async def create_product(
 ) -> MatchProduct:
     product = await creator_service.create_product(db, body.model_dump())
     await write_audit(db, action="match_product.create", user_id=user.id,
+                      entity_type="match_product", entity_id=str(product.id), request=request)
+    return product
+
+
+@router.post("/products/import-offer", response_model=MatchProductOut, status_code=201)
+async def import_product_from_offer(
+    body: OfferImportCreate,
+    request: Request,
+    db: DbSession,
+    user: Annotated[AdminUser, Depends(require_editor)],
+    _: None = Depends(verify_csrf),
+) -> MatchProduct:
+    """Seed a marketplace product from one of your existing offers — reuse the
+    homework (name/description/brand) and link offer_id, then add marketplace
+    fields."""
+    offer = await get_active(db, Offer, body.offer_id)   # tenant-scoped: your own offer only
+    overrides = body.model_dump(exclude={"offer_id"})
+    product = await creator_service.product_from_offer(db, offer, overrides)
+    await write_audit(db, action="match_product.import_offer", user_id=user.id,
                       entity_type="match_product", entity_id=str(product.id), request=request)
     return product
 

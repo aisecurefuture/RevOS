@@ -86,6 +86,9 @@ class Creator(TenantModel, table=True):
 
     notes: str | None = Field(default=None, max_length=5000)
     contact_id: uuid.UUID | None = Field(default=None, foreign_key="contacts.id", index=True)
+    # Reuse the homework: link a Brand so this creator inherits its Brand Book
+    # (live reference) rather than re-entering a parallel "creator book".
+    brand_id: uuid.UUID | None = Field(default=None, foreign_key="brands.id", index=True)
 
 
 class CreatorManager(TenantModel, table=True):

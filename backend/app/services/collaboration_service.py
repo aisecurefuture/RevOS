@@ -162,6 +162,10 @@ async def respond(
     db.add(request)
     await db.flush()
     await db.refresh(request)
+    if accept:
+        # Acceptance opens the shared workspace (CW1).
+        from app.services import workspace_service
+        await workspace_service.spawn_collaboration(db, request)
     return request
 
 
