@@ -1,0 +1,89 @@
+name: dealsig
+
+services:
+  db:
+    image: postgres:17.5-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dealsig}
+      POSTGRES_USER: ${POSTGRES_USER:-dealsig}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Copy .env.example to .env and set POSTGRES_PASSWORD}
+    volumes:
+      - dealsig-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dealsig} -d ${POSTGRES_DB:-dealsig}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks: [dealsig-internal]
+    security_opt: [no-new-privileges:true]
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &app-environment
+      APP_ENV: ${APP_ENV:-production}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-dealsig}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dealsig}
+      SESSION_SECRET: ${SESSION_SECRET:?Set a random SESSION_SECRET with at least 32 characters}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,dealsig.ai,www.dealsig.ai}
+      DEMO_MODE: ${DEMO_MODE:-false}
+      BILLING_BYPASS: ${BILLING_BYPASS:-false}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      REFRESH_INTERVAL_MINUTES: ${REFRESH_INTERVAL_MINUTES:-15}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
+      MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY:-}
+      MARKET_DATA_API_URL: ${MARKET_DATA_API_URL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-DealSig AI <access@dealsig.ai>}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+      COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-lax}
+      PASSKEY_RP_ID: ${PASSKEY_RP_ID:-localhost}
+      PASSKEY_ORIGIN: ${PASSKEY_ORIGIN:-http://localhost:8080}
+    ports:
+      - "${DEALSIG_BIND_ADDRESS:-127.0.0.1}:${DEALSIG_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    networks: [dealsig-internal]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-environment
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    networks: [dealsig-internal]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+networks:
+  dealsig-internal:
+    driver: bridge
+
+volumes:
+  dealsig-postgres:

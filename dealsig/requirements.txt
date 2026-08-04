@@ -1,0 +1,14 @@
+fastapi==0.135.1
+uvicorn[standard]==0.50.0
+SQLAlchemy==2.0.48
+psycopg[binary]==3.3.4
+pydantic-settings==2.14.2
+Jinja2==3.1.6
+python-multipart==0.0.32
+itsdangerous==2.2.0
+httpx==0.28.1
+beautifulsoup4==4.14.3
+stripe==15.3.0
+email-validator==2.3.0
+Authlib==1.7.2
+webauthn==2.7.0

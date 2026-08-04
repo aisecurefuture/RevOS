@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ legal_page|title }} · DealSig AI{% endblock %}
+{% block public_content %}
+<article class="legal-page">
+  <span class="eyebrow dark">DEALSIG AI</span>
+  {% if legal_page == 'disclaimer' %}
+  <h1>Risk and scoring disclosures</h1><p class="lead">DealSig is a research and decision-support product. It is not a broker, auctioneer, appraiser, title company, attorney, lender, investment adviser, or government agency.</p>
+  <h2>Scores are scenarios, not promises</h2><p>Deal scores and projected profit or return figures depend on user-editable assumptions, incomplete public data, and simplified cost models. They cannot account for every lien, title defect, condition issue, occupant, redemption, legal cost, buyer premium, financing constraint, bid change, or resale outcome. Independently verify all inputs.</p>
+  <h2>Illinois tax sales</h2><p>An annual or scavenger tax sale generally sells delinquent taxes and a lien/certificate—not immediate ownership of the real estate. Owners may redeem. A buyer seeking a tax deed must satisfy statutory deadlines, notice rules, and court requirements. Retain qualified Illinois counsel.</p>
+  <h2>Official source controls</h2><p>The official seller page, sale packet, court record, and signed contract control. Listings can change or be withdrawn without notice. DealSig never accepts property deposits; send funds only through independently verified official channels.</p>
+  {% elif legal_page == 'privacy' %}
+  <h1>Privacy notice</h1><p class="lead">This MVP minimizes personal data and keeps payment-card information out of DealSig systems.</p><h2>Data collected</h2><p>Account name, email, password hash, subscription identifiers, saved listings, security logs, and product activity needed to operate the service. Passwords are stored using Argon2id-compatible password hashing. Stripe processes billing information under its own privacy terms.</p><h2>Data use and retention</h2><p>Data is used to provide and secure the product, maintain subscriptions, and improve source quality. Production operators should define retention periods, deletion workflows, subprocessors, and regional disclosures before launch.</p><h2>Contact</h2><p>Privacy requests: privacy@dealsig.ai. This starter notice requires review by counsel before production launch.</p>
+  {% else %}
+  <h1>Terms of service</h1><p class="lead">These starter terms define the intended product boundary and require legal review before a commercial launch.</p><h2>Research use</h2><p>You are responsible for independent due diligence and compliance with seller, auction, county, and applicable legal requirements. Do not trespass, harass occupants, misuse restricted tax lists, or rely on DealSig as the sole source of truth.</p><h2>No transaction custody</h2><p>The subscription grants access to DealSig software. It does not authorize DealSig to bid, contract, wire funds, hold escrow, or act as your agent in a property transaction.</p><h2>Availability and data</h2><p>Public sources may be unavailable, delayed, incomplete, restricted, or changed without notice. DealSig may pause a connector to comply with a source's terms, robots policy, rate limits, or security controls.</p>
+  {% endif %}
+  <div class="legal-callout">Last drafted for MVP evaluation: August 3, 2026. Obtain qualified legal review before accepting production customers.</div>
+</article>
+{% endblock %}
+

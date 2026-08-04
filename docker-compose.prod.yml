@@ -89,6 +89,13 @@ services:
     depends_on:
       - api
       - frontend
+      - dealsig-web
+    # `default` reaches the RevOS services; `dealsig-edge` is a second network
+    # shared with dealsig-web ONLY, so Caddy can proxy dealsig.ai without
+    # putting DealSig on the same network as the RevOS database.
+    networks:
+      - default
+      - dealsig-edge
     ports:
       - "80:80"
       - "443:443"
@@ -140,8 +147,111 @@ services:
           sleep 86400;
         done
 
+  # --- DealSig AI (dealsig.ai) ----------------------------------------------
+  # A second, self-contained product co-hosted on this box. One FastAPI app
+  # serves both the marketing site (/) and the SaaS console (/app, /deals, …),
+  # backed by its own Postgres 17 and a refresh worker.
+  #
+  # Config lives in dealsig/.env.prod — a SEPARATE file from RevOS's .env on
+  # purpose: both apps define POSTGRES_*, APP_ENV, COOKIE_SECURE, DATABASE_URL,
+  # STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and RESEND_API_KEY, so sharing one
+  # file would silently cross-wire the two stacks. Copy the template:
+  #   cp dealsig/.env.prod.example dealsig/.env.prod
+  #
+  # Networking: dealsig-db and dealsig-worker sit on dealsig-internal only (no
+  # route to the RevOS stack); dealsig-web also joins dealsig-edge, which it
+  # shares with Caddy and nothing else. Nothing publishes a host port.
+  dealsig-db:
+    image: postgres:17.5-alpine
+    restart: always
+    env_file: ./dealsig/.env.prod
+    volumes:
+      - dealsig-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks: [dealsig-internal]
+    security_opt: [no-new-privileges:true]
+
+  dealsig-web:
+    build:
+      context: ./dealsig
+      dockerfile: Dockerfile
+    restart: always
+    env_file: ./dealsig/.env.prod
+    depends_on:
+      dealsig-db:
+        condition: service_healthy
+    # Tables are created by the app's own lifespan hook (init_db) — there is no
+    # separate migrate job the way RevOS has one.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    networks: [dealsig-internal, dealsig-edge]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  dealsig-worker:
+    build:
+      context: ./dealsig
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.worker"]
+    restart: always
+    env_file: ./dealsig/.env.prod
+    depends_on:
+      dealsig-db:
+        condition: service_healthy
+    # The image's HEALTHCHECK curls the web port — wrong for the worker loop.
+    healthcheck:
+      disable: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    networks: [dealsig-internal]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  # Nightly DealSig backup, same shape and retention as the RevOS one above.
+  # Client major version must match the server (Postgres 17).
+  dealsig-backup:
+    image: postgres:17.5-alpine
+    restart: always
+    env_file: ./dealsig/.env.prod
+    depends_on:
+      dealsig-db:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
+    networks: [dealsig-internal]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "DealSig backup service started; dumping nightly to /backups";
+        while true; do
+          TS=$$(date +%F_%H%M%S);
+          if PGPASSWORD=$$POSTGRES_PASSWORD pg_dump -h dealsig-db -U $$POSTGRES_USER $$POSTGRES_DB \
+               | gzip > /backups/dealsig_$$TS.sql.gz; then
+            echo "backup ok: dealsig_$$TS.sql.gz";
+          else
+            echo "backup FAILED at $$TS";
+          fi;
+          find /backups -name 'dealsig_*.sql.gz' -mtime +7 -delete;
+          sleep 86400;
+        done
+
+networks:
+  # Reachable from Caddy only — the single hop that exposes dealsig.ai.
+  dealsig-edge:
+    driver: bridge
+  # DealSig's private network: web <-> db <-> worker, isolated from RevOS.
+  dealsig-internal:
+    driver: bridge
+
 volumes:
   storage-data:
   caddy-data:
   caddy-config:
   ollama-models:
+  dealsig-postgres-data:

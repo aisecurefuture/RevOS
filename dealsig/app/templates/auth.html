@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Check your email' if mode == 'verify' else 'Passwordless access' }} · DealSig AI{% endblock %}
+{% block public_content %}
+<section class="auth-layout">
+  <div class="auth-story">
+    <span class="eyebrow"><i></i> PASSWORDLESS BY DESIGN</span>
+    <h1>Move from scattered listings to a clear next move.</h1>
+    <p>Use a one-time email code, trusted identity provider, or phishing-resistant passkey. DealSig does not store account passwords.</p>
+    <div class="auth-quote"><span>“</span><p>The edge is seeing changes quickly and doing disciplined diligence before everyone else.</p></div>
+  </div>
+  <div class="auth-panel">
+    <a class="brand" href="/"><span class="brand-mark image-mark"><img src="/brand-logo.png" alt=""></span><span>DealSig <em>AI</em></span></a>
+    <div class="auth-card">
+      {% if mode == 'verify' %}
+        <span class="eyebrow dark">SECURE EMAIL VERIFICATION</span>
+        <h2>Check your inbox</h2>
+        <p>Enter the six-digit code sent to <strong>{{ email }}</strong>. It expires in {{ auth_code_ttl_minutes }} minutes.</p>
+        {% if delivery_error %}<div class="alert error">{{ delivery_error }}</div>{% endif %}
+        {% if demo_code %}<div class="demo-code"><span>LOCAL DEMO CODE</span><strong>{{ demo_code }}</strong><small>Shown only because Resend is unconfigured and demo mode is enabled.</small></div>{% endif %}
+        {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+        <form method="post" action="/auth/code/verify" class="form-stack">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="email" value="{{ email }}">
+          <input type="hidden" name="next" value="{{ next }}">
+          <label>Verification code<input class="code-input" name="code" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000" autofocus></label>
+          <button class="button dark large full" type="submit">Verify and continue →</button>
+        </form>
+        <form method="post" action="/auth/code/request" class="resend-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="email" value="{{ email }}">
+          <input type="hidden" name="next" value="{{ next }}">
+          <button class="text-button" type="submit">Code did not arrive? Resend code</button>
+        </form>
+        <p class="auth-switch"><a href="/login">Use a different email</a></p>
+      {% else %}
+        <span class="eyebrow dark">{{ 'CREATE YOUR WORKSPACE' if mode == 'register' else 'MEMBER ACCESS' }}</span>
+        <h2>{{ 'Start finding better deals' if mode == 'register' else 'Welcome back' }}</h2>
+        <p>We will email a short-lived code. New emails create an account after verification.</p>
+        {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+        <form method="post" action="/auth/code/request" class="form-stack">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="next" value="{{ next }}">
+          <label>Email address<input type="email" name="email" autocomplete="email" maxlength="320" required placeholder="you@company.com" autofocus></label>
+          <button class="button dark large full" type="submit">Email me a secure code →</button>
+        </form>
+        <div class="or"><span>or continue with</span></div>
+        <div class="sso-grid">
+          {% for provider, label in [('google','Google'),('microsoft','Microsoft'),('apple','Apple')] %}
+            {% if sso[provider] %}<a class="sso-button {{ provider }}" href="/auth/sso/{{ provider }}"><span>{{ label[0] }}</span>{{ label }}</a>{% else %}<button class="sso-button {{ provider }}" type="button" disabled title="Add {{ provider|upper }}_CLIENT_ID and secret to enable"><span>{{ label[0] }}</span>{{ label }}</button>{% endif %}
+          {% endfor %}
+        </div>
+        <button class="button ghost large full passkey-login" type="button" data-passkey-login>⌁ Sign in with a passkey</button>
+        {% if demo_mode %}
+        <div class="or"><span>product evaluation</span></div>
+        <form method="post" action="/demo"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button soft large full" type="submit">Open product demo</button></form>
+        {% endif %}
+        <p class="auth-privacy">By continuing, you agree to the <a href="/legal/terms">Terms</a> and acknowledge the <a href="/legal/privacy">Privacy Notice</a>.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

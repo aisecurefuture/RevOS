@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}DealSig AI · Find the signal in distressed real estate{% endblock %}
+{% block public_content %}
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="hero-copy">
+    <span class="eyebrow"><i></i> Public deal intelligence, in one place</span>
+    <h1>Find the signal.<br><span>Underwrite the deal.</span></h1>
+    <p>DealSig monitors hard-to-find government, bank-owned, forfeiture, and Chicagoland tax-sale opportunities—then turns every listing into an actionable, risk-aware deal brief.</p>
+    <div class="hero-actions">
+      <a class="button lime large" href="/register">Start finding deals <span>→</span></a>
+      {% if demo_mode %}
+      <form method="post" action="/demo">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button line large" type="submit">Explore the demo</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="trust-row">
+      <span>Frequent monitoring</span><span>Source-linked</span><span>Risk-adjusted ranking</span>
+    </div>
+  </div>
+  <div class="hero-product" aria-label="DealSig deal card preview">
+    <div class="product-window">
+      <div class="window-top"><span></span><span></span><span></span><em>LIVE DEAL FEED</em></div>
+      <div class="preview-stats">
+        <div><small>ACTIVE DEALS</small><strong>{{ listing_count }}</strong><span>across {{ source_count }} sources</span></div>
+        <div><small>TOP SIGNAL</small><strong>87</strong><span>strong margin scenario</span></div>
+      </div>
+      <div class="preview-row featured">
+        <div class="property-thumb house-one"><b>DEMO</b></div>
+        <div><span class="source-tag">GOVDEALS</span><strong>Brick bungalow · renovation scenario</strong><small>Cook County · Direct sale</small></div>
+        <div class="preview-price"><small>EST. PROFIT</small><strong>$59K</strong><em>31% margin</em></div>
+        <div class="score high">87</div>
+      </div>
+      <div class="preview-row">
+        <div class="property-thumb house-two"><b>DEMO</b></div>
+        <div><span class="source-tag gold">TREASURY</span><strong>Two-flat · forfeiture scenario</strong><small>Chicago · Public auction</small></div>
+        <div class="preview-price"><small>EST. PROFIT</small><strong>$83K</strong><em>23% margin</em></div>
+        <div class="score mid">73</div>
+      </div>
+      <div class="monitor-ribbon"><i></i><span><strong>Monitoring now</strong> · Official pages checked on source-appropriate intervals</span><span>↻</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="logo-strip" id="sources">
+  <p>Monitoring public opportunities from</p>
+  <div><span>U.S. TREASURY</span><span>GSA</span><span>FDIC</span><span>U.S. MARSHALS</span><span>GOVDEALS</span><span>CHICAGOLAND COUNTIES</span></div>
+</section>
+
+<section class="section value-section" id="how-it-works">
+  <div class="section-heading"><span class="eyebrow dark">FROM LISTING TO DECISION</span><h2>A research analyst that<br>never stops scanning.</h2><p>Raw government listings are fragmented and full of special rules. DealSig makes the differences visible, keeps the original source one click away, and helps you decide where deeper diligence is worth your time.</p></div>
+  <div class="feature-grid">
+    <article><span class="feature-number">01</span><div class="feature-icon">↻</div><h3>Continuous discovery</h3><p>Source-specific monitors check federal listings and county sale calendars, deduplicate records, and flag meaningful changes.</p></article>
+    <article><span class="feature-number">02</span><div class="feature-icon">◇</div><h3>Risk-aware underwriting</h3><p>Model purchase, repairs, carry, and resale assumptions. Tax liens use a separate return scenario—not misleading flip math.</p></article>
+    <article><span class="feature-number">03</span><div class="feature-icon">✓</div><h3>Actionable playbooks</h3><p>See the official contact, registration path, funding steps, deposit rules, deadline, and due-diligence checklist for each source.</p></article>
+  </div>
+</section>
+
+<section class="proof-section">
+  <div><span class="eyebrow">THE DEALSIG DIFFERENCE</span><h2>More than a list.<br><span>A decision layer.</span></h2><p>Every score exposes its assumptions and confidence. Every opportunity links back to the seller. No guaranteed-profit theater.</p><a class="text-link" href="/legal/disclaimer">Read our scoring and risk principles →</a></div>
+  <div class="signal-card">
+    <div class="signal-head"><span>DEAL SIGNAL</span><strong>87<small>/100</small></strong></div>
+    <div class="signal-line"><span>Projected margin</span><strong>31%</strong></div>
+    <div class="signal-bar"><i class="w-87"></i></div>
+    <div class="signal-line"><span>Valuation confidence</span><strong>MEDIUM</strong></div>
+    <div class="signal-bar muted"><i class="w-62"></i></div>
+    <div class="signal-callout"><span>!</span><p><strong>Verify before bidding</strong>Title, occupancy, repairs, and official sale terms can materially change this scenario.</p></div>
+  </div>
+</section>
+
+<section class="pricing-section" id="pricing">
+  <div class="section-heading center"><span class="eyebrow dark">SIMPLE MEMBERSHIP</span><h2>One good deal can change the year.</h2><p>Start with the full platform. Cancel or manage billing through Stripe’s secure customer portal.</p></div>
+  <div class="pricing-card">
+    <div><span class="plan-label">DEALSIG PRO</span><h3><sup>$</sup>99<small>/ month</small></h3><p>Built for independent investors, flippers, wholesalers, and small real-estate teams.</p></div>
+    <ul><li>All monitored federal and Chicagoland sources</li><li>Profit and margin ranking with editable assumptions</li><li>Instant manual refresh and saved opportunities</li><li>Source-specific purchase and diligence playbooks</li></ul>
+    <a class="button lime large" href="/register">Start with DealSig Pro →</a>
+  </div>
+</section>
+{% endblock %}
+
