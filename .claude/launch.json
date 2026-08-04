@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "dealsig-dev",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd dealsig && exec .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8099"],
+      "port": 8099
     }
   ]
 }

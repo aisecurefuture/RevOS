@@ -18,20 +18,35 @@
     document.querySelector("#sidebar")?.classList.toggle("open");
   });
 
+  // Timestamps render server-side as UTC. Rewrite them into the reader's own
+  // timezone so a Chicago user is not silently reading GMT clock times.
+  (() => {
+    const dateFmt = new Intl.DateTimeFormat(undefined, {month: "short", day: "2-digit", year: "numeric"});
+    const timeFmt = new Intl.DateTimeFormat(undefined, {hour: "numeric", minute: "2-digit"});
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    document.querySelectorAll("time[datetime]").forEach((el) => {
+      const moment = new Date(el.dateTime);
+      if (Number.isNaN(moment.valueOf())) return;
+      el.textContent = `${dateFmt.format(moment)} · ${timeFmt.format(moment)}`;
+      if (zone) el.title = `${moment.toLocaleString()} (${zone})`;
+    });
+
+    // The greeting is picked from the UTC hour server-side, which reads as the
+    // wrong time of day anywhere west of Greenwich.
+    const greeting = document.querySelector("[data-greeting]");
+    if (greeting) {
+      const hour = new Date().getHours();
+      greeting.textContent = `Good ${hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening"}`;
+    }
+  })();
+
   document.querySelectorAll("[data-refresh]").forEach((button) => {
     button.addEventListener("click", async () => {
       const original = button.textContent;
       button.disabled = true;
       button.textContent = "Queuing…";
       try {
-        const response = await fetch("/api/refresh", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
-          body: JSON.stringify({source: button.dataset.refresh || "all"}),
-        });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.detail || "Refresh could not be queued");
+        await apiJson("/api/refresh", {source: button.dataset.refresh || "all"});
         notify("Refresh queued. Source health will update when collection completes.");
         button.textContent = "Queued ✓";
         setTimeout(() => { button.textContent = original; button.disabled = false; }, 2400);
@@ -54,14 +69,7 @@
       button.disabled = true;
       button.textContent = "Calculating…";
       try {
-        const response = await fetch(`/api/listings/${calculator.dataset.listingId}/analyze`, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
-          body: JSON.stringify(payload),
-        });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.detail || "Analysis failed");
+        const body = await apiJson(`/api/listings/${calculator.dataset.listingId}/analyze`, payload);
         const money = new Intl.NumberFormat("en-US", {style: "currency", currency: "USD", maximumFractionDigits: 0});
         calculator.querySelector('[data-output="all_in_cost"]').textContent = money.format(body.all_in_cost);
         calculator.querySelector('[data-output="estimated_profit"]').textContent = money.format(body.estimated_profit);
@@ -137,8 +145,27 @@
       headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
       body: JSON.stringify(body),
     });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || "The security operation failed");
+    // Parse defensively and only after checking the status: an HTML error body
+    // (a paywall page, a proxy 502) would otherwise throw a JSON SyntaxError
+    // that masks the real status with "the string did not match the expected
+    // pattern".
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      // 401 and 402 are dead ends for a fetch caller — send them somewhere
+      // useful, after a beat so the caller's toast stays readable.
+      if (response.status === 401) {
+        const next = encodeURIComponent(window.location.pathname);
+        setTimeout(() => window.location.assign(`/login?next=${next}`), 1200);
+      } else if (response.status === 402) {
+        setTimeout(() => window.location.assign(payload?.upgrade_url || "/billing"), 1600);
+      }
+      throw new Error(payload?.detail || `Request failed (${response.status})`);
+    }
     return payload;
   }
 

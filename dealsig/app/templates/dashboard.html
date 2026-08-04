@@ -2,7 +2,7 @@
 {% block title %}Overview · DealSig AI{% endblock %}
 {% block content %}
 <section class="page-heading split-heading">
-  <div><span class="eyebrow dark">DEAL INTELLIGENCE</span><h1>Good {{ 'morning' if now.hour < 12 else 'afternoon' if now.hour < 18 else 'evening' }}, {{ user.full_name.split(' ')[0] if user.full_name else 'Investor' }}.</h1><p>Here is what moved across your monitored sources.</p></div>
+  <div><span class="eyebrow dark">DEAL INTELLIGENCE</span><h1><span data-greeting>Good {{ 'morning' if now.hour < 12 else 'afternoon' if now.hour < 18 else 'evening' }}</span>, {{ user.full_name.split(' ')[0] if user.full_name else 'Investor' }}.</h1><p>Here is what moved across your monitored sources.</p></div>
   <div class="heading-actions"><span class="last-refresh">Official sources · mixed refresh intervals</span><button class="button dark" type="button" data-refresh="all">↻ Refresh now</button></div>
 </section>
 
