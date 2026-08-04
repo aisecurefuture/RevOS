@@ -15,6 +15,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Requ
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -46,12 +47,23 @@ def format_money(value) -> str:
     return f"${Decimal(value):,.0f}"
 
 
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
 def format_date(value) -> str:
     if not value:
         return "Not posted"
     if isinstance(value, str):
         return value
-    return value.strftime("%b %d, %Y · %-I:%M %p")
+    # Stored timestamps are UTC. Emit the machine-readable instant alongside a
+    # UTC-labelled fallback; app.js rewrites the text into the viewer's own
+    # timezone, so a reader in Chicago is never shown a GMT clock time.
+    moment = _aware(value)
+    return Markup('<time datetime="{iso}">{text}</time>').format(
+        iso=moment.isoformat(),
+        text=moment.strftime("%b %d, %Y · %-I:%M %p UTC"),
+    )
 
 
 @asynccontextmanager
@@ -125,13 +137,25 @@ def safe_redirect_path(path: str | None, fallback: str = "/app") -> str:
     return path if not parsed.scheme and not parsed.netloc and path.startswith("/") else fallback
 
 
+def wants_json(request: Request) -> bool:
+    """/api/* is only ever called by fetch(), which chokes on an HTML body."""
+    return request.url.path.startswith("/api/")
+
+
 @app.exception_handler(401)
-async def unauthorized_handler(request: Request, _: HTTPException):
+async def unauthorized_handler(request: Request, exc: HTTPException):
+    if wants_json(request):
+        return JSONResponse({"detail": exc.detail or "Sign in required"}, status_code=401)
     return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
 
 
 @app.exception_handler(402)
-async def paywall_handler(request: Request, _: HTTPException):
+async def paywall_handler(request: Request, exc: HTTPException):
+    if wants_json(request):
+        return JSONResponse(
+            {"detail": exc.detail or "DealSig Pro is required for this.", "upgrade_url": "/billing"},
+            status_code=402,
+        )
     with SessionLocal() as db:
         return templates.TemplateResponse(
             request,
@@ -457,10 +481,6 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             user=user,
         ),
     )
-
-
-def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 @app.get("/deals", response_class=HTMLResponse)

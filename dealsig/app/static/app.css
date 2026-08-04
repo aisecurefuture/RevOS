@@ -23,12 +23,9 @@ button, .button { cursor: pointer; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(151, 189, 22, .4); outline-offset: 2px; }
 
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 800; letter-spacing: -.6px; }
-.brand em { color: var(--lime-dark); font-size: 11px; font-style: normal; vertical-align: top; letter-spacing: .8px; }
-.brand-mark { display: grid; place-items: center; width: 32px; height: 32px; color: var(--ink); background: var(--lime); border-radius: 9px; font-family: Georgia, serif; font-size: 20px; font-style: italic; }
-.brand-mark.image-mark { position: relative; overflow: hidden; background: white; border: 1px solid rgba(10,35,71,.09); }
-.brand-mark.image-mark img { position: absolute; top: -16px; left: -20px; width: 70px; max-width: none; height: 70px; }
-.brand-mark.dark-image-mark { background: #3d1712; border-color: rgba(84,203,255,.24); box-shadow: 0 0 14px rgba(52,187,255,.15); }
-.brand-mark.dark-image-mark img { top: -27px; left: -28px; width: 88px; height: 88px; }
+/* One transparent lockup (glyph + wordmark) — see scripts/build-brand-lockup.py.
+   The wordmark lives in the artwork, so no text twin sits beside it. */
+.brand-logo { display: block; width: auto; height: 34px; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 42px; padding: 0 18px; border: 1px solid transparent; border-radius: 9px; font-size: 13px; font-weight: 750; transition: transform .18s, background .18s, border-color .18s; }
 .button:hover { transform: translateY(-1px); }
 .button.dark { color: white; background: var(--ink); }
