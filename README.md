@@ -144,12 +144,22 @@ site and routes the subdomains:
 | `app.revos360.com` | the Next.js admin console |
 | `api.revos360.com` | public endpoints, webhooks, opt-in/landing links |
 | `revos365.com`, `officialrevos.com` | 301-redirect → `revos360.com` |
+| `dealsig.ai` | DealSig AI — marketing site + SaaS app (`dealsig/`) |
+| `www.dealsig.ai` | 301-redirect → `dealsig.ai` |
 
 ```bash
 # migrate job + 4 uvicorn workers + worker/beat + frontend + Caddy + nightly backup
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api python -m app.seed.seed
 ```
+
+**DealSig AI** is a separate product co-hosted on the same box: its own
+Postgres, web and worker containers (`dealsig-*`), reachable only through
+Caddy, with config in `dealsig/.env.prod` (copy from
+[dealsig/.env.prod.example](dealsig/.env.prod.example)) — kept apart from
+RevOS's `.env` because both apps define `POSTGRES_*`, `APP_ENV`, `STRIPE_*` and
+`RESEND_API_KEY`. The prod stack will not start without that file. See
+[deploy/hetzner.md](deploy/hetzner.md#10-dealsig-ai-dealsigai).
 
 Edit the ACME email in [Caddyfile](Caddyfile); point DNS at the server and certs
 provision on first request. Routing lives in [Caddyfile](Caddyfile); production

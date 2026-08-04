@@ -52,6 +52,24 @@ api.revos360.com {
 	header -Server
 }
 
+# --- DealSig AI (co-hosted product) -----------------------------------------
+# One FastAPI service serves both the marketing site (/) and the SaaS console
+# (/app, /deals, /billing, …), so everything proxies to a single upstream.
+# The app sets its own CSP / HSTS / frame + referrer headers
+# (app/security.py), so Caddy adds none here beyond stripping Server.
+dealsig.ai {
+	encode gzip zstd
+	reverse_proxy dealsig-web:8080
+	header -Server
+}
+
+# www -> apex, rather than serving the app on both. DealSig is a single-origin
+# app: the session cookie and PASSKEY_ORIGIN are bound to https://dealsig.ai,
+# so a passkey ceremony or login started on www would fail origin checks.
+www.dealsig.ai {
+	redir https://dealsig.ai{uri} permanent
+}
+
 # --- Brand-protection redirects -> revos360.com -----------------------------
 revos365.com, www.revos365.com, officialrevos.com, www.officialrevos.com {
 	redir https://revos360.com{uri} permanent

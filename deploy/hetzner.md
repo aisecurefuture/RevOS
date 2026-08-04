@@ -24,6 +24,7 @@ At your domain registrar, create these records (replace `203.0.113.10` with your
 | A | `api` | `203.0.113.10` |
 | A | `revos365.com` (`@` + `www`) | `203.0.113.10` |
 | A | `officialrevos.com` (`@` + `www`) | `203.0.113.10` |
+| A | `dealsig.ai` (`@` + `www`) | `203.0.113.10` |
 
 Wait for DNS to propagate (`dig +short app.revos360.com` should return your IP)
 before bringing Caddy up — it needs the records resolvable to issue certificates.
@@ -93,6 +94,11 @@ python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(64))"
 # Edit .env: paste SECRET_KEY, set OWNER_PASSWORD, POSTGRES_PASSWORD (and the
 # matching DATABASE_URL), and any RESEND_/STRIPE_/AI keys you have.
 nano .env
+# DealSig AI ships in the same stack and has its OWN config file (both apps
+# define POSTGRES_*, APP_ENV, STRIPE_* and RESEND_API_KEY — one shared .env
+# would cross-wire them). The prod stack will not start without this file:
+cp dealsig/.env.prod.example dealsig/.env.prod
+nano dealsig/.env.prod        # see section 10
 # Set your real ACME email in the Caddyfile:
 nano Caddyfile        # change hello@revos360.com if you like
 ```
@@ -104,9 +110,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
 This builds the images, runs migrations (the one-shot `migrate` service), starts
-api/worker/beat/frontend/db/redis/backup, and brings up Caddy. **Caddy obtains
-Let's Encrypt certificates for all four domains automatically on first request
-and renews them on its own — there is no certbot to install or cron to manage.**
+api/worker/beat/frontend/db/redis/backup plus the DealSig containers
+(`dealsig-db`, `dealsig-web`, `dealsig-worker`, `dealsig-backup`), and brings up
+Caddy. **Caddy obtains Let's Encrypt certificates for every domain
+automatically on first request and renews them on its own — there is no certbot
+to install or cron to manage.**
 
 Watch it come up:
 ```bash
@@ -134,6 +142,8 @@ Then open **https://app.revos360.com** and sign in with `OWNER_EMAIL` /
 curl -s https://api.revos360.com/health/ready        # {"status":"ok","database":true,...}
 curl -sI https://revos360.com | grep -i strict-trans  # HSTS present
 curl -sI https://app.revos360.com                     # 200 from the console
+curl -s https://dealsig.ai/healthz                    # DealSig up
+curl -sI https://www.dealsig.ai | grep -i location    # 301 -> https://dealsig.ai
 ```
 
 ## 9. Email (Resend)
@@ -145,21 +155,60 @@ curl -sI https://app.revos360.com                     # 200 from the console
    `https://api.revos360.com/api/webhooks/resend` with `RESEND_WEBHOOK_SECRET`,
    then `docker compose ... up -d` to apply.
 
-## 10. Backups
+## 10. DealSig AI (dealsig.ai)
 
-The `backup` service writes a gzipped `pg_dump` to `./backups/` nightly (7-day
-retention). **Sync these off the box** — a server-local backup won't survive a
-server loss. Easiest: a Hetzner Storage Box + a daily `rclone`/`scp` of
-`./backups`, or set `STORAGE_BACKEND=s3` and also push dumps to object storage.
+A second product co-hosted on this box. One FastAPI service serves both the
+marketing site (`/`) and the SaaS console (`/app`, `/deals`, `/billing`), with
+its own Postgres 17 and refresh worker. Nothing publishes a host port — Caddy
+is the only way in, over a dedicated `dealsig-edge` network, and the DealSig
+database is unreachable from the RevOS containers.
+
+Config is `dealsig/.env.prod` (see section 5). Required before it will boot —
+the app validates its own production config and crash-loops otherwise:
+
+- `SESSION_SECRET` ≥ 32 random chars (the template ships empty on purpose)
+- `POSTGRES_PASSWORD`, and the same password inside `DATABASE_URL` (host
+  `dealsig-db`, not `db`)
+- `COOKIE_SECURE=true`, `DEMO_MODE=false`, `BILLING_BYPASS=false`
+- `RESEND_API_KEY` — **not optional in production**
+- `PASSKEY_ORIGIN=https://dealsig.ai` (must be `https://`)
+
+Then, at the providers:
+
+- **Stripe** webhook → `https://dealsig.ai/webhooks/stripe`
+- **Resend** — verify `dealsig.ai` (or a sending subdomain) with SPF/DKIM
+- **SSO**, if used — redirect URIs under `https://dealsig.ai/auth/sso/<provider>`
+
+Check it:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  logs -f dealsig-web dealsig-worker
+curl -s https://dealsig.ai/healthz
+```
+
+Schema is created by the app on startup (`init_db`) — there is no separate
+migrate job the way RevOS has one.
+
+## 11. Backups
+
+The `backup` and `dealsig-backup` services each write a gzipped `pg_dump` to
+`./backups/` nightly (7-day retention), prefixed `revos_` and `dealsig_`.
+**Sync these off the box** — a server-local backup won't survive a server loss.
+Easiest: a Hetzner Storage Box + a daily `rclone`/`scp` of `./backups`, or set
+`STORAGE_BACKEND=s3` and also push dumps to object storage.
 
 Restore:
 ```bash
 gunzip -c backups/revos_YYYY-MM-DD_HHMMSS.sql.gz | \
   docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T db \
   psql -U revos -d revos
+
+gunzip -c backups/dealsig_YYYY-MM-DD_HHMMSS.sql.gz | \
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T \
+  dealsig-db psql -U dealsig -d dealsig
 ```
 
-## 11. Updating
+## 12. Updating
 
 ```bash
 git pull
