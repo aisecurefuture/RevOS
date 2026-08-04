@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Watchlist' if watchlist_mode else 'Deal feed' }} · DealSig AI{% endblock %}
+{% block content %}
+<section class="page-heading split-heading compact">
+  <div><span class="eyebrow dark">{{ 'SAVED RESEARCH' if watchlist_mode else 'OPPORTUNITY PIPELINE' }}</span><h1>{{ 'Your watchlist' if watchlist_mode else 'Deal feed' }}</h1><p>{{ 'The opportunities you are actively tracking.' if watchlist_mode else 'Compare source-linked opportunities using consistent, editable assumptions.' }}</p></div>
+  {% if not watchlist_mode %}<div class="heading-actions"><button class="button dark" type="button" data-refresh="all">↻ Refresh sources</button></div>{% endif %}
+</section>
+
+{% if not user.has_access %}<div class="upgrade-banner"><div><strong>You are viewing the free preview</strong><span>Full addresses, ranked economics, analysis tools, and acquisition playbooks are paywalled.</span></div><a class="button lime" href="/billing">Unlock DealSig Pro</a></div>{% endif %}
+{% if demo_mode %}<div class="demo-banner"><strong>Demo scenarios</strong><span>Illustrative records are labeled DEMO and are not live offerings.</span></div>{% endif %}
+
+{% if not watchlist_mode %}
+<form class="filter-bar" method="get" action="/deals">
+  <label class="search-field"><span>⌕</span><input name="q" value="{{ filters.q }}" placeholder="Search city, county, or deal…"></label>
+  <label><span>County</span><select name="county"><option value="">All counties</option>{% for value in counties %}<option value="{{ value }}" {% if filters.county == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label><span>Source</span><select name="source"><option value="">All sources</option>{% for item in sources %}<option value="{{ item.slug }}" {% if filters.source == item.slug %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label>
+  <label><span>Instrument</span><select name="instrument"><option value="">All types</option><option value="direct_sale" {% if filters.instrument == 'direct_sale' %}selected{% endif %}>Direct sale</option><option value="broker_sale" {% if filters.instrument == 'broker_sale' %}selected{% endif %}>Broker sale</option><option value="tax_lien" {% if filters.instrument == 'tax_lien' %}selected{% endif %}>Tax lien</option><option value="county_deed_sale" {% if filters.instrument == 'county_deed_sale' %}selected{% endif %}>County deed sale</option></select></label>
+  <label><span>Sort</span><select name="sort"><option value="score" {% if filters.sort == 'score' %}selected{% endif %}>Deal signal</option><option value="profit" {% if filters.sort == 'profit' %}selected{% endif %}>Profit scenario</option><option value="deadline" {% if filters.sort == 'deadline' %}selected{% endif %}>Deadline</option></select></label>
+  <button class="button soft" type="submit">Apply</button>
+</form>
+{% endif %}
+
+<div class="results-meta"><strong>{{ listings|length }} opportunities</strong><span>Scores are decision support, never profit promises.</span></div>
+<section class="deal-table panel">
+  <div class="deal-table-head"><span>PROPERTY / SOURCE</span><span>ACQUISITION</span><span>VALUE SCENARIO</span><span>PROFIT SCENARIO</span><span>DEADLINE</span><span>SIGNAL</span><span></span></div>
+  {% for listing in listings %}
+  <article class="deal-table-row {% if not user.has_access %}preview-locked{% endif %}">
+    <a class="deal-property" href="/deals/{{ listing.id }}"><div class="property-thumb house-{{ ['one','two','three'][loop.index0 % 3] }}">{% if listing.is_demo %}<b>DEMO</b>{% endif %}</div><div><span class="source-tag">{{ listing.source|replace('_',' ')|upper }}</span><strong>{{ listing.title }}</strong><small>{{ listing.city }}{% if listing.county %} · {{ listing.county }} County{% endif %} · {{ listing.property_type|replace('_',' ')|title }}</small></div></a>
+    <div class="cell-stat"><small>{{ 'LIEN PRINCIPAL' if listing.instrument_type == 'tax_lien' else 'CURRENT / START' }}</small><strong>{{ (listing.current_bid or listing.starting_bid)|money }}</strong><em>{{ listing.instrument_type|replace('_',' ')|title }}</em></div>
+    <div class="cell-stat gated"><small>EST. MARKET VALUE</small><strong>{{ listing.estimated_market_value|money if user.has_access else '$•••,•••' }}</strong><em>{{ listing.confidence|title }} confidence</em></div>
+    <div class="cell-stat gated"><small>{{ 'REDEMPTION RETURN' if listing.instrument_type == 'tax_lien' else 'EST. PROFIT' }}</small><strong>{{ listing.estimated_profit|money if user.has_access else '$••,•••' }}</strong><em>{{ listing.profit_margin or 0 }}% scenario</em></div>
+    <div class="cell-stat"><small>AUCTION / OFFER</small><strong class="date-value">{{ listing.auction_end|date }}</strong><em>{{ listing.status|title }}</em></div>
+    <div class="score {{ 'high' if listing.deal_score >= 75 else 'mid' if listing.deal_score >= 50 else 'low' }}">{{ listing.deal_score if user.has_access else '—' }}</div>
+    <form method="post" action="/deals/{{ listing.id }}/save"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="save-button {% if listing.id in saved_ids %}saved{% endif %}" type="submit" aria-label="{{ 'Remove from' if listing.id in saved_ids else 'Add to' }} watchlist">◇</button></form>
+  </article>
+  {% else %}<div class="empty-state"><strong>No matching opportunities</strong><p>Clear a filter or refresh the source monitors.</p></div>{% endfor %}
+</section>
+{% endblock %}
+

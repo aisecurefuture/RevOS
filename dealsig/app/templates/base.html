@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="DealSig AI finds and ranks public-sector and distressed real-estate opportunities.">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}DealSig AI{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body class="{% if user and active_page %}app-shell{% else %}public-shell{% endif %}">
+  {% if user and active_page %}
+  <aside class="sidebar" id="sidebar">
+    <a class="brand brand-sidebar" href="/app" aria-label="DealSig AI dashboard">
+      <span class="brand-mark image-mark dark-image-mark"><img src="/brand-logo-dark.png" alt=""></span>
+      <span>DealSig <em>AI</em></span>
+    </a>
+    <nav class="side-nav" aria-label="Primary navigation">
+      <a href="/app" class="{% if active_page == 'dashboard' %}active{% endif %}"><span>⌂</span> Overview</a>
+      <a href="/deals" class="{% if active_page == 'deals' %}active{% endif %}"><span>◫</span> Deal feed</a>
+      <a href="/watchlist" class="{% if active_page == 'watchlist' %}active{% endif %}"><span>◇</span> Watchlist</a>
+      <a href="/sources" class="{% if active_page == 'sources' %}active{% endif %}"><span>↻</span> Data sources</a>
+    </nav>
+    <div class="side-section-label">Workspace</div>
+    <nav class="side-nav">
+      <a href="/billing" class="{% if active_page == 'billing' %}active{% endif %}"><span>◎</span> Membership</a>
+      <a href="/settings/security" class="{% if active_page == 'security' %}active{% endif %}"><span>⌁</span> Sign-in & security</a>
+      <a href="/legal/disclaimer"><span>ⓘ</span> Risk guide</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="mini-profile">
+        <span class="avatar">{{ (user.full_name or user.email)[0]|upper }}</span>
+        <span><strong>{{ user.full_name or 'Investor' }}</strong><small>{{ 'Pro member' if user.has_access else 'Free preview' }}</small></span>
+      </div>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="text-button" type="submit">Sign out</button>
+      </form>
+    </div>
+  </aside>
+  <div class="app-main">
+    <header class="app-topbar">
+      <button class="mobile-menu" type="button" data-menu-toggle aria-label="Open navigation">☰</button>
+      <div class="top-search"><span>⌕</span><a href="/deals">Search addresses, counties, sources…</a><kbd>⌘ K</kbd></div>
+      <div class="top-actions">
+        <span class="live-pill"><i></i> Monitoring</span>
+        <button class="icon-button" type="button" aria-label="Notifications">♢<b></b></button>
+      </div>
+    </header>
+    <main class="page-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% else %}
+  <header class="public-nav">
+    <a class="brand" href="/"><span class="brand-mark image-mark dark-image-mark"><img src="/brand-logo-dark.png" alt=""></span><span>DealSig <em>AI</em></span></a>
+    <nav>
+      <a href="/#how-it-works">How it works</a>
+      <a href="/#sources">Sources</a>
+      <a href="/#pricing">Pricing</a>
+    </nav>
+    <div class="public-actions">
+      {% if user %}<a class="button ghost" href="/app">Dashboard</a>{% else %}<a href="/login">Sign in</a><a class="button dark" href="/register">Start finding deals</a>{% endif %}
+    </div>
+  </header>
+  <main>{% block public_content %}{% endblock %}</main>
+  <footer class="public-footer">
+    <a class="brand" href="/"><span class="brand-mark image-mark dark-image-mark"><img src="/brand-logo-dark.png" alt=""></span><span>DealSig <em>AI</em></span></a>
+    <p>Decision support for public real-estate opportunities. Not a broker, auctioneer, appraiser, lender, or law firm.</p>
+    <nav><a href="/legal/terms">Terms</a><a href="/legal/privacy">Privacy</a><a href="/legal/disclaimer">Disclosures</a></nav>
+    <small>© 2026 DealSig AI. Verify every fact with the official seller.</small>
+  </footer>
+  {% endif %}
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+</body>
+</html>

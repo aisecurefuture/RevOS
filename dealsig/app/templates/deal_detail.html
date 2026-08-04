@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ listing.title }} · DealSig AI{% endblock %}
+{% block content %}
+<nav class="breadcrumbs"><a href="/deals">Deal feed</a><span>›</span><span>{{ listing.title }}</span></nav>
+{% if listing.is_demo %}<div class="demo-banner"><strong>Illustrative scenario</strong><span>This is not an active offering. Use it to test the workflow and economics.</span></div>{% endif %}
+<section class="deal-hero">
+  <div class="deal-hero-main">
+    <div class="property-visual house-{{ ['one','two','three'][listing.id % 3] }}"><span>{{ listing.property_type|replace('_',' ')|upper }}</span>{% if listing.is_demo %}<b>DEMO DATA</b>{% endif %}</div>
+    <div class="deal-identity"><div><span class="source-tag">{{ listing.source|replace('_',' ')|upper }}</span><span class="instrument-badge {{ listing.instrument_type }}">{{ listing.instrument_type|replace('_',' ') }}</span></div><h1>{{ listing.title }}</h1><p>{{ listing.address }}, {{ listing.city }}{% if listing.state %}, {{ listing.state }}{% endif %} {{ listing.postal_code }}</p><small>First seen {{ listing.first_seen_at|date }} · Last verified {{ listing.last_seen_at|date }}</small></div>
+  </div>
+  <div class="deal-hero-actions"><form method="post" action="/deals/{{ listing.id }}/save"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button ghost" type="submit">{{ '◆ Saved' if saved else '◇ Save deal' }}</button></form><a class="button dark" href="{{ listing.source_url }}" target="_blank" rel="noopener noreferrer">Official listing ↗</a></div>
+</section>
+
+{% if listing.instrument_type == 'tax_lien' %}<div class="critical-notice"><span>!</span><div><strong>You are modeling a tax lien—not buying the house.</strong><p>The owner may redeem. Obtaining a deed requires statutory notices, waiting periods, and a court order. A low lien principal is not the property's purchase price.</p></div></div>{% endif %}
+
+<section class="detail-layout">
+  <div class="detail-main">
+    <div class="detail-metrics panel">
+      <div><small>{{ 'LIEN PRINCIPAL' if listing.instrument_type == 'tax_lien' else 'CURRENT / START BID' }}</small><strong>{{ (listing.current_bid or listing.starting_bid)|money }}</strong><span>Verify live on source</span></div>
+      <div><small>MARKET VALUE SCENARIO</small><strong>{{ listing.estimated_market_value|money }}</strong><span>{{ listing.confidence|title }} confidence</span></div>
+      <div><small>{{ 'SCENARIO RETURN' if listing.instrument_type == 'tax_lien' else 'PROJECTED PROFIT' }}</small><strong class="positive">{{ listing.estimated_profit|money }}</strong><span>{{ listing.profit_margin }}% of modeled basis</span></div>
+      <div><small>DEAL SIGNAL</small><div class="score {{ 'high' if listing.deal_score >= 75 else 'mid' if listing.deal_score >= 50 else 'low' }} large-score">{{ listing.deal_score or '—' }}</div><span>Not a guarantee</span></div>
+    </div>
+
+    <article class="panel prose-panel"><div class="panel-head"><div><span class="eyebrow dark">OPPORTUNITY BRIEF</span><h2>What DealSig sees</h2></div></div><p>{{ listing.description }}</p><div class="fact-grid"><div><span>Property type</span><strong>{{ listing.property_type|replace('_',' ')|title }}</strong></div><div><span>County</span><strong>{{ listing.county or 'Verify' }}</strong></div><div><span>Status</span><strong>{{ listing.status|title }}</strong></div><div><span>Deadline</span><strong>{{ listing.auction_end|date }}</strong></div></div></article>
+
+    <article class="panel steps-panel"><div class="panel-head"><div><span class="eyebrow dark">ACQUISITION PLAYBOOK</span><h2>How to pursue this opportunity</h2></div></div><ol>{% for step in listing.how_to_buy %}<li><span>{{ loop.index }}</span><p>{{ step }}</p></li>{% endfor %}</ol><div class="official-only"><span>✓</span><p><strong>Funds stay outside DealSig.</strong> DealSig never accepts property deposits or earnest money. Follow the authenticated official seller, auction, broker, or escrow instructions.</p></div></article>
+
+    <article class="panel checklist-panel"><div class="panel-head"><div><span class="eyebrow dark">BEFORE MONEY MOVES</span><h2>Due-diligence checklist</h2></div></div>{% for item in listing.due_diligence %}<label><input type="checkbox"><span>{{ item }}</span></label>{% endfor %}</article>
+  </div>
+
+  <aside class="detail-aside">
+    <section class="panel calculator" data-calculator data-listing-id="{{ listing.id }}">
+      <span class="eyebrow dark">DEAL LAB</span><h2>Edit the assumptions</h2><p>Stress-test the scenario before spending diligence money.</p>
+      <label>{{ 'Lien principal' if listing.instrument_type == 'tax_lien' else 'Acquisition cost' }}<span>$</span><input data-input="acquisition_cost" type="number" min="0" max="1000000000" step="100" value="{{ listing.current_bid or listing.starting_bid or 0 }}"></label>
+      <label>Market value scenario<span>$</span><input data-input="market_value" type="number" min="0" max="1000000000" step="100" value="{{ listing.estimated_market_value or 0 }}"></label>
+      <label>Repairs / stabilization<span>$</span><input data-input="repairs" type="number" min="0" max="1000000000" step="100" value="{{ listing.repair_estimate or 0 }}"></label>
+      <label>Other / legal costs<span>$</span><input data-input="other_costs" type="number" min="0" max="1000000000" step="100" value="{{ listing.other_costs or 0 }}"></label>
+      <button class="button dark full" type="button" data-analyze>Recalculate scenario</button>
+      <div class="calc-output"><div><span>All-in basis</span><strong data-output="all_in_cost">—</strong></div><div><span>Projected result</span><strong data-output="estimated_profit">{{ listing.estimated_profit|money }}</strong></div><div><span>Margin</span><strong data-output="profit_margin">{{ listing.profit_margin }}%</strong></div><div><span>Signal</span><strong data-output="score">{{ listing.deal_score }}</strong></div></div>
+      <small class="fine-print">Model output is sensitive to inputs and cannot predict title, condition, redemption, bid competition, or resale.</small>
+    </section>
+    <section class="panel contact-card"><span class="eyebrow dark">OFFICIAL CONTACT</span><h2>{{ listing.contact_name or (source.name if source else 'Source contact') }}</h2>{% if listing.contact_email %}<a href="mailto:{{ listing.contact_email }}">{{ listing.contact_email }}</a>{% endif %}{% if listing.contact_phone %}<a href="tel:{{ listing.contact_phone }}">{{ listing.contact_phone }}</a>{% endif %}<a class="button soft full" href="{{ listing.source_url }}" target="_blank" rel="noopener noreferrer">Open official source ↗</a><p>Always confirm contact details on the official listing before communicating or sending funds.</p></section>
+  </aside>
+</section>
+{% endblock %}
+

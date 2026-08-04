@@ -1,0 +1,25 @@
+[project]
+name = "dealsig-ai"
+version = "0.1.0"
+description = "Deal intelligence for public-sector and distressed real estate"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --disable-warnings --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S"]
+ignore = [
+    "B008",  # FastAPI intentionally uses dependency calls in parameter defaults.
+    "E501",  # Black-compatible formatting; long URLs and UI strings stay readable.
+    "S101",  # Assertions are expected in the test harness.
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101"]

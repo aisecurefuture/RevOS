@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Membership · DealSig AI{% endblock %}
+{% block content %}
+<section class="page-heading compact"><span class="eyebrow dark">MEMBERSHIP</span><h1>{{ 'Unlock the deal intelligence layer' if not user.has_access else 'Your DealSig membership' }}</h1><p>Subscription access is provisioned and managed by Stripe Billing.</p></section>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if checkout == 'success' %}<div class="alert success">Checkout completed. Stripe’s signed webhook will confirm access; refresh this page in a moment if status is still pending.</div>{% elif checkout == 'cancelled' %}<div class="alert">Checkout was canceled. No changes were made.</div>{% endif %}
+<section class="billing-layout">
+  <div class="membership-card panel">
+    <div class="membership-head"><span class="plan-label">DEALSIG PRO</span><span class="status-pill {{ user.subscription_status }}">{{ user.subscription_status|replace('_',' ')|title }}</span></div>
+    <h2><sup>$</sup>99 <small>/ month</small></h2>
+    <p>Full access to monitored opportunities and the decision-support workflow.</p>
+    <ul><li>Full ranked deal feed and addresses</li><li>Editable deal and lien-return scenarios</li><li>Watchlist and manual source refresh</li><li>Official contacts and acquisition playbooks</li><li>Source health and refresh audit trail</li></ul>
+    {% if user.has_access and user.stripe_customer_id %}<form method="post" action="/billing/portal"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button dark full" type="submit">Manage billing in Stripe →</button></form>{% elif not user.has_access and stripe_configured %}<form method="post" action="/billing/checkout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button lime full large" type="submit">Subscribe securely with Stripe →</button></form>{% elif not user.has_access and demo_mode %}<form method="post" action="/billing/demo-activate"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button dark full" type="submit">Activate local demo access</button></form><small class="fine-print">Development only. This path is disabled by production configuration validation.</small>{% endif %}
+  </div>
+  <div class="billing-trust"><span class="eyebrow dark">PAYMENT BOUNDARIES</span><h2>Secure subscription billing.<br>Safer property transactions.</h2><p>Stripe is used only for the DealSig membership. DealSig does not accept, transmit, or custody auction deposits, earnest money, bid funds, or property purchase proceeds.</p><div class="boundary-list"><div><span>✓</span><p><strong>Membership payments</strong>Stripe Checkout and the Stripe customer portal.</p></div><div><span>→</span><p><strong>Property deposits</strong>Only through the verified agency, broker, auctioneer, or escrow instructions.</p></div><div><span>!</span><p><strong>Anti-fraud checkpoint</strong>Reconfirm wiring instructions by calling a verified official number before any transfer.</p></div></div></div>
+</section>
+{% endblock %}
+

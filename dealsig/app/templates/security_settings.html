@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Sign-in & security · DealSig AI{% endblock %}
+{% block content %}
+<section class="page-heading compact"><span class="eyebrow dark">ACCOUNT SECURITY</span><h1>Passwordless sign-in</h1><p>Your email is verified with one-time codes. Add a passkey for faster, phishing-resistant access.</p></section>
+<section class="security-layout">
+  <article class="panel security-card">
+    <div class="security-icon">@</div><div><span class="eyebrow dark">VERIFIED EMAIL</span><h2>{{ user.email }}</h2><p>DealSig sends single-use sign-in codes through Resend. Codes expire after 10 minutes and a newly sent code invalidates the previous one.</p><span class="verified-pill">✓ Verified</span></div>
+  </article>
+  <article class="panel security-card passkey-card">
+    <div class="security-icon">⌁</div><div><span class="eyebrow dark">PASSKEYS</span><h2>Face ID, Touch ID, Windows Hello, or security key</h2><p>Passkeys are bound to dealsig.ai and use public-key cryptography. DealSig stores the public credential, never your biometric or private key.</p><button class="button dark" type="button" data-passkey-register>Add a passkey</button></div>
+  </article>
+</section>
+<section class="panel credential-panel"><div class="panel-head"><div><span class="eyebrow dark">REGISTERED CREDENTIALS</span><h2>Your passkeys</h2></div></div><div class="credential-list">{% for item in credentials %}<div><span class="credential-mark">⌁</span><div><strong>Passkey {{ loop.index }}</strong><small>Added {{ item.created_at|date }} · {{ item.device_type|replace('_',' ')|title }}{% if item.backed_up %} · Synced{% endif %}</small></div><span class="status-pill active">Active</span></div>{% else %}<div class="empty-state"><strong>No passkeys yet</strong><p>Add one from this device, then use it from the sign-in page.</p></div>{% endfor %}</div></section>
+<div class="critical-notice neutral security-note"><span>i</span><div><strong>Keep a recovery path</strong><p>Your verified email code remains available if a passkey device is lost. SSO providers appear on the login screen once their client credentials are configured.</p></div></div>
+{% endblock %}
