@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import AuthIdentity, EmailLoginCode, User
+from app.services.email import send_via_resend
 
 settings = get_settings()
 oauth = OAuth()
@@ -118,39 +119,26 @@ def verify_email_code(db: Session, email: str, code: str) -> User | None:
 async def send_email_code(email: str, code: str) -> None:
     if settings.demo_mode and not settings.resend_api_key:
         return
-    if not settings.resend_api_key or not settings.resend_from_email:
-        raise RuntimeError("Resend email delivery is not configured")
-    async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
-        response = await client.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {settings.resend_api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "DealSigAI/0.1",
-                "Idempotency-Key": f"login-{code_digest(email, code)[:40]}",
-            },
-            json={
-                "from": settings.resend_from_email,
-                "to": [email],
-                "subject": f"{code} is your DealSig sign-in code",
-                "text": (
-                    f"Your DealSig AI sign-in code is {code}.\n\n"
-                    f"It expires in {settings.auth_code_ttl_minutes} minutes and can be used once.\n"
-                    "If you did not request this code, you can ignore this email."
-                ),
-                "html": (
-                    "<div style='font-family:Arial,sans-serif;max-width:520px;padding:24px'>"
-                    "<p style='color:#60706a;font-size:13px'>DEALSIG AI · SECURE ACCESS</p>"
-                    "<h1 style='color:#10201c;font-size:26px'>Your sign-in code</h1>"
-                    f"<p style='font-size:36px;letter-spacing:8px;font-weight:700'>{code}</p>"
-                    f"<p style='color:#60706a'>Expires in {settings.auth_code_ttl_minutes} minutes "
-                    "and can be used once.</p><p style='color:#87948f;font-size:12px'>"
-                    "If you did not request this code, you can ignore this email.</p></div>"
-                ),
-                "tags": [{"name": "category", "value": "login_code"}],
-            },
-        )
-    response.raise_for_status()
+    await send_via_resend(
+        to=[email],
+        subject=f"{code} is your DealSig sign-in code",
+        text=(
+            f"Your DealSig AI sign-in code is {code}.\n\n"
+            f"It expires in {settings.auth_code_ttl_minutes} minutes and can be used once.\n"
+            "If you did not request this code, you can ignore this email."
+        ),
+        html=(
+            "<div style='font-family:Arial,sans-serif;max-width:520px;padding:24px'>"
+            "<p style='color:#60706a;font-size:13px'>DEALSIG AI · SECURE ACCESS</p>"
+            "<h1 style='color:#10201c;font-size:26px'>Your sign-in code</h1>"
+            f"<p style='font-size:36px;letter-spacing:8px;font-weight:700'>{code}</p>"
+            f"<p style='color:#60706a'>Expires in {settings.auth_code_ttl_minutes} minutes "
+            "and can be used once.</p><p style='color:#87948f;font-size:12px'>"
+            "If you did not request this code, you can ignore this email.</p></div>"
+        ),
+        category="login_code",
+        idempotency_key=f"login-{code_digest(email, code)[:40]}",
+    )
 
 
 def resolve_sso_user(db: Session, provider: str, claims: dict) -> User:
