@@ -204,7 +204,7 @@ def test_honeypot_drops_submission_but_reports_success(client, enabled_form):
             "csrf_token": csrf_token(client),
             "email": "bot@example.com",
             "message": "Buy cheap things at my website right now.",
-            "company": "SpamCo",
+            "dsg_ref": "SpamCo",
         },
         follow_redirects=False,
     )
@@ -291,10 +291,13 @@ def test_instant_submission_blocks_the_send(client, enabled_form, easy_challenge
 
 def test_optional_daily_cap_refuses_once_spent(client, enabled_form, easy_challenge, monkeypatch):
     from app.config import get_settings
-    from app.services import contact as contact_service
+    from app.database import SessionLocal
+    from app.models import ContactMessage
 
     monkeypatch.setattr(get_settings(), "contact_daily_limit", 1)
-    monkeypatch.setattr(contact_service, "delivered_today", lambda db: 1)
+    with SessionLocal() as db:  # today's single slot is already spent
+        db.add(ContactMessage(topic="feedback"))
+        db.commit()
     response = client.post(
         "/contact",
         data={
@@ -305,6 +308,51 @@ def test_optional_daily_cap_refuses_once_spent(client, enabled_form, easy_challe
     )
     assert response.status_code == 429
     assert enabled_form == []
+
+
+def test_failed_send_gives_the_reserved_slot_back(client, easy_challenge, monkeypatch):
+    """A slot is claimed before the send; if the send fails it must not stay spent."""
+    from app.config import get_settings
+    from app.database import SessionLocal
+    from app.services import contact as contact_service
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "resend_api_key", "re_test", raising=False)
+    monkeypatch.setattr(settings, "contact_recipients", "ops@dealsig.ai")
+    monkeypatch.setattr(settings, "contact_daily_limit", 5)
+
+    async def explode(**kwargs):
+        raise RuntimeError("resend is down")
+
+    monkeypatch.setattr(contact_service, "send_via_resend", explode)
+    response = client.post(
+        "/contact",
+        data={
+            **form_fields(client),
+            "email": "buyer@example.com",
+            "message": "A long enough message here.",
+        },
+    )
+    assert response.status_code == 502
+    with SessionLocal() as db:
+        assert contact_service.delivered_today(db) == 0, "failed send must release its slot"
+
+
+def test_rate_limited_browser_post_gets_html_not_raw_json(client, enabled_form, easy_challenge):
+    """A form POST must never dump a JSON body over the page the visitor typed into."""
+    payload = {
+        **form_fields(client),
+        "email": "buyer@example.com",
+        "message": "A perfectly reasonable message goes here.",
+    }
+    last = None
+    for _ in range(8):
+        last = client.post("/contact", data=payload, follow_redirects=False)
+        if last.status_code == 429:
+            break
+    assert last.status_code == 429, "expected the limiter to engage"
+    assert "text/html" in last.headers["content-type"]
+    assert "Try again in a few minutes" in last.text
 
 
 def test_no_cap_by_default(client, enabled_form, easy_challenge):

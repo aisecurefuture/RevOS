@@ -5,7 +5,6 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
-import httpx
 from authlib.integrations.starlette_client import OAuth
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
