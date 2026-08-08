@@ -68,14 +68,37 @@ def daily_budget_remaining(db: Session) -> int | None:
     return max(0, limit - delivered_today(db))
 
 
-def record_delivery(db: Session, submission: "ContactSubmission", client_key: str = "") -> None:
-    db.add(
-        ContactMessage(
-            topic=submission.topic,
-            email_hash=_hashed(submission.email),
-            client_hash=_hashed(client_key),
-        )
+def reserve_delivery(
+    db: Session, submission: "ContactSubmission", client_key: str = ""
+) -> ContactMessage | None:
+    """Claim today's slot BEFORE sending, then confirm the claim was in budget.
+
+    Counting first and writing afterwards left the whole Resend round trip
+    between the read and the write, so a concurrent burst all read the same
+    stale count and every one of them sent. Inserting first means the count
+    below already includes this request and every other in-flight one, so
+    over-budget requests withdraw themselves. Ties fail closed: if two requests
+    both land on the boundary, both back out rather than both proceeding.
+    """
+    row = ContactMessage(
+        topic=submission.topic,
+        email_hash=_hashed(submission.email),
+        client_hash=_hashed(client_key),
     )
+    db.add(row)
+    db.commit()
+    limit = get_settings().contact_daily_limit
+    if limit > 0 and delivered_today(db) > limit:
+        release_delivery(db, row)
+        raise DailyLimitReached(f"Contact form reached its {limit}/day delivery cap")
+    return row
+
+
+def release_delivery(db: Session, row: ContactMessage | None) -> None:
+    """Give the slot back when the send never happened."""
+    if row is None:
+        return
+    db.delete(row)
     db.commit()
 
 
@@ -142,31 +165,32 @@ def build_html(submission: ContactSubmission) -> str:
     )
 
 
-async def send_contact_message(submission: ContactSubmission, db: Session | None = None) -> None:
+async def send_contact_message(
+    submission: ContactSubmission, db: Session | None = None, client_key: str = ""
+) -> None:
     settings = get_settings()
     recipients = settings.contact_recipient_list
     if not recipients or not settings.resend_api_key or not settings.resend_from_email:
         raise ContactNotConfigured(
             "Set RESEND_API_KEY, RESEND_FROM_EMAIL and CONTACT_RECIPIENTS to enable the form"
         )
-    # Only when the operator opted into a cap, and checked immediately before
-    # the send so a burst cannot slip past a value read earlier in the request.
-    if db is not None:
-        remaining = daily_budget_remaining(db)
-        if remaining is not None and remaining <= 0:
-            raise DailyLimitReached(
-                f"Contact form reached its {settings.contact_daily_limit}/day delivery cap"
-            )
     fingerprint = hashlib.sha256(
         f"{submission.email}:{submission.subject}:{submission.message}".encode()
     ).hexdigest()[:40]
-    await send_via_resend(
-        to=recipients,
-        subject=build_subject(submission),
-        text=build_text(submission),
-        html=build_html(submission),
-        category="contact_form",
-        # Reply goes to the submitter; RESEND_REPLY_TO is appended after it.
-        reply_to=[submission.email],
-        idempotency_key=f"contact-{fingerprint}",
-    )
+    reservation = reserve_delivery(db, submission, client_key) if db is not None else None
+    try:
+        await send_via_resend(
+            to=recipients,
+            subject=build_subject(submission),
+            text=build_text(submission),
+            html=build_html(submission),
+            category="contact_form",
+            # Reply goes to the submitter; RESEND_REPLY_TO is appended after it.
+            reply_to=[submission.email],
+            idempotency_key=f"contact-{fingerprint}",
+        )
+    except Exception:
+        # Nothing went out, so do not spend the slot.
+        if db is not None:
+            release_delivery(db, reservation)
+        raise

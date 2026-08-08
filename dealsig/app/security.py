@@ -52,11 +52,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 class RateLimiter:
     """Small single-instance limiter; use the reverse proxy for distributed limits."""
 
+    # Drained keys hold an empty deque forever otherwise, so a caller cycling
+    # keys (a fresh IP or email per request) would grow this dict without bound
+    # until the container is OOM-killed.
+    SWEEP_INTERVAL = 500
+
     def __init__(self) -> None:
         self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._calls_since_sweep = 0
+        self._widest_window = 0
 
     def check(self, key: str, limit: int, window_seconds: int) -> None:
         now = time.monotonic()
+        self._widest_window = max(self._widest_window, window_seconds)
         hits = self._hits[key]
         cutoff = now - window_seconds
         while hits and hits[0] < cutoff:
@@ -64,6 +72,15 @@ class RateLimiter:
         if len(hits) >= limit:
             raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
         hits.append(now)
+        self._calls_since_sweep += 1
+        if self._calls_since_sweep >= self.SWEEP_INTERVAL:
+            self._sweep(now)
+
+    def _sweep(self, now: float) -> None:
+        self._calls_since_sweep = 0
+        horizon = now - self._widest_window
+        for key in [key for key, hits in self._hits.items() if not hits or hits[-1] < horizon]:
+            del self._hits[key]
 
 
 rate_limiter = RateLimiter()

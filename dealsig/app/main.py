@@ -783,15 +783,13 @@ async def submit_contact(
     topic: str = Form("feedback"),
     name: str = Form(""),
     subject: str = Form(""),
-    company: str = Form(""),
+    dsg_ref: str = Form(""),
     challenge_token: str = Form(""),
     challenge_counter: str = Form(""),
     not_a_robot: str = Form(""),
     db: Session = Depends(get_db),
 ):
     await verify_csrf(request)
-    # A public endpoint that sends mail: cap it hard per client.
-    rate_limiter.check(client_key(request, "contact"), 5, 900)
 
     def reject(error: str, status_code: int = 400):
         return templates.TemplateResponse(
@@ -813,9 +811,22 @@ async def submit_contact(
             status_code=status_code,
         )
 
+    # A public endpoint that sends mail: cap it per client. Handled here rather
+    # than left to the default JSON error, which would replace a browser's form
+    # page with a raw JSON body and lose everything they typed.
+    try:
+        rate_limiter.check(client_key(request, "contact"), 5, 900)
+    except HTTPException as exc:
+        if exc.status_code != 429:
+            raise
+        return reject(
+            "That is a lot of messages from your network. Try again in a few minutes.",
+            status_code=429,
+        )
+
     # Honeypot: a hidden field only an automated submitter fills in. Report
     # success so the bot has nothing to tune against, but send nothing.
-    if company.strip():
+    if dsg_ref.strip():
         logger.info("Contact form honeypot triggered; submission dropped")
         return RedirectResponse("/contact?sent=1", status_code=303)
 
@@ -834,14 +845,6 @@ async def submit_contact(
     except challenge.ChallengeError as exc:
         logger.info("Contact challenge rejected (%s)", type(exc).__name__)
         return reject(str(exc))
-
-    # Only if the operator set CONTACT_DAILY_LIMIT; off by default.
-    budget_left = contact.daily_budget_remaining(db)
-    if budget_left is not None and budget_left <= 0:
-        logger.warning("Contact form daily cap reached; submission refused")
-        return reject(
-            "We have hit today's message limit. Please try again tomorrow.", status_code=429
-        )
 
     try:
         normalized = validate_email(email, check_deliverability=False).normalized
@@ -862,9 +865,9 @@ async def submit_contact(
         page_url=request.headers.get("referer", "")[:300],
     )
     try:
-        await contact.send_contact_message(submission, db)
+        await contact.send_contact_message(submission, db, client_key(request, "contact"))
     except contact.DailyLimitReached:
-        logger.warning("Contact form daily cap reached at send time; submission refused")
+        logger.warning("Contact form daily cap reached; submission refused")
         return reject(
             "We have hit today's message limit. Please try again tomorrow.", status_code=429
         )
@@ -873,7 +876,6 @@ async def submit_contact(
         return reject(
             "We could not send that just now. Please try again shortly.", status_code=502
         )
-    contact.record_delivery(db, submission, client_key(request, "contact"))
     return RedirectResponse("/contact?sent=1", status_code=303)
 
 

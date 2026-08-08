@@ -16,9 +16,12 @@
 
   <form method="post" action="/contact" class="form-stack contact-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <!-- Honeypot: hidden from people, tempting to bots. Leave it blank. -->
+    <!-- Honeypot: hidden from people, tempting to bots. Leave it blank.
+         Deliberately NOT named after a real field (company/address/phone) —
+         browser and password-manager autofill recognise those names and would
+         fill it for a genuine visitor, silently binning their message. -->
     <div class="hp-field" aria-hidden="true">
-      <label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label>
+      <label>Do not fill this in<input type="text" name="dsg_ref" tabindex="-1" autocomplete="new-password"></label>
     </div>
 
     <label>What is this about?
