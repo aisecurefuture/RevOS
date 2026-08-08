@@ -149,6 +149,25 @@ class RefreshRun(Base):
     error: Mapped[str] = mapped_column(Text, default="")
 
 
+class ContactMessage(Base):
+    """Accounting row for one delivered contact-form email.
+
+    Deliberately holds no message content and no plaintext address — the
+    operator's mailbox is the record. This table exists so the daily send cap
+    survives a restart, which an in-memory counter would not.
+    """
+
+    __tablename__ = "contact_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+    topic: Mapped[str] = mapped_column(String(40), default="")
+    email_hash: Mapped[str] = mapped_column(String(64), default="")
+    client_hash: Mapped[str] = mapped_column(String(64), default="")
+
+
 class WebhookEvent(Base):
     __tablename__ = "webhook_events"
 

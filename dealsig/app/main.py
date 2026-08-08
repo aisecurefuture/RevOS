@@ -31,7 +31,7 @@ from app.security import (
     rate_limiter,
     verify_csrf,
 )
-from app.services import authentication, billing, passkeys
+from app.services import authentication, billing, challenge, contact, passkeys
 from app.services.refresh import refresh_all, refresh_source, rescore_listing
 from app.services.seeds import seed_database
 from app.services.sources import SOURCE_BY_SLUG
@@ -738,6 +738,143 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid webhook") from exc
     return {"received": True, "processed": processed}
+
+
+def _contact_context(request: Request, db: Session, **values) -> dict:
+    user = current_user(request, db)
+    context = {
+        "topics": contact.TOPICS,
+        "contact_enabled": settings.contact_form_enabled,
+        "max_message": contact.MAX_MESSAGE,
+        "sent": False,
+        "error": "",
+        # A fresh challenge per render: the browser solves it when the visitor
+        # ticks the box, which is what unlocks the submit button.
+        "challenge": challenge.issue(get_csrf_token(request)),
+        "pow_bits": settings.contact_pow_bits,
+        # Prefilled for a signed-in member; a rejected post overrides this with
+        # what they actually typed so nothing has to be retyped.
+        "form": {
+            "email": user.email if user else "",
+            "topic": "feedback",
+            "name": "",
+            "subject": "",
+            "message": "",
+        },
+    }
+    context.update(values)
+    return page_context(request, db, **context)
+
+
+@app.get("/contact", response_class=HTMLResponse)
+def contact_page(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        request,
+        "contact.html",
+        _contact_context(request, db, sent=request.query_params.get("sent") == "1"),
+    )
+
+
+@app.post("/contact", response_class=HTMLResponse)
+async def submit_contact(
+    request: Request,
+    email: str = Form(""),
+    message: str = Form(""),
+    topic: str = Form("feedback"),
+    name: str = Form(""),
+    subject: str = Form(""),
+    company: str = Form(""),
+    challenge_token: str = Form(""),
+    challenge_counter: str = Form(""),
+    not_a_robot: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    await verify_csrf(request)
+    # A public endpoint that sends mail: cap it hard per client.
+    rate_limiter.check(client_key(request, "contact"), 5, 900)
+
+    def reject(error: str, status_code: int = 400):
+        return templates.TemplateResponse(
+            request,
+            "contact.html",
+            _contact_context(
+                request,
+                db,
+                sent=False,
+                error=error,
+                form={
+                    "email": email[:320],
+                    "topic": topic if topic in contact.TOPICS else "feedback",
+                    "name": name[:contact.MAX_NAME],
+                    "subject": subject[:contact.MAX_SUBJECT],
+                    "message": message[:contact.MAX_MESSAGE],
+                },
+            ),
+            status_code=status_code,
+        )
+
+    # Honeypot: a hidden field only an automated submitter fills in. Report
+    # success so the bot has nothing to tune against, but send nothing.
+    if company.strip():
+        logger.info("Contact form honeypot triggered; submission dropped")
+        return RedirectResponse("/contact?sent=1", status_code=303)
+
+    if not settings.contact_form_enabled:
+        return reject(
+            "The contact form is not configured yet. Email us directly and we will pick it up.",
+            status_code=503,
+        )
+
+    # Bot gate, before any validation work: the challenge is signed and timed,
+    # so a script that never loaded the form cannot produce a valid one.
+    if not not_a_robot:
+        return reject("Tick the verification box so we know you are a person.")
+    try:
+        challenge.verify(challenge_token, challenge_counter, get_csrf_token(request))
+    except challenge.ChallengeError as exc:
+        logger.info("Contact challenge rejected (%s)", type(exc).__name__)
+        return reject(str(exc))
+
+    # Only if the operator set CONTACT_DAILY_LIMIT; off by default.
+    budget_left = contact.daily_budget_remaining(db)
+    if budget_left is not None and budget_left <= 0:
+        logger.warning("Contact form daily cap reached; submission refused")
+        return reject(
+            "We have hit today's message limit. Please try again tomorrow.", status_code=429
+        )
+
+    try:
+        normalized = validate_email(email, check_deliverability=False).normalized
+    except EmailNotValidError:
+        return reject("Enter a valid email address so we can reply.")
+    body = message.strip()
+    if len(body) < contact.MIN_MESSAGE:
+        return reject("Tell us a little more so we can act on it.")
+
+    signed_in = current_user(request, db)
+    submission = contact.ContactSubmission(
+        email=normalized,
+        message=body[: contact.MAX_MESSAGE],
+        topic=topic if topic in contact.TOPICS else "other",
+        name=" ".join(name.split())[: contact.MAX_NAME],
+        subject=subject[: contact.MAX_SUBJECT],
+        account_email=signed_in.email if signed_in else "",
+        page_url=request.headers.get("referer", "")[:300],
+    )
+    try:
+        await contact.send_contact_message(submission, db)
+    except contact.DailyLimitReached:
+        logger.warning("Contact form daily cap reached at send time; submission refused")
+        return reject(
+            "We have hit today's message limit. Please try again tomorrow.", status_code=429
+        )
+    except Exception as exc:
+        logger.warning("Contact form delivery failed (%s)", type(exc).__name__)
+        return reject(
+            "We could not send that just now. Please try again shortly.", status_code=502
+        )
+    contact.record_delivery(db, submission, client_key(request, "contact"))
+    return RedirectResponse("/contact?sent=1", status_code=303)
 
 
 @app.get("/legal/{page}", response_class=HTMLResponse)

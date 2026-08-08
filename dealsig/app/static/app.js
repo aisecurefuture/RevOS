@@ -58,6 +58,83 @@
     });
   });
 
+  // Contact-form bot check. Ticking the box solves a server-signed proof of
+  // work in this tab; the submit button unlocks only once it lands. Uses the
+  // platform SHA-256 (no third-party captcha, so the CSP stays 'self').
+  const robotCheck = document.querySelector("[data-robot-check]");
+  if (robotCheck) {
+    const toggle = robotCheck.querySelector("[data-robot-toggle]");
+    const counterField = robotCheck.querySelector("[data-pow-counter]");
+    const status = robotCheck.querySelector("[data-robot-status]");
+    const submit = document.querySelector("[data-contact-submit]");
+    const token = robotCheck.querySelector('input[name="challenge_token"]')?.value || "";
+    const nonce = token.split(".")[1] || "";
+    const bits = Number(robotCheck.dataset.powBits) || 18;
+    let solving = false;
+
+    function leadingZeroBits(bytes) {
+      let total = 0;
+      for (const byte of bytes) {
+        if (byte) return total + (8 - byte.toString(2).length);
+        total += 8;
+      }
+      return total;
+    }
+
+    async function solve() {
+      const encoder = new TextEncoder();
+      // Hash in batches: one await per batch instead of per hash keeps the
+      // promise overhead from dominating, and yields to the event loop so the
+      // page never freezes.
+      const BATCH = 1024;
+      for (let base = 0; base < 20000000; base += BATCH) {
+        const digests = await Promise.all(
+          Array.from({length: BATCH}, (_, offset) =>
+            crypto.subtle.digest("SHA-256", encoder.encode(`${nonce}:${base + offset}`)))
+        );
+        for (let offset = 0; offset < BATCH; offset += 1) {
+          if (leadingZeroBits(new Uint8Array(digests[offset])) >= bits) return String(base + offset);
+        }
+      }
+      return "";
+    }
+
+    function reset(message) {
+      counterField.value = "";
+      if (submit) submit.disabled = true;
+      status.textContent = message;
+    }
+
+    toggle?.addEventListener("change", async () => {
+      if (!toggle.checked) {
+        reset("Tick the box to verify — it runs in your browser, with no third-party tracker.");
+        return;
+      }
+      if (!window.crypto?.subtle || !nonce) {
+        toggle.checked = false;
+        reset("This browser cannot run the verification step. Reply to any DealSig email instead.");
+        return;
+      }
+      if (solving) return;
+      solving = true;
+      toggle.disabled = true;
+      status.textContent = "Verifying…";
+      try {
+        const counter = await solve();
+        if (!counter) throw new Error("no solution");
+        counterField.value = counter;
+        status.textContent = "Verified — you can send now.";
+        if (submit) submit.disabled = false;
+      } catch {
+        toggle.checked = false;
+        reset("Verification did not finish. Untick and try again.");
+      } finally {
+        solving = false;
+        toggle.disabled = false;
+      }
+    });
+  }
+
   const calculator = document.querySelector("[data-calculator]");
   if (calculator) {
     calculator.querySelector("[data-analyze]")?.addEventListener("click", async (event) => {

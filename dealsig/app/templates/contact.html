@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Contact · DealSig AI{% endblock %}
+{% block public_content %}
+<article class="legal-page contact-page">
+  <span class="eyebrow dark">DEALSIG AI</span>
+  <h1>Tell us what you need</h1>
+  <p class="lead">Feedback, a feature request, a broken page, or a public source we should be monitoring — this reaches a person.</p>
+
+  {% if sent %}
+  <div class="alert success">Thanks — that came through. We reply to the address you gave us.</div>
+  {% endif %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% if not contact_enabled %}
+  <div class="alert">The form is not connected to email delivery yet. Set <code>RESEND_API_KEY</code>, <code>RESEND_FROM_EMAIL</code> and <code>CONTACT_RECIPIENTS</code> to switch it on.</div>
+  {% endif %}
+
+  <form method="post" action="/contact" class="form-stack contact-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <!-- Honeypot: hidden from people, tempting to bots. Leave it blank. -->
+    <div class="hp-field" aria-hidden="true">
+      <label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label>
+    </div>
+
+    <label>What is this about?
+      <select name="topic">
+        {% for value, label in topics.items() %}
+        <option value="{{ value }}" {% if form.topic == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Your email
+      <input type="email" name="email" maxlength="320" required autocomplete="email" placeholder="you@company.com" value="{{ form.email }}">
+    </label>
+    <label>Your name <span class="optional">optional</span>
+      <input type="text" name="name" maxlength="120" autocomplete="name" placeholder="Pat Kelly" value="{{ form.name }}">
+    </label>
+    <label>Subject <span class="optional">optional</span>
+      <input type="text" name="subject" maxlength="200" placeholder="Add Cook County scavenger sale" value="{{ form.subject }}">
+    </label>
+    <label>Message
+      <textarea name="message" rows="7" maxlength="{{ max_message }}" required placeholder="What happened, what you expected, or what you would like to see.">{{ form.message }}</textarea>
+    </label>
+    <small>We use your email only to reply. Never send account passwords, card numbers, or wire details through this form.</small>
+
+    <div class="robot-check" data-robot-check data-pow-bits="{{ pow_bits }}">
+      <input type="hidden" name="challenge_token" value="{{ challenge }}">
+      <input type="hidden" name="challenge_counter" value="" data-pow-counter>
+      <label class="robot-box">
+        <input type="checkbox" name="not_a_robot" value="1" data-robot-toggle {% if not contact_enabled %}disabled{% endif %}>
+        <span>I am not a robot</span>
+      </label>
+      <small data-robot-status>Tick the box to verify — it runs in your browser, with no third-party tracker.</small>
+    </div>
+
+    <button class="button dark large full" type="submit" data-contact-submit disabled>Send message →</button>
+    <noscript>
+      <div class="alert error">Sending needs JavaScript for the verification step. Turn it on, or reply to any DealSig email instead.</div>
+    </noscript>
+  </form>
+</article>
+{% endblock %}
