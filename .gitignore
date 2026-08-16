@@ -25,6 +25,17 @@ frontend/.turbo/
 npm-debug.log*
 yarn-error.log*
 
+# Database dumps — NEVER commit these.
+# The nightly backup containers write full pg_dump output for BOTH products
+# into ./backups (docker-compose.prod.yml mounts it), so without this rule a
+# single `git add -A` on the server publishes complete production databases to
+# github.com/aisecurefuture/RevOS. Found untracked-but-not-ignored on the box
+# on 2026-08-16 with 16 dumps present.
+backups/
+*.sql
+*.sql.gz
+*.dump
+
 # Local storage / media
 backend/storage/
 backend/media/
