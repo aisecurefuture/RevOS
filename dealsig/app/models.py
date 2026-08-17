@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import false
 
 from app.database import Base
 
@@ -132,6 +133,9 @@ class SourceStatus(Base):
     last_error: Mapped[str] = mapped_column(Text, default="")
     etag: Mapped[str] = mapped_column(String(255), default="")
     content_hash: Mapped[str] = mapped_column(String(64), default="")
+    # When the watched page last actually changed. For a calendar_monitor this
+    # is the entire product of the source, so it has to be recorded and shown.
+    last_change_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RefreshRun(Base):
@@ -146,6 +150,10 @@ class RefreshRun(Base):
     discovered: Mapped[int] = mapped_column(Integer, default=0)
     created: Mapped[int] = mapped_column(Integer, default=0)
     updated: Mapped[int] = mapped_column(Integer, default=0)
+    # The watched page differed from the last fetch. For monitor-only sources
+    # this is the only meaningful outcome a run can report. server_default lets
+    # it be added to an existing, populated table (see database._sync_columns).
+    changed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     error: Mapped[str] = mapped_column(Text, default="")
 
 

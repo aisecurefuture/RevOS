@@ -287,6 +287,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .health-dot { display: block; flex: 0 0 auto; width: 7px; height: 7px; background: #aab3af; border-radius: 50%; }
 .health-dot.healthy { background: #88ad1d; box-shadow: 0 0 0 3px #eff6dd; }
 .health-dot.degraded { background: #d57b47; box-shadow: 0 0 0 3px #fff0e7; }
+/* Monitor-only: working, but structurally cannot produce listings. Distinct
+   from healthy so the network overview does not overstate coverage. */
+.health-dot.monitoring { background: #6f93bd; box-shadow: 0 0 0 3px #eaf1f8; }
 
 /* Feed */
 .filter-bar { display: grid; grid-template-columns: minmax(210px,1.7fr) repeat(4,minmax(120px,.75fr)) auto; gap: 9px; align-items: end; margin: 20px 0; padding: 13px; background: white; border: 1px solid var(--line); border-radius: 12px; }
@@ -392,6 +395,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .source-card dd { margin: 0; font-weight: 700; }
 .source-actions { display: flex; justify-content: space-between; }
 .source-actions a { color: #617d13; font-size: 9px; font-weight: 750; }
+.source-note { margin: 10px 0 0; color: #7d8a85; font-size: 10px; line-height: 1.55; }
 .source-error { overflow: hidden; color: #a75247; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .runs-panel { margin-top: 18px; padding-bottom: 20px; }
 .runs-table { margin: 0 22px; }
