@@ -96,6 +96,8 @@ services:
     networks:
       - default
       - dealsig-edge
+      - whoipick-marketing-edge
+      - whoipick-app-edge
     ports:
       - "80:80"
       - "443:443"
@@ -241,6 +243,722 @@ services:
           sleep 86400;
         done
 
+  # --- WhoIPick (whoipick.com) ------------------------------------------------
+  # A THIRD self-contained product co-hosted on this box. Two Next.js 15 apps
+  # from one Turborepo, not one process like DealSig:
+  #   whoipick-marketing -> whoipick.com      SSR/ISR leaderboards, SEO surface
+  #   whoipick-web       -> app.whoipick.com  auth, bidding, credits, uploads
+  # plus its own Postgres 17, a one-shot migrator and a nightly backup loop.
+  #
+  # SOURCE IS A SEPARATE GIT REPO cloned in place at ./whoipick. WhoIPick has
+  # different co-founders and a different cap table from RevOS, so its
+  # collaborators must not get read access to this repo:
+  #   git clone git@github.com:whoipick/whoipick.git /root/RevOS/whoipick
+  # Nothing in THIS file reads that directory, though — there is no build
+  # context here. The clone exists so someone can read the source on the box;
+  # a fresh RevOS clone with no ./whoipick still brings this stack up fine.
+  #
+  # IMAGES ARE BUILT IN CI AND PULLED. The ABSENCE OF ANY `build:` KEY is what
+  # makes that a property of the file rather than a promise in a comment.
+  #
+  # `pull_policy: missing`, NOT `always`. This was `always` in v1 and it was
+  # wrong, measured: Compose resolves every service's image BEFORE it creates
+  # anything, so with `always` a GHCR outage, an expired `read:packages` PAT
+  # (GitHub PATs expire by default), a package flipped back to private, or a
+  # blank WHOIPICK_TAG aborts the ENTIRE `up -d` and starts NOTHING — including
+  # RevOS's own containers. Reproduced on Compose v5.3.1: with a blank tag,
+  # `up -d` dies on `invalid reference format` and `ps -a` is empty; with a
+  # valid tag and a denied pull, `up -d` dies on `error from registry: denied`
+  # and `ps -a` is empty. That is exactly the cross-product coupling this file
+  # removed `depends_on` to avoid, reintroduced through a different key.
+  # Note `postgres:17.5-alpine` (whoipick-db, whoipick-backup) is NOT affected:
+  # it is already on the box for dealsig-db, and it carries no `${...}`.
+  #
+  # `${WHOIPICK_TAG}` has NO `:-latest` fallback on purpose: an unset variable
+  # must be a loud, deploy-stopping failure, not a silent deploy of a mutable
+  # tag CI never pushed. Be precise about WHEN it fails, because ROLLBACK.md
+  # used to get this wrong: `docker compose config` exits 0 with only a warning
+  # (so `ps`, `logs` and `stop` all keep working — the emergency path is
+  # intact); it is `up -d`/`pull` that fails, and it fails for the whole stack.
+  # Set it in /root/RevOS/.env:  WHOIPICK_TAG=<git-sha>
+  #
+  # CONFIG lives in FIVE files OUTSIDE every git working tree, at
+  # /root/secrets/whoipick/ (dir 0700 root:root, files 0600):
+  #   marketing.env  read-only role's DB URL + two public URLs. NOTHING else.
+  #   app.env        AUTH_SECRET, Stripe secret, Resend, S3, OAuth, RW DB URL
+  #   migrate.env    the DDL-capable URL. Loaded by one service, for the few
+  #                  seconds per deploy that service runs.
+  #   db.env         ⚠ THE ONLY FILE ON THIS BOX WITH UNPREFIXED NAMES, AND IT
+  #                  IS LOADED BY EXACTLY ONE CONTAINER — see whoipick-db.
+  #   backup.env     the dump role's credentials. Loaded by whoipick-backup.
+  # The THREE-WAY APPLICATION SPLIT (marketing / app / migrate) is unchanged and
+  # is the security boundary; db.env and backup.env are infrastructure files
+  # that no application container ever loads.
+  # They are outside ./whoipick because ./whoipick is a git repo whose index
+  # RevOS's .gitignore does not govern, and the people with push access to it
+  # are not the people who own these secrets. They are outside ./ (RevOS) for
+  # the mirror-image reason.
+  #
+  # `required: false` on every env_file is NOT laziness — it is the fix for a
+  # real trap. Compose resolves env_file at CONFIG-LOAD time, before it does
+  # anything, so a missing file makes `docker compose ps`, `logs`, `stop` and
+  # `exec caddy caddy reload` ALL abort for the WHOLE stack — including every
+  # step of a rollback, during an incident, over a file a different company's
+  # repo owns. With `required: false`, a missing file degrades WhoIPick (the app
+  # fails its own production config validation and crash-loops; the database
+  # refuses to initialise) and leaves RevOS and DealSig fully operable. Needs
+  # Compose >= v2.24.0; RUNBOOK step 0 checks. See ROLLBACK.md for the
+  # compose-free emergency path regardless.
+  #
+  # ===========================================================================
+  # NETWORKING — FOUR networks. GET THIS EXACTLY RIGHT; IT IS THE SUBTLE PART.
+  # ===========================================================================
+  #   whoipick-marketing-edge      marketing + caddy
+  #   whoipick-app-edge            web       + caddy
+  #   whoipick-marketing-internal  marketing + db
+  #   whoipick-app-internal        web + db + migrate + backup
+  #
+  #   whoipick-marketing : [whoipick-marketing-edge, whoipick-marketing-internal]
+  #   whoipick-web       : [whoipick-app-edge,       whoipick-app-internal]
+  #   whoipick-db        : [whoipick-app-internal,   whoipick-marketing-internal]
+  #   whoipick-migrate   : [whoipick-app-internal]
+  #   whoipick-backup    : [whoipick-app-internal]
+  #   caddy              : + whoipick-marketing-edge, whoipick-app-edge
+  #
+  # WHY IT IS SHAPED THIS WAY, since a shared database is the classic way to
+  # undo a network split by accident:
+  #
+  # A previous security round deliberately put marketing and web on SEPARATE
+  # edge networks so the public, crawler-facing, unauthenticated SSR container
+  # could not dial app.whoipick.com:3000 directly, bypassing Caddy's 25 MB body
+  # cap and its Host routing. Adding a database that BOTH apps must reach is
+  # exactly the change that tempts you to put everything on one network and
+  # call it `whoipick-internal`. That would silently hand the marketing
+  # container the path the previous round removed.
+  #
+  # Instead, whoipick-db STRADDLES TWO NETWORKS — the same shape caddy already
+  # uses to serve `default` and `dealsig-edge` without joining DealSig to the
+  # RevOS database. The database is the only member of both, so:
+  #   * marketing resolves `whoipick-db` and nothing else on the app side;
+  #   * web resolves `whoipick-db`, `whoipick-migrate`, `whoipick-backup`;
+  #   * marketing and web share NO network and cannot resolve each other —
+  #     RUNBOOK step 20(d) proves it, and that check must keep passing;
+  #   * migrate and backup are on the app-internal side only, so the public SSR
+  #     container has no route to the container holding the DDL credential;
+  #   * naming any network on a service removes it from `default`, so no
+  #     WhoIPick container can resolve `db`, `redis`, `api`, `openbao`,
+  #     `dealsig-db` or `dealsig-web`, and nothing on RevOS's or DealSig's
+  #     networks can resolve or reach whoipick-db.
+  #
+  # `whoipick-migrate-net` from v2 IS GONE. It existed so the migrator could
+  # reach Neon over outbound NAT while touching nothing on this box. With the
+  # database local, the migrator must be able to dial whoipick-db, so it joins
+  # whoipick-app-internal. Delete the old network entry (ROLLBACK Level 7e
+  # lists it) rather than leaving an empty bridge behind.
+  #
+  # `internal: true` ON THE TWO INTERNAL NETWORKS — CONSIDERED AND DECLINED.
+  # It would remove outbound NAT from whoipick-db, which genuinely needs none.
+  # But the marketing and web containers are each on one internal and one edge
+  # network, and Docker derives a container's default route from one of its
+  # attachments; an `internal` network in that set is a documented way to end up
+  # with a container that cannot reach Stripe, Resend, S3 or Sentry, in a way
+  # that presents as intermittent egress failure rather than a config error.
+  # Not worth it for a database that publishes no ports and is unreachable from
+  # outside the box anyway. Recorded so the next reader does not "fix" it.
+
+  # ---------------------------------------------------------------------------
+  # whoipick-db — WhoIPick's own Postgres. THE THIRD ON THIS BOX.
+  # ---------------------------------------------------------------------------
+  # Same major version as dealsig-db (17), same pinned patch tag, so the box
+  # holds ONE postgres:17.5-alpine image rather than two — on a 79%-full disk
+  # that is not a stylistic preference. It also means whoipick-backup's
+  # `pg_dump` client version matches the server, which is the constraint that
+  # made dealsig-backup pin 17.5 in the first place.
+  #
+  # ⚠ db.env IS THE ONE FILE ON THIS BOX THAT USES UNPREFIXED NAMES, AND THAT
+  # IS DELIBERATE. Every other WhoIPick variable is `WHOIPICK_`-prefixed so the
+  # collision set against RevOS's .env and dealsig/.env.prod is ZERO — the nine
+  # known collisions are APP_ENV, COOKIE_SECURE, DATABASE_URL, POSTGRES_DB,
+  # POSTGRES_USER, POSTGRES_PASSWORD, RESEND_API_KEY, STRIPE_SECRET_KEY and
+  # STRIPE_WEBHOOK_SECRET. A local Postgres reintroduces two of those families,
+  # because THE POSTGRES IMAGE'S ENTRYPOINT READS THE LITERAL NAMES
+  # `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD` and nothing else —
+  # they cannot be prefixed. The containment is therefore structural rather
+  # than lexical: those three names exist in exactly one file, that file is
+  # loaded by exactly one container, and no other service on this box may name
+  # it. `grep -rl POSTGRES_PASSWORD /root` returning three files is fine
+  # PRECISELY BECAUSE each one is loaded by one product's database and nothing
+  # else. Do NOT add db.env to whoipick-backup to save writing backup.env —
+  # that is how the superuser password ends up in a second container.
+  #
+  # The role passwords (WHOIPICK_DB_*_PASSWORD) live in this same file because
+  # the init script consumes them at initdb time, and they ARE prefixed.
+  whoipick-db:
+    image: postgres:17.5-alpine
+    restart: always
+    # Docker's stock json-file driver has NO max-size and NO max-file, and
+    # dealsig-db and db have no logging block at all. A full disk is the failure
+    # this whole revision is guarding against, and a Postgres that fills the
+    # disk PANICs on a WAL write and shuts down — so the log cap goes on the
+    # database too, not only on the two chatty Next containers.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file:
+      - path: /root/secrets/whoipick/db.env
+        required: false
+    environment:
+      # --data-checksums can ONLY be set at initdb time. It costs a few percent
+      # of CPU and detects silent corruption on a disk that is 79% full and
+      # shared with two other databases and 24 GB of build cache. dealsig-db
+      # does not have it; it cannot be added to dealsig-db now without a dump
+      # and reload, which is exactly why it goes on this one at creation.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      # Keep PGDATA one level below the volume mountpoint. The official image
+      # tolerates either, but a subdirectory means the volume root can hold a
+      # marker file (or a lost+found on a future block device) without the
+      # entrypoint mistaking a non-empty directory for an initialised cluster.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    # Tuning is explicit rather than inherited, and every number is derived.
+    # The defaults are wrong here in the disk direction, not the memory one.
+    command:
+      - postgres
+      # 60, not the default 100. Derived: whoipick-web 5 + whoipick-marketing 5
+      # (Prisma client-side pools) x a small multiple for rolling restarts, plus
+      # migrate 4, backup 2, superuser_reserved 3, and headroom for a psql
+      # session during an incident. The four role CONNECTION LIMITs in the init
+      # script sum to 41 against this. CAPACITY.md documents what the opposite
+      # looks like: RevOS's `api` can request 120 against max_connections=100,
+      # with no per-role ceiling to stop it.
+      - "-c"
+      - "max_connections=60"
+      # 256 MB of 30.6 GiB. Small on purpose: this database serves leaderboard
+      # reads that ISR caches, and the box's real scarcity is disk, not RAM.
+      # Raise it only with a measurement.
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      # --- DISK, which is the actual constraint on this box --------------------
+      # max_wal_size caps the steady-state size of pg_wal between checkpoints;
+      # the directory can reach roughly 2x it in a burst. Default 1GB => up to
+      # ~2 GB of WAL. 512MB halves that for the cost of more frequent
+      # checkpoints, which on a database this small is not a workload anyone
+      # will notice. wal_compression pays for itself twice: less WAL on disk and
+      # smaller checkpoints.
+      - "-c"
+      - "max_wal_size=512MB"
+      - "-c"
+      - "min_wal_size=80MB"
+      - "-c"
+      - "wal_compression=on"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      # SSD, so a random page is not 4x a sequential one.
+      - "-c"
+      - "random_page_cost=1.1"
+      # Log slow queries, not every connection. `log_connections=on` on a
+      # crawler-driven SSR workload writes a line per request into the json-file
+      # driver capped above — visible cost, no diagnostic value.
+      - "-c"
+      - "log_min_duration_statement=1000"
+      - "-c"
+      - "log_checkpoints=on"
+      - "-c"
+      - "log_lock_waits=on"
+    volumes:
+      - whoipick-postgres-data:/var/lib/postgresql/data
+      # Runs ONCE, on first boot of an empty data directory. Read-only, and a
+      # directory rather than a single file — unlike the Caddyfile mount, whose
+      # single-file inode binding is the root cause of that whole procedural
+      # ritual (OPEN-QUESTIONS #16). Do not repeat that mistake here.
+      - /root/secrets/whoipick/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Same probe as dealsig-db. `$$` escapes for Compose so the variable is
+      # expanded inside the container, where env_file values exist.
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # The init script runs inside the first start. Without a start_period the
+      # container can be marked unhealthy while it is legitimately still
+      # creating roles.
+      start_period: 60s
+    # Default is 10s, after which Docker SIGKILLs. A SIGKILLed postmaster means
+    # crash recovery on next start, every single time the stack is stopped.
+    # 60s lets a shutdown checkpoint complete. dealsig-db and db do not have
+    # this; they should.
+    stop_grace_period: 60s
+    # Postgres uses /dev/shm for parallel query workers; Docker's default 64m
+    # produces "could not resize shared memory segment" under parallel plans.
+    shm_size: 256mb
+    networks: [whoipick-app-internal, whoipick-marketing-internal]
+    security_opt: [no-new-privileges:true]
+    # NO `cap_drop: [ALL]` HERE, AND IT IS NOT AN OVERSIGHT. The official
+    # postgres entrypoint starts as root, chowns PGDATA and drops to the
+    # postgres user with `su-exec` — which needs CHOWN, DAC_OVERRIDE, FOWNER,
+    # SETGID and SETUID. `cap_drop: [ALL]` makes the container fail at startup,
+    # and the failure looks like a permissions bug in the volume. The tested
+    # minimum, if you want it, is:
+    #     cap_drop: [ALL]
+    #     cap_add:  [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    # Prove it on a throwaway volume before putting it on the production one;
+    # it is not enabled by default because a database that will not start is a
+    # worse outcome than five capabilities on a container with no published
+    # ports, on two private networks. The two Next containers and the migrator
+    # DO carry `cap_drop: [ALL]`, because they are plain non-root processes.
+    #
+    # --- MEMORY: THE ONE THING NOT TO "IMPROVE" --------------------------------
+    # NO `mem_limit`. NO `memswap_limit`. This is the same rule RUNBOOK step 16
+    # and ROLLBACK Level 2.5 spell out for `db` and `dealsig-db`, and it applies
+    # with full force to the newest and least-measured database on the box:
+    #   * `mem_limit` INSTALLS a per-container cgroup OOM killer that does not
+    #     otherwise exist. Before it, this container could only be killed by the
+    #     global killer under whole-box pressure. After it, it can be killed by
+    #     its own cgroup while 27 GB are free.
+    #   * `oom_score_adj` DOES NOT GOVERN cgroup-limit kills. It biases the
+    #     GLOBAL killer's victim selection only. The two are not a matched pair.
+    #   * A cgroup kill of any Postgres backend makes the postmaster terminate
+    #     every session and enter crash recovery.
+    # If a cap is ever added it must be >= 2.5x observed RSS, never below
+    # shared_buffers + 512 MB, derived in writing, and never a round number
+    # chosen in advance. With 27 GB available there is no case for one today.
+    oom_score_adj: -900
+
+  # ---------------------------------------------------------------------------
+  # whoipick-backup — nightly gzipped pg_dump, 7-day retention.
+  # ---------------------------------------------------------------------------
+  # Mirrors the shape and retention of `backup` and `dealsig-backup` so an
+  # operator reading ./backups finds three products in one place with three
+  # prefixes. IT FIXES A DEFECT BOTH OF THOSE HAVE, and the fix must be
+  # backported:
+  #
+  # ⚠⚠ BACKPORT THIS TO docker-compose.prod.yml's `backup` (line ~135) AND
+  #    `dealsig-backup` (line ~229). Neither sets `set -o pipefail`, so in
+  #    `pg_dump ... | gzip > out.gz` the shell reports GZIP's exit status. gzip
+  #    succeeds on a truncated stream — it has no idea the producer died. A
+  #    pg_dump killed by an OOM, a network reset, a full disk or a permissions
+  #    error therefore writes a VALID .gz CONTAINING A TRUNCATED DUMP, and the
+  #    loop logs "backup ok". Those two services have been able to lie for as
+  #    long as they have existed, and CAPACITY.md §"Both backup services can
+  #    lie" says so without anything having been done about it. Three fixes,
+  #    all present below:
+  #      1. `set -o pipefail`  — the exit status becomes the pipeline's worst.
+  #      2. `gunzip -t`        — proves the archive is complete, not just valid
+  #                              gzip framing. This is the check that catches a
+  #                              dump the producer never finished.
+  #      3. write to `.part`, rename only after both pass — so a failed run can
+  #         never leave a file that LOOKS like a backup. Retention only ever
+  #         deletes verified files.
+  #    And it is made LOUD: a failure writes /backups/whoipick_BACKUP_FAILED,
+  #    which RUNBOOK step 31's cron alerts on, alongside a staleness check on
+  #    the newest dump. A message on stderr inside a container nobody reads is
+  #    not an alert — that is the existing failure, not a template to copy.
+  #
+  # NO `depends_on`, deliberately, and this is a DEVIATION from dealsig-backup.
+  # `depends_on: {whoipick-db: {condition: service_healthy}}` would make a
+  # WhoIPick database that fails its healthcheck able to fail `docker compose
+  # up -d` — the documented way to ship a RevOS hotfix (deploy/hetzner.md §12).
+  # Every other cross-product coupling in this design was removed for exactly
+  # that reason; a backup loop is not the place to reintroduce one. The loop
+  # waits for readiness itself, which also makes it survive a database restart
+  # instead of needing one.
+  #
+  # This container never holds the superuser password. It authenticates as
+  # `whoipick_backup`, a NOSUPERUSER role granted `pg_read_all_data` by the init
+  # script — enough for a complete logical dump, and nothing else. It is also
+  # `default_transaction_read_only`.
+  whoipick-backup:
+    image: postgres:17.5-alpine
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file:
+      - path: /root/secrets/whoipick/backup.env
+        required: false
+    volumes:
+      - ./backups:/backups
+    networks: [whoipick-app-internal]
+    security_opt: [no-new-privileges:true]
+    # Safe here, unlike on whoipick-db: this container's custom entrypoint never
+    # runs the postgres image's root-then-su-exec startup. It runs a shell loop
+    # that calls pg_dump and gzip. (If /backups is ever chowned away from root,
+    # this container will need DAC_OVERRIDE back — it runs as root today because
+    # ./backups is root-owned and shared with the two existing backup services.)
+    cap_drop: [ALL]
+    # It writes to /backups and nowhere else. Both existing backup services run
+    # with a fully writable rootfs for no reason.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -u
+        # busybox ash supports `set -o pipefail`, but ASSERT it rather than
+        # assume it: silently running without pipefail is precisely the bug
+        # being fixed, and it would be invisible.
+        if ! (set -o pipefail) 2>/dev/null; then
+          echo "FATAL: this shell has no pipefail; a truncated pg_dump would be reported ok" >&2
+          exit 1
+        fi
+        set -o pipefail
+        : "$${WHOIPICK_BACKUP_PGHOST:?}" "$${WHOIPICK_BACKUP_PGUSER:?}"
+        : "$${WHOIPICK_BACKUP_PGDATABASE:?}" "$${WHOIPICK_BACKUP_PGPASSWORD:?}"
+        echo "WhoIPick backup service started; nightly dumps to /backups/whoipick_*.sql.gz";
+        while true; do
+          # Wait for the database itself instead of using depends_on. This also
+          # rides out a database restart without the loop dying.
+          until PGPASSWORD="$$WHOIPICK_BACKUP_PGPASSWORD" pg_isready \
+                  -h "$$WHOIPICK_BACKUP_PGHOST" -U "$$WHOIPICK_BACKUP_PGUSER" \
+                  -d "$$WHOIPICK_BACKUP_PGDATABASE" -q; do
+            echo "waiting for whoipick-db"; sleep 5;
+          done;
+          TS=$$(date +%F_%H%M%S);
+          OUT=/backups/whoipick_$$TS.sql.gz;
+          ok=1;
+          if ! PGPASSWORD="$$WHOIPICK_BACKUP_PGPASSWORD" pg_dump \
+                 -h "$$WHOIPICK_BACKUP_PGHOST" -U "$$WHOIPICK_BACKUP_PGUSER" \
+                 -d "$$WHOIPICK_BACKUP_PGDATABASE" --no-owner --no-privileges \
+               | gzip -9 > "$$OUT.part"; then
+            echo "*** pg_dump/gzip pipeline FAILED at $$TS" >&2; ok=0;
+          elif ! gunzip -t "$$OUT.part" 2>/dev/null; then
+            echo "*** dump at $$TS is TRUNCATED (gunzip -t failed)" >&2; ok=0;
+          elif [ ! -s "$$OUT.part" ]; then
+            echo "*** dump at $$TS is EMPTY" >&2; ok=0;
+          fi;
+          if [ "$$ok" -eq 1 ]; then
+            mv "$$OUT.part" "$$OUT";
+            echo "backup ok: whoipick_$$TS.sql.gz ($$(wc -c < "$$OUT") bytes)";
+            rm -f /backups/whoipick_BACKUP_FAILED;
+          else
+            rm -f "$$OUT.part";
+            # The marker is the alert. RUNBOOK step 31's cron checks for this
+            # file AND for the age of the newest whoipick_*.sql.gz, because a
+            # container that is dead cannot write a marker either.
+            date -u +%FT%TZ > /backups/whoipick_BACKUP_FAILED;
+            echo "*** BACKUP FAILED at $$TS — /backups/whoipick_BACKUP_FAILED written" >&2;
+          fi;
+          # Retention: 7 days, matching the two existing loops. Only VERIFIED
+          # files are ever candidates, because unverified ones never got the
+          # final name. Sweep stale .part files from a crash mid-dump.
+          find /backups -name 'whoipick_*.sql.gz' -mtime +7 -delete;
+          find /backups -name 'whoipick_*.sql.gz.part' -mtime +1 -delete;
+          sleep 86400;
+        done
+    # ⚠ SERVER-LOCAL BACKUPS DO NOT SURVIVE A SERVER LOSS. deploy/hetzner.md
+    # :196-198 has said so since the box was built, and it was never
+    # implemented. With the database now local, that gap is WhoIPick's problem
+    # too — Neon at least held a copy somewhere else. RUNBOOK step 10d
+    # implements the off-box sync (restic to a Hetzner Storage Box), its
+    # retention, its verification and a rehearsed restore, and it covers
+    # revos_*, dealsig_* and whoipick_* in one pass because they share this
+    # directory. Do not treat this loop as the backup; it is the local half.
+
+  # One-shot: apply Prisma migrations, then exit.
+  #
+  # `profiles: ["migrate"]` IS THE THING THAT KEEPS THIS OUT OF A BARE `up -d`.
+  # v1 claimed the absence of `depends_on` did that. It does not, and this was
+  # reproduced: a service with `restart: "no"`, no `depends_on` and no profile
+  # IS started by a plain `docker compose up -d` — so every future RevOS hotfix
+  # deploy (`up -d`, the documented command in deploy/hetzner.md §12) would
+  # have fired an unwatched `prisma migrate deploy` against production. With a
+  # profile it is excluded from `up -d`, and `docker compose run --rm
+  # whoipick-migrate` STILL WORKS with no `--profile` flag (verified) — as does
+  # `docker compose pull whoipick-migrate`, because both name the service
+  # explicitly.
+  #
+  # NO `depends_on` on whoipick-db either, for the same reason as the backup
+  # service. RUNBOOK step 17 checks `pg_isready` before running this, which is
+  # a watched operator step rather than a coupling in the file.
+  #
+  # This is the RevOS `migrate` shape, NOT DealSig's lifespan init_db. Both
+  # existing products document their choice, so this one states it too: Prisma
+  # owns a versioned migration history, and `prisma db push` against a
+  # production database is one typo away from a destructive column drop.
+  #
+  # Runs as `whoipick_migrate`, the role that OWNS the schema — the only role
+  # that can run DDL. With a local Postgres there is no PgBouncer and therefore
+  # no transaction-mode DDL problem, but WHOIPICK_DIRECT_DATABASE_URL keeps its
+  # name: schema.prisma's `directUrl` resolves it, and it remains the single
+  # grep-able token that proves the DDL credential exists in exactly one place
+  # (`$DC --profile migrate config | grep -c DIRECT_DATABASE_URL` must be 1).
+  whoipick-migrate:
+    image: ghcr.io/aisecurefuture/whoipick-migrator:${WHOIPICK_TAG}
+    profiles: ["migrate"]
+    pull_policy: missing
+    restart: "no"
+    # Docker's stock json-file driver has NO max-size and NO max-file. Nothing
+    # in this repo sets a daemon-wide default (RUNBOOK step 0 now checks
+    # /etc/docker/daemon.json), so without these blocks the two SSR containers
+    # write unbounded JSON into /var/lib/docker/containers — and a full disk is
+    # worse than an OOM here: Postgres PANICs and shuts down on a WAL write
+    # failure. That risk is now first-party: the Postgres that PANICs can be
+    # WhoIPick's own.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file:
+      - path: /root/secrets/whoipick/migrate.env
+        required: false
+    # Everything needed to run Prisma CLI under `read_only: true` as uid 1001.
+    # busybox `adduser --system` gives HOME=/home/nextjs, which is on the
+    # read-only rootfs; npm and the Prisma CLI both write there on startup and
+    # the job dies on EROFS before it ever reaches the database. Verified fix:
+    # point HOME and every cache at the one writable mount.
+    environment:
+      HOME: /tmp
+      NPM_CONFIG_CACHE: /tmp/.npm
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      XDG_CACHE_HOME: /tmp/.cache
+      CHECKPOINT_DISABLE: "1"
+      PRISMA_HIDE_UPDATE_MESSAGE: "true"
+      DO_NOT_TRACK: "1"
+    # `node_modules/.bin/prisma`, never `npx prisma`. Two reasons, both real:
+    # npx wants a writable npm cache (EROFS, above), and npx on a name it
+    # cannot resolve locally FETCHES AND EXECUTES a package from the public
+    # registry — which is not a behaviour you want in the one container that
+    # holds a credential able to DROP TABLE.
+    command: ["node_modules/.bin/prisma", "migrate", "deploy", "--schema", "packages/db/prisma/schema.prisma"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev
+    networks: [whoipick-app-internal]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: "0.5"
+
+  whoipick-marketing:
+    image: ghcr.io/aisecurefuture/whoipick-marketing:${WHOIPICK_TAG}
+    pull_policy: missing
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # `on-failure:5` rather than `always` for at least the first week. A Next
+    # container that OOMs inside its cgroup restarts with a fresh cold-start RSS
+    # spike; `always` turns that into a tight loop that deepens a box-wide
+    # memory shortage all night with nobody watching. Five strikes and it stays
+    # down — WhoIPick degrades, revos360.com does not. Promote to `always` only
+    # after a clean week (see CAPACITY.md).
+    restart: on-failure:5
+    # THE ONLY SECRETS-BEARING DECISION IN THIS FILE THAT MATTERS MORE THAN THE
+    # ABSENCE OF `build:`. This container is the largest attack surface on the
+    # box: SSR across thousands of generated leaderboard routes, hammered by
+    # crawlers, rendering user-uploaded portfolio content. It gets a READ-ONLY
+    # database role and two public URL strings. It does NOT get AUTH_SECRET (the
+    # Auth.js signing key — an SSRF or a bad dependency here would otherwise
+    # mint valid sessions for any app.whoipick.com account with a credit
+    # balance), the Stripe secret key, the Stripe webhook signing secret, the
+    # Resend key, the S3 write credentials, or the DDL database URL.
+    #
+    # WITH A LOCAL DATABASE THE ROLE IS DOING MORE WORK, NOT LESS. Against Neon
+    # the marketing container could reach the database only over the internet
+    # with a credential; now it is one hop away on whoipick-marketing-internal,
+    # so `whoipick_ro` is the control that stands between a compromised SSR
+    # process and every row in the database. The init script therefore backs the
+    # GRANTs with `default_transaction_read_only = on` on the role itself.
+    #
+    # Verify after every compose edit (RUNBOOK step 14 checks #5/#5b, repeated as
+    # a live check in step 19). BOTH halves are required — v1 had only the first,
+    # and its alternation contains no DB token at all, so a marketing.env
+    # holding the READ-WRITE or the DDL URL passed every check in the runbook:
+    #   docker compose -f docker-compose.yml -f docker-compose.prod.yml config \
+    #     | sed -n '/^  whoipick-marketing:/,/^  [a-z]/p' \
+    #     | grep -Ei 'AUTH_SECRET|STRIPE|RESEND|S3_SECRET|DIRECT_DATABASE'
+    #   # must print nothing
+    #   ... same sed ... | grep -E 'DATABASE_URL' | grep -q 'whoipick_ro:.*@whoipick-db'
+    #   # must SUCCEED — the shipped string must name the read-only role and the
+    #   # local database host, and must contain neither of the other two roles.
+    #   # (The old form grepped for `-pooler`, which was Neon's hostname
+    #   #  convention. Any check still looking for `-pooler` now passes on an
+    #   #  empty match or fails on a correct file — fix it, do not delete it.)
+    env_file:
+      # `required: false` is DELIBERATE and must stay. Compose resolves env_file
+      # at config-load time for the WHOLE project, so `required: true` here would
+      # make `docker compose ps|logs|stop`, `exec caddy caddy validate` and every
+      # step of the rollback plan abort whenever this one file is missing — on a
+      # box that also serves revos360.com and dealsig.ai. One product's missing
+      # secrets file must not be able to block incident response on the other two.
+      #
+      # The loud-failure requirement this appears to give up is met instead at
+      # apps/marketing/instrumentation.ts, which calls getEnv() in register() so
+      # the container crash-loops at boot rather than reporting healthy while
+      # every dynamic route 500s. See that file for the measured behaviour.
+      - path: /root/secrets/whoipick/marketing.env
+        required: false
+    # NOT gated on whoipick-migrate, and NOT on whoipick-db. A `depends_on:
+    # {condition: service_completed_successfully}` or a `service_healthy` reads
+    # well and costs too much here: it makes every WhoIPick container's startup
+    # contingent on WhoIPick's database — and, combined with caddy depending on
+    # these services, would let a WhoIPick database problem abort `docker
+    # compose up -d`, the documented way to deploy a RevOS hotfix. That argument
+    # was originally about a Neon outage; a local container that fails its
+    # healthcheck is if anything MORE likely, not less. Migrations are an
+    # explicit operator step (RUNBOOK step 17), run and verified before the apps
+    # start. A Next app that cannot reach its database renders errors; it does
+    # not take revos360.com down.
+    #
+    # ============================================================================
+    # NEXT.JS AND read_only — THE DECISION, AND WHAT IT COSTS. READ THIS BEFORE
+    # COPYING DealSig's hardening ONTO A NEXT CONTAINER.
+    # ============================================================================
+    # v1 of this file set `read_only: true` and mounted only
+    # `<app>/.next/cache`, on the belief that the cache dir is where Next writes
+    # at runtime. THAT IS WRONG FOR NEXT 15 APP ROUTER ISR, and it was
+    # reproduced against the real image with `export const revalidate = 5`:
+    #
+    #   Failed to update prerender cache for /isr
+    #   [Error: EROFS: read-only file system, open
+    #    '/app/apps/marketing/.next/server/app/isr.html']
+    #
+    # — on EVERY revalidation, while `.next/cache` stayed empty. Next writes the
+    # revalidated prerender output to `<app>/.next/server/app/<route>.{html,rsc,
+    # meta}`, which is on the read-only rootfs. The result is the precise
+    # failure v1's comment claimed to prevent: ISR silently degrades to full SSR
+    # on every request, on the leaderboard routes. With the database now on the
+    # same box, that no longer risks an OOM — it risks hammering whoipick-db
+    # with the full leaderboard query on every crawler hit, which is the same
+    # outage by a different road.
+    #
+    # DECISION: `read_only: true` IS DROPPED from both Next services.
+    # Verified fix — same image, same everything else, read_only removed: no
+    # EROFS at all, and `.next/server/app/isr.html` shows an mtime of the
+    # revalidation rather than of the build.
+    #
+    # WHAT WE GIVE UP, stated plainly rather than papered over: the container's
+    # whole root filesystem is now writable by uid 1001, and unlike the tmpfs
+    # mounts it is NOT `noexec`. An attacker who gets an arbitrary-file-write
+    # primitive in this SSR process can now drop a file anywhere the user owns
+    # (which is all of /app) and execute it. What still holds: non-root uid
+    # 1001, `cap_drop: [ALL]`, `no-new-privileges:true`, no host ports, an edge
+    # network shared with caddy only, an internal network shared with the
+    # database only, no route to whoipick-web or to any RevOS/DealSig service,
+    # and — the control that actually bounds the damage here — an env file
+    # holding a READ-ONLY database role and two URL strings and nothing else.
+    #
+    # THE ALTERNATIVE WE DID NOT TAKE: keep `read_only: true` and configure a
+    # custom `cacheHandler` in next.config.js for both apps, so the incremental
+    # cache writes to the mounted path instead of `.next/server/app`. That is a
+    # repo change in a repo this file cannot see, it must be built and tested in
+    # CI before this compose file could honestly claim read_only works, and a
+    # mis-implemented handler fails the same silent way. Revisit it as a
+    # follow-up, not in this window (OPEN-QUESTIONS.md #15).
+    #
+    # DO NOT "fix" this by mounting over `.next/server/app`: a tmpfs there hides
+    # the compiled route modules and the container will not boot, and a named
+    # volume there pins the container to the FIRST deployed build's server code
+    # forever.
+    #
+    # The cache mount below stays, and is still worth having — but for its real
+    # reasons, not for the one v1 gave. `.next/cache` holds the fetch data cache
+    # and (if next/image optimization is on) the optimized-image cache, and a
+    # NAMED VOLUME keeps it disk-backed so it is not charged against this
+    # container's mem_limit and survives a restart. It is NOT what makes ISR
+    # work. The image pre-creates the dir owned by uid 1001 and a named volume
+    # (unlike a tmpfs) DOES inherit that ownership — verified 1001:1001.
+    #
+    # NEW COST TO WATCH: with the rootfs writable, revalidated pages accumulate
+    # in the container's writable overlay layer, which is discarded on recreate
+    # but grows unbounded until then across thousands of leaderboard routes.
+    # RUNBOOK step 30 watches `docker ps -s` and `docker system df` for it, and
+    # that watch matters more now that a Postgres data directory is competing
+    # for the same 31 GB.
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    volumes:
+      - whoipick-marketing-cache:/app/apps/marketing/.next/cache
+    networks: [whoipick-marketing-edge, whoipick-marketing-internal]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    # --- Resource ceilings ----------------------------------------------------
+    # NODE_OPTIONS is not optional decoration. Node 20 sizes V8's old-space from
+    # HOST memory, not from the cgroup — and the host now has 30.6 GiB, so V8
+    # will happily grow toward multiple GB while the kernel enforces 640m. The
+    # process gets SIGKILLed with no application-level warning and no GC
+    # pressure signal first. The measured 27 GB of headroom makes this MORE
+    # important, not less: it is the gap between what V8 thinks it may use and
+    # what the cgroup allows that kills the process.
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=448"
+    mem_limit: 640m
+    # Without memswap_limit, mem_limit lets the container use an EQUAL amount of
+    # swap on top. harden.sh:145 creates a single 2 GB swapfile and nothing in
+    # the repo sets vm.swappiness, so two leaking Next containers can thrash the
+    # swap three Postgres containers now share — a latency outage the OOM killer
+    # never reports. memswap_limit == mem_limit means zero swap for this
+    # container. It stays OFF the databases; see whoipick-db.
+    memswap_limit: 640m
+    # There is no `cpus:` key anywhere else in either compose file. A
+    # GC-thrashing Node process otherwise competes freely for every vCPU with
+    # three Postgres containers and the Celery worker. (`nproc` was still not
+    # run at the time of writing — CAPACITY.md §"Still unmeasured" — so this
+    # limit is conservative rather than derived.)
+    cpus: "1.0"
+    # Biases the GLOBAL OOM killer toward WhoIPick's stateless containers. This
+    # only works as designed once db and dealsig-db carry `oom_score_adj: -900`
+    # — RUNBOOK step 16 does that in the same maintenance window, and
+    # whoipick-db carries it above.
+    oom_score_adj: 500
+
+  whoipick-web:
+    image: ghcr.io/aisecurefuture/whoipick-web:${WHOIPICK_TAG}
+    pull_policy: missing
+    restart: on-failure:5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file:
+      - path: /root/secrets/whoipick/app.env
+        required: false
+    # `read_only: true` is DROPPED here for the same measured reason as on
+    # whoipick-marketing — identical EROFS on
+    # '/app/apps/web/.next/server/app/isr.html'. See that block above for the
+    # full decision and its cost; do not re-add it to one service without the
+    # other, and do not re-add it to either without a tested `cacheHandler`.
+    tmpfs:
+      # The product app has little ISR (it is authenticated and per-user), so a
+      # small tmpfs is enough here for the fetch/data cache and avoids a second
+      # named volume. NOTE the 64m is charged against mem_limit below.
+      - /tmp:size=64m,noexec,nosuid,nodev
+      # `uid=1001,gid=1001` IS LOAD-BEARING AND WAS MISSING. A Docker tmpfs is
+      # created root:root 0755 REGARDLESS of what the image pre-created at that
+      # path — only NAMED VOLUMES inherit ownership from the image. Measured
+      # with the real image: `cache=0:0 755`, process is uid 1001, and
+      # `touch .../cache/x` returns `Permission denied`. That silently killed
+      # the whole Next fetch/data cache for app.whoipick.com. With these two
+      # options: `cache=1001:1001 755` and the touch succeeds.
+      # `noexec` matches every other tmpfs in this fragment and in the DealSig
+      # services it is modelled on; nothing in `.next/cache` needs the exec bit.
+      - /app/apps/web/.next/cache:size=64m,noexec,nosuid,nodev,uid=1001,gid=1001
+    networks: [whoipick-app-edge, whoipick-app-internal]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=576"
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: "1.0"
+    oom_score_adj: 500
+
+# =============================================================================
+
 networks:
   # Reachable from Caddy only — the single hop that exposes dealsig.ai.
   dealsig-edge:
@@ -248,10 +966,53 @@ networks:
   # DealSig's private network: web <-> db <-> worker, isolated from RevOS.
   dealsig-internal:
     driver: bridge
+  # Reachable from Caddy only — the single hop that exposes whoipick.com.
+  whoipick-marketing-edge:
+    driver: bridge
+  # Reachable from Caddy only — the single hop that exposes app.whoipick.com.
+  # SEPARATE from the marketing edge on purpose: the two apps must not be able
+  # to dial each other. See the Caddyfile block's comment.
+  whoipick-app-edge:
+    driver: bridge
+  # The public SSR app and the database. TWO MEMBERS, and that is the entire
+  # point: whoipick-marketing gets a route to whoipick-db and to nothing else.
+  # It cannot resolve whoipick-web, whoipick-migrate or whoipick-backup, so the
+  # container holding the DDL credential is not reachable from the internet-
+  # facing, unauthenticated, crawler-hammered process.
+  whoipick-marketing-internal:
+    driver: bridge
+  # The product app, the database, the migrator and the backup loop.
+  whoipick-app-internal:
+    driver: bridge
+  #
+  # REMOVED IN v3: `whoipick-migrate-net`. It existed to give the migrator
+  # outbound NAT to Neon and a route to nothing on this box. The migrator now
+  # needs to reach whoipick-db, so it lives on whoipick-app-internal. If you are
+  # upgrading an existing deployment, delete the stale bridge:
+  #   docker network rm revos_whoipick-migrate-net
 
+# =============================================================================
 volumes:
   storage-data:
   caddy-data:
   caddy-config:
   ollama-models:
   dealsig-postgres-data:
+  # ⚠ THIS ONE IS DATA. Every other WhoIPick volume in this file is a cache.
+  # `docker volume rm revos_whoipick-postgres-data` is WhoIPick's entire
+  # database, and so is any `docker compose down -v`, `docker volume prune` or
+  # `docker system prune --volumes` — which now destroy THREE production
+  # Postgres volumes on this box, not two. ROLLBACK.md's golden rule #2 is
+  # updated accordingly. The nightly dump in ./backups and the off-box copy from
+  # RUNBOOK step 10d are what make that survivable; nothing else does.
+  whoipick-postgres-data:
+
+  # Next.js fetch-data / optimized-image cache for the marketing app.
+  # Disk-backed rather than tmpfs so it does not count against that container's
+  # mem_limit. NOTE it is NOT where ISR prerender output lands — that goes to
+  # `.next/server/app/`, which is why `read_only: true` had to be dropped; see
+  # the long comment on the whoipick-marketing service. Safe to delete — it is
+  # a cache, not data (see ROLLBACK.md Level 7).
+  whoipick-marketing-cache:
+
+# =============================================================================

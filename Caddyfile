@@ -7,7 +7,7 @@
 {
 	# ACME account / cert-expiry-notice email. Set ACME_EMAIL in .env (not here)
 	# so a server-side value survives git pulls. Falls back to the default.
-	email {$ACME_EMAIL:hello@revos360.com}
+	email {$ACME_EMAIL:pk@cyberarmor.ai}
 }
 
 # --- Marketing site (apex + www) -------------------------------------------
@@ -73,4 +73,153 @@ www.dealsig.ai {
 # --- Brand-protection redirects -> revos360.com -----------------------------
 revos365.com, www.revos365.com, officialrevos.com, www.officialrevos.com {
 	redir https://revos360.com{uri} permanent
+}
+# --- WhoIPick (co-hosted product) -------------------------------------------
+# Two Next.js apps, not one. Unlike DealSig — where a single FastAPI process
+# serves both the marketing site and the console from one upstream — WhoIPick
+# splits them:
+#   whoipick.com      -> whoipick-marketing:3000  (public SEO surface)
+#   app.whoipick.com  -> whoipick-web:3000        (seeker/provider product)
+#
+# whoipick.com is NOT a `root * / file_server` mount like revos360.com. That
+# block works because ./marketing is five hand-written static files; WhoIPick's
+# marketing app renders category-by-city leaderboards per request (SSR + ISR)
+# and generates its sitemap from the database, which file_server cannot do.
+#
+# Each app reaches Caddy over its OWN network — whoipick-marketing-edge and
+# whoipick-app-edge — and the two apps share no network with each other. That
+# is a deliberate divergence from the DealSig shape: dealsig-edge is safe
+# because dealsig-web is its only member, but putting two apps on one shared
+# edge network would give the public, crawler-facing marketing container a
+# direct layer-3 path to whoipick-web:3000, bypassing the request_body cap and
+# the Host routing below.
+#
+# THE COUPLING RUNS BOTH WAYS — STATE IT BEFORE SOMEONE DISCOVERS IT AT 2AM.
+# Everything else in this design is written to stop a WhoIPick problem from
+# taking RevOS down. This file is where the converse becomes true: whoipick.com
+# and app.whoipick.com are site blocks inside RevOS's Caddyfile, terminated by
+# RevOS's single Caddy container, on RevOS's box.
+#   * A RevOS-initiated `docker compose up -d` that recreates caddy drops
+#     :80/:443 for WhoIPick too. RUNBOOK step 26 does exactly that recreate,
+#     deliberately, and its stated cost includes these three hostnames.
+#   * A syntax error anywhere in this file — including in a RevOS-side edit
+#     that has nothing to do with WhoIPick — crash-loops caddy and takes all
+#     NINE hostnames down together.
+#   * Per OPEN-QUESTIONS.md #1, WhoIPick's co-founders have no access to this
+#     file, this repo or this box. The people who own the product CANNOT
+#     restore their own site. Somebody on the RevOS side has to be reachable,
+#     and that requirement needs a name and a time-to-restore written down.
+#
+# SECURITY NOTE THAT APPLIES TO THIS WHOLE FILE, NOT JUST THIS BLOCK: every
+# container on any *-edge network can dial caddy's own :80/:443 listeners with
+# an arbitrary Host header. That path skips the Hetzner Cloud Firewall and
+# fail2ban and arrives with an internal Docker source IP. It is not an
+# escalation today because every hostname here is public — but it means NO site
+# block in this file may ever grant trust based on `remote_ip`.
+#
+# Both apps set their own CSP / HSTS / frame + referrer headers in
+# next.config.js headers(), so Caddy adds none here beyond stripping Server —
+# the same split as app.revos360.com and dealsig.ai. Do NOT copy the HSTS line
+# from the revos360.com block above: `max-age=63072000; includeSubDomains;
+# preload` is a two-year, browser-cached, server-side-unrevocable commitment
+# across every *.whoipick.com name that will ever exist. WhoIPick ships HSTS
+# from Next at max-age=300 on day one and ratchets up only after app. and any
+# future subdomain are proven to terminate TLS.
+whoipick.com {
+	encode gzip zstd
+	reverse_proxy whoipick-marketing:3000
+	header -Server
+
+	# PRE-LAUNCH ONLY — REMOVE AT LAUNCH.
+	# The site prerenders 146 pages, of which ~120 are category and city
+	# leaderboards populated entirely from SAMPLE providers with invented
+	# business names, ratings and review counts. The copy is honest about this
+	# on the page, but a search result is a snippet without that context: the
+	# fixtures would be indexed as real Chicago-area businesses.
+	#
+	# Removing an index entry is far slower and less reliable than never
+	# creating one — Search Console removals are temporary, and third parties
+	# that scrape the SERP keep their copy regardless. So this is deliberately
+	# the conservative direction, and it costs nothing to reverse.
+	#
+	# X-Robots-Tag is used rather than robots.txt because robots.txt asks
+	# crawlers not to FETCH, while a URL already known from a link can still be
+	# indexed as a bare title. This header is served on the response itself and
+	# is unambiguous. Applies to app.whoipick.com too, below.
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+}
+
+# www -> apex, matching dealsig.ai rather than revos360.com — but for a
+# different reason than DealSig's. DealSig redirects because its session cookie
+# and PASSKEY_ORIGIN are bound to the apex origin. WhoIPick's auth lives on
+# app.whoipick.com, so that constraint does not apply here; the reason is SEO.
+# The marketing app generates thousands of leaderboard URLs, and serving them
+# on two hostnames doubles the crawlable surface and splits link equity unless
+# every single generated page emits a correct rel=canonical. A 301 at the edge
+# is unconditional, cannot be forgotten on a new route, and costs nothing.
+# revos360.com can safely serve both names because it is one static page.
+#
+# www still needs its own A record and its own certificate: Caddy terminates
+# TLS before it can serve the redirect. A redirect-only block is not a DNS-free
+# shortcut.
+#
+# `header -Server` here is deliberate, not copy-paste: the two older
+# redirect-only blocks in this file omit it and therefore leak `Server: Caddy`
+# on their 301s. New blocks should not inherit that.
+www.whoipick.com {
+	redir https://whoipick.com{uri} permanent
+	header -Server
+}
+
+# The product. Auth, bidding, credits and portfolio uploads live here and
+# nowhere else — the session cookie is host-only on app.whoipick.com (no
+# Domain=.whoipick.com), so the public marketing origin never carries
+# credentials. Note the cookie scope is only half the story: whoipick-marketing
+# is also denied AUTH_SECRET, the Stripe secret key, the Resend key and the S3
+# write credentials at the process level (it loads /root/secrets/whoipick/
+# marketing.env, which contains a READ-ONLY database URL and two public URL
+# strings and nothing else). Cookie scoping alone would not stop a compromised
+# SSR process from minting its own sessions.
+#
+# No `handle /api/*` split here, unlike app.revos360.com. That split exists
+# because Next was PROXYING to FastAPI and its rewrite proxy has a hard 30s
+# timeout; WhoIPick's API is Next route handlers in the same process, so Next
+# IS the origin and there is nothing to bypass.
+#
+# The body cap is the portfolio-image upload ceiling and is set deliberately
+# low — 25MB, against 256MB on the RevOS API surfaces — because nothing here
+# accepts video, and an unbounded upload on a memory-tight shared box is a
+# denial-of-service vector against revos360.com, not just against WhoIPick.
+#PHASE2#app.whoipick.com {
+#PHASE2#	encode gzip zstd
+#PHASE2#	request_body {
+#PHASE2#		max_size 25MB
+#PHASE2#	}
+#PHASE2#	reverse_proxy whoipick-web:3000
+#PHASE2#	header -Server
+#PHASE2#
+#PHASE2#	# PRE-LAUNCH ONLY — REMOVE AT LAUNCH. See the note on whoipick.com.
+#PHASE2#	header X-Robots-Tag "noindex, nofollow, noarchive"
+#PHASE2#}
+
+# whodoipick.com — an owned alias, redirected rather than served.
+# Serving the same content on two hostnames splits the SEO signal across ~15,000
+# generated pages and would also require adding this name to the marketing
+# container's WHOIPICK_ALLOWED_HOSTS. A redirect never reaches the container and
+# keeps whoipick.com unambiguously canonical. Caddy issues the certificate for
+# both names automatically on first request; {uri} preserves the path.
+whodoipick.com, www.whodoipick.com {
+	redir https://whoipick.com{uri} permanent
+}
+
+app.whoipick.com {
+	encode gzip zstd
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy whoipick-web:3000
+	header -Server
+
+	# PRE-LAUNCH ONLY — REMOVE AT LAUNCH. See the note on whoipick.com.
+	header X-Robots-Tag "noindex, nofollow, noarchive"
 }
