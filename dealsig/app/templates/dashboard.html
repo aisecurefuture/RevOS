@@ -22,8 +22,8 @@
     <div class="deal-list">
       {% for listing in listings[:4] %}
       <a class="deal-row" href="/deals/{{ listing.id }}">
-        <div class="property-thumb house-{{ ['one','two','three'][loop.index0 % 3] }}">{% if listing.is_demo %}<b>DEMO</b>{% endif %}</div>
-        <div class="deal-main"><span class="source-tag">{{ listing.source|replace('_',' ')|upper }}</span><strong>{{ listing.title }}</strong><small>{{ listing.city }}{% if listing.county %} · {{ listing.county }} County{% endif %} · {{ listing.instrument_type|replace('_',' ')|title }}</small></div>
+        <div class="property-thumb house-{{ ['one','two','three'][loop.index0 % 3] }}">{% if listing.image_url %}<img src="{{ listing.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% endif %}{% if listing.is_demo %}<b>DEMO</b>{% endif %}</div>
+        <div class="deal-main"><span class="source-tag">{{ listing.source|replace('_',' ')|upper }}</span><strong>{{ listing.display_title or listing.title }}</strong><small>{{ listing.city }}{% if listing.county %} · {{ listing.county }} County{% endif %} · {{ listing.instrument_type|replace('_',' ')|title }}</small></div>
         <div class="deal-stat"><small>{{ 'LIEN SCENARIO' if listing.instrument_type == 'tax_lien' else 'EST. PROFIT' }}</small><strong>{{ listing.estimated_profit|money }}</strong><em>{{ listing.profit_margin or 0 }}% scenario</em></div>
         <div class="deal-stat"><small>DEADLINE</small><strong class="date-value">{{ listing.auction_end|date }}</strong><em>{{ listing.status|title }}</em></div>
         <div class="score {{ 'high' if listing.deal_score >= 75 else 'mid' if listing.deal_score >= 50 else 'low' }}">{{ listing.deal_score or '—' }}</div>
@@ -34,7 +34,7 @@
   <aside class="panel deadline-panel">
     <div class="panel-head"><div><span class="eyebrow dark">UP NEXT</span><h2>Closing soon</h2></div></div>
     <div class="timeline">
-      {% for listing in upcoming %}<a href="/deals/{{ listing.id }}"><span>{{ loop.index }}</span><div><strong>{{ listing.title }}</strong><small>{{ listing.auction_end|date }}</small></div></a>{% else %}<p>No posted deadlines.</p>{% endfor %}
+      {% for listing in upcoming %}<a href="/deals/{{ listing.id }}"><span>{{ loop.index }}</span><div><strong>{{ listing.display_title or listing.title }}</strong><small>{{ listing.auction_end|date }}</small></div></a>{% else %}<p>No posted deadlines.</p>{% endfor %}
     </div>
     <a class="button soft full" href="/deals?sort=deadline">View deadline queue →</a>
   </aside>

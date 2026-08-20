@@ -43,6 +43,7 @@ def _fingerprint(record: ParsedListing) -> str:
         "status": record.status,
         "current_bid": str(record.current_bid),
         "auction_end": record.auction_end.isoformat() if record.auction_end else "",
+        "source_url": record.source_url,
         "description": record.description,
     }
     return hashlib.sha256(json.dumps(relevant, sort_keys=True).encode()).hexdigest()
@@ -108,6 +109,8 @@ def upsert_records(db: Session, source_slug: str, records: list[ParsedListing]) 
                 updated += 1
         for field in (
             "title",
+            "display_title",
+            "image_url",
             "description",
             "address",
             "city",

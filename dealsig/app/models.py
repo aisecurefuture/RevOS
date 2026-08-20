@@ -63,6 +63,10 @@ class Listing(Base):
     external_id: Mapped[str] = mapped_column(String(255))
     source: Mapped[str] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(500))
+    # A scannable "123 Main St, Joliet, IL" built from structured fields. The
+    # source's own title is a marketing sentence, kept in title/description.
+    display_title: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    image_url: Mapped[str] = mapped_column(String(1000), default="", server_default="")
     description: Mapped[str] = mapped_column(Text, default="")
     address: Mapped[str] = mapped_column(String(500), default="")
     city: Mapped[str] = mapped_column(String(120), default="")
