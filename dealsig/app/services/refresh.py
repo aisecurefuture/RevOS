@@ -176,12 +176,25 @@ def refresh_source(db: Session, source_slug: str, trigger: str = "scheduled") ->
     try:
         result = fetch_source(definition, status.etag)
         created, updated = upsert_records(db, source_slug, result.records)
+        now = utcnow()
+
+        # Compare the page hash instead of only storing it. Without this a
+        # calendar_monitor can never fire, which made every monitor-only source
+        # silently inert while still reporting success.
+        changed = bool(
+            result.content_hash
+            and status.content_hash
+            and status.content_hash != result.content_hash
+        )
+        if changed:
+            status.last_change_at = now
+
         run.status = "succeeded"
         run.discovered = len(result.records)
         run.created = created
         run.updated = updated
-        status.health = "healthy"
-        status.last_success_at = utcnow()
+        run.changed = changed
+        status.last_success_at = now
         status.records_found = len(result.records)
         status.consecutive_failures = 0
         status.last_error = ""
@@ -189,6 +202,22 @@ def refresh_source(db: Session, source_slug: str, trigger: str = "scheduled") ->
             status.etag = result.etag
         if result.content_hash:
             status.content_hash = result.content_hash
+
+        # Health has to distinguish "fetched fine" from "produced anything".
+        # A feed that parses nothing is broken even though the HTTP call
+        # succeeded; a monitor legitimately produces no listings, so calling it
+        # "healthy" alongside real feeds overstated coverage.
+        if definition.source_type == "listing_feed":
+            if result.records or result.not_modified:
+                status.health = "healthy"
+            else:
+                status.health = "degraded"
+                status.last_error = (
+                    "Fetched successfully but the parser produced no listings — "
+                    "the page layout has probably changed."
+                )
+        else:
+            status.health = "monitoring"
     except Exception as exc:
         # Store a bounded diagnostic; never store response bodies or credentials.
         run.status = "failed"

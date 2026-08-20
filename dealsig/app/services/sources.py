@@ -87,7 +87,11 @@ SOURCES: tuple[SourceDefinition, ...] = (
     SourceDefinition(
         "kane_county",
         "Kane County Tax Sale",
-        "https://treasurer.kanecountyil.gov/Pages/Tax-Sale.aspx",
+        # /Pages/Tax-Sale.aspx began returning 404; the Treasurer home page
+        # links the current tax-sale documents. Re-verify if this ever 404s —
+        # the monitor now reports degraded instead of silently hashing an
+        # error page.
+        "https://treasurer.kanecountyil.gov/",
         "calendar_monitor",
         180,
         "Register with the Treasurer and follow the annual tax-sale packet and statutory redemption process.",
@@ -103,7 +107,8 @@ SOURCES: tuple[SourceDefinition, ...] = (
     SourceDefinition(
         "dupage_county",
         "DuPage County Tax Sale",
-        "https://www.dupagecounty.gov/elected_officials/treasurer/property_tax_information/tax_sale.php",
+        # Replaces .../property_tax_information/tax_sale.php, which now 404s.
+        "https://www.dupagecounty.gov/elected_officials/treasurer/tax_sale_information.php",
         "calendar_monitor",
         180,
         "Verify the current Treasurer instructions and understand that an annual tax sale conveys a lien.",
@@ -161,6 +166,9 @@ class FetchResult:
     records: list[ParsedListing]
     content_hash: str
     etag: str = ""
+    # True when the source answered 304. Distinguishes "nothing changed" from
+    # "fetched fine but produced nothing", which are opposite health signals.
+    not_modified: bool = False
 
 
 ADDRESS_RE = re.compile(
@@ -383,7 +391,7 @@ def fetch_source(source: SourceDefinition, etag: str = "") -> FetchResult:
     ) as client:
         response = client.get(source.url)
     if response.status_code == 304:
-        return FetchResult(records=[], content_hash="", etag=etag)
+        return FetchResult(records=[], content_hash="", etag=etag, not_modified=True)
     response.raise_for_status()
     content_hash = hashlib.sha256(response.content).hexdigest()
     parser = PARSERS.get(source.slug)

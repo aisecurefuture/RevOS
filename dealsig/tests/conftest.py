@@ -18,7 +18,7 @@ os.environ.update(
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import Base, engine
+from app.database import Base, SessionLocal, engine
 from app.main import app
 
 
@@ -34,3 +34,10 @@ def clean_database():
 def client():
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def db_session():
+    """A plain session for service-layer tests that skip the HTTP layer."""
+    with SessionLocal() as session:
+        yield session

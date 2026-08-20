@@ -13,7 +13,7 @@
   <article><div><span>Active opportunities</span><strong>{{ total }}</strong></div><em class="metric-icon">◫</em><small><b>Across {{ sources|length }} sources</b> in the MVP registry</small></article>
   <article><div><span>Newly seen</span><strong>{{ new_count }}</strong></div><em class="metric-icon">✦</em><small><b>First appearance</b> in the last 24 hours</small></article>
   <article><div><span>Top deal signal</span><strong>{{ listings[0].deal_score if listings else '—' }}</strong></div><em class="metric-icon">↗</em><small><b>{{ listings[0].confidence|title if listings else 'No' }} confidence</b> scenario, verify inputs</small></article>
-  <article><div><span>Sources healthy</span><strong>{{ sources|selectattr('health', 'equalto', 'healthy')|list|length }}<i>/{{ sources|length }}</i></strong></div><em class="metric-icon">◎</em><small><b>Monitors report status</b> after first live refresh</small></article>
+  <article><div><span>Sources reporting</span><strong>{{ sources|rejectattr('health', 'in', ['degraded', 'pending'])|list|length }}<i>/{{ sources|length }}</i></strong></div><em class="metric-icon">◎</em><small><b>{{ sources|selectattr('source_type', 'equalto', 'listing_feed')|list|length }} feeds</b> produce listings; the rest only watch for changes</small></article>
 </section>
 
 <section class="dashboard-grid">
